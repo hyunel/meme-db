@@ -1,0 +1,15 @@
+server:
+  port: 8080
+  jwt_secret: "change_me"
+  storage_path: "./assets"
+
+database:
+  url: "postgres://postgres:postgres@localhost:5432/postgres"
+
+inference:
+  grpc_addr: "localhost:50051"
+
+vlm:
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  api_key: ""
+  model: "gemini-2.5-flash"

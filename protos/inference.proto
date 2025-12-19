@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package inference;
+
+option go_package = "github.com/hyunel/MemeDB/server/internal/pb";
+
+service InferenceService {
+  // Batch text embedding using Qwen
+  rpc TextEmbedding (TextEmbeddingRequest) returns (TextEmbeddingResponse);
+
+  // Batch image embedding using CLIP
+  rpc ClipImageEmbedding (ClipImageEmbeddingRequest) returns (ClipImageEmbeddingResponse);
+
+  // Batch text embedding using CLIP
+  rpc ClipTextEmbedding (ClipTextEmbeddingRequest) returns (ClipTextEmbeddingResponse);
+
+  // Rerank text pairs using Qwen
+  rpc Rerank (RerankRequest) returns (RerankResponse);
+
+  // Extract VLM features from image
+  rpc AnalyzeImage (AnalyzeImageRequest) returns (AnalyzeImageResponse);
+}
+
+message Image {
+  bytes data = 1;
+  string file_format = 2;
+}
+
+message Embedding {
+  repeated float values = 1;
+}
+
+message TextEmbeddingRequest {
+  string task_description = 1;
+  repeated string texts = 2;
+}
+
+message TextEmbeddingResponse {
+  repeated Embedding embeddings = 1;
+}
+
+message ClipImageEmbeddingRequest {
+  repeated Image images = 1;
+}
+
+message ClipImageEmbeddingResponse {
+  repeated Embedding embeddings = 1;
+}
+
+message ClipTextEmbeddingRequest {
+  repeated string texts = 1;
+}
+
+message ClipTextEmbeddingResponse {
+  repeated Embedding embeddings = 1;
+}
+
+message RerankPair {
+  string query = 1;
+  string document = 2;
+}
+
+message RerankRequest {
+  string task_description = 1;
+  repeated RerankPair pairs = 2;
+}
+
+message RerankResponse {
+  repeated float scores = 1;
+}
+
+message AnalyzeImageInput {
+  Image image = 1;
+  string vlm_json = 2;
+}
+
+message AnalyzeImageRequest {
+  repeated AnalyzeImageInput inputs = 1;
+}
+
+message AnalyzedImage {
+  string ocr_text = 1;
+  repeated float clip_vector = 2;
+  repeated float metaphor_vector = 3;
+  repeated float semantic_vector = 4;
+  string vlm_json = 5;
+  int32 width = 6;
+  int32 height = 7;
+}
+
+message AnalyzeImageResponse {
+  repeated AnalyzedImage results = 1;
+}

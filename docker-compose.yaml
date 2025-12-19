@@ -1,0 +1,21 @@
+services:
+  web:
+    build: ./web
+    ports: ["3000:3000"]
+    depends_on: [server]
+
+  server:
+    build: ./server
+    ports: ["8080:8080"]
+    depends_on: [db, inference]
+
+  inference:
+    build: ./inference
+    ports: ["5000:5000"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

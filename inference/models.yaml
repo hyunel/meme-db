@@ -1,0 +1,38 @@
+# VLM (Vision Language Model) Configuration
+# Choose between OpenAI-compatible API or local transformers model
+
+vlm:
+  # Option 1: Use OpenAI-compatible API (Gemini, GLM, OpenAI, etc.)
+  provider: "openai"
+  openai:
+    model: "gemini-2.5-flash"
+    api_key: "${GEMINI_API_KEY}"  # Environment variable
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+  # Option 2: Use local transformers model (Qwen2-VL, etc.)
+  # provider: "local"
+  # local:
+  #   model: "Qwen/Qwen2-VL-2B-Instruct"  # HuggingFace model ID
+
+# Examples for different providers:
+
+# OpenAI:
+# vlm:
+#   provider: "openai"
+#   openai:
+#     model: "gpt-4o"
+#     api_key: "${OPENAI_API_KEY}"
+
+# GLM (Zhipu AI):
+# vlm:
+#   provider: "openai"
+#   openai:
+#     model: "glm-4v-flash"
+#     api_key: "${GLM_API_KEY}"
+#     base_url: "https://open.bigmodel.cn/api/paas/v4/"
+
+# Local Qwen model:
+# vlm:
+#   provider: "local"
+#   local:
+#     model: "Qwen/Qwen2-VL-7B-Instruct"
