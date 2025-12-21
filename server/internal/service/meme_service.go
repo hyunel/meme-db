@@ -133,7 +133,7 @@ func (s *MemeService) TriggerFixMissing(ctx context.Context) (string, error) {
 func (s *MemeService) Search(ctx context.Context, query string, limit int, scope string, ownerID string, folderID string) ([]repository.SearchResult, error) {
 	var folderPath *string
 	if folderID != "" {
-		node, err := s.repo.Node.GetNode(ctx, folderID)
+		node, err := s.repo.Node.GetNode(ctx, folderID, ownerID)
 		if err == nil {
 			folderPath = &node.Path
 		}
@@ -151,7 +151,7 @@ func (s *MemeService) FullSearch(
 ) ([]map[string]interface{}, error) {
 	var folderPath *string
 	if folderID != "" {
-		node, err := s.repo.Node.GetNode(ctx, folderID)
+		node, err := s.repo.Node.GetNode(ctx, folderID, ownerID)
 		if err == nil {
 			folderPath = &node.Path
 		}

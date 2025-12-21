@@ -11,14 +11,23 @@ import (
 )
 
 type FileSystemService struct {
-	repo        *repository.Provider
-	memeService *MemeService
+	repo         *repository.Provider
+	memeService  *MemeService
+	assetService *AssetService
 }
 
-func NewFileSystemService(repo *repository.Provider, memeService *MemeService) *FileSystemService {
+func NewFileSystemService(repo *repository.Provider, memeService *MemeService, assetService *AssetService) *FileSystemService {
 	return &FileSystemService{
-		repo:        repo,
-		memeService: memeService,
+		repo:         repo,
+		memeService:  memeService,
+		assetService: assetService,
+	}
+}
+
+func (s *FileSystemService) populateNodeURL(node *model.Node) {
+	if node.Type == model.NodeTypeFile && node.AssetID != nil {
+		token, _ := s.assetService.GenerateAccessToken(*node.AssetID)
+		node.URL = "/api/assets/" + *node.AssetID + "?token=" + token
 	}
 }
 
@@ -34,22 +43,60 @@ func (s *FileSystemService) CreateNode(ctx context.Context, ownerID string, pare
 	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
 		return nil, err
 	}
+	s.populateNodeURL(node)
 	return node, nil
 }
 
-func (s *FileSystemService) GetNode(ctx context.Context, id string) (*model.Node, error) {
-	node, err := s.repo.Node.GetNode(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil {
-		return nil, apperror.NotFound("node not found")
-	}
-	return node, nil
+type GetNodeResponse struct {
+	Node        *model.Node   `json:"node"`
+	Children    []*model.Node `json:"children"`
+	Breadcrumbs []*model.Node `json:"breadcrumbs"`
 }
 
-func (s *FileSystemService) ListChildren(ctx context.Context, id string, ownerID string) ([]*model.Node, error) {
-	return s.repo.Node.ListNodes(ctx, &id, ownerID)
+func (s *FileSystemService) GetNode(ctx context.Context, id string, ownerID string) (*GetNodeResponse, error) {
+	var node *model.Node
+	var breadcrumbs []*model.Node
+	var children []*model.Node
+
+	if id != "" {
+		var err error
+		node, err = s.repo.Node.GetNode(ctx, id, ownerID)
+		if err != nil {
+			return nil, apperror.NotFound("node not found")
+		}
+
+		// Breadcrumbs
+		breadcrumbs, _ = s.repo.Node.GetAncestors(ctx, node.Path)
+		for _, n := range breadcrumbs {
+			s.populateNodeURL(n)
+		}
+
+		// Children
+		if node.Type == model.NodeTypeFolder {
+			children, _ = s.repo.Node.ListNodes(ctx, &node.ID, ownerID)
+		}
+		s.populateNodeURL(node)
+	} else {
+		// Root
+		children, _ = s.repo.Node.ListNodes(ctx, nil, ownerID)
+	}
+
+	for _, n := range children {
+		s.populateNodeURL(n)
+	}
+
+	if breadcrumbs == nil {
+		breadcrumbs = []*model.Node{}
+	}
+	if children == nil {
+		children = []*model.Node{}
+	}
+
+	return &GetNodeResponse{
+		Node:        node,
+		Children:    children,
+		Breadcrumbs: breadcrumbs,
+	}, nil
 }
 
 type UpdateNodeInput struct {
@@ -59,20 +106,9 @@ type UpdateNodeInput struct {
 }
 
 func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID string, input UpdateNodeInput) (*model.Node, error) {
-	node, err := s.repo.Node.GetNode(ctx, id)
+	node, err := s.repo.Node.GetNode(ctx, id, ownerID)
 	if err != nil {
-		return nil, err
-	}
-	if node == nil {
 		return nil, apperror.NotFound("node not found")
-	}
-	if node.OwnerID != ownerID {
-		return nil, apperror.Forbidden("permission denied")
-	}
-
-	// Root node check (optional, but good for safety)
-	if node.ParentID == nil && input.Name != nil {
-		// Prevent renaming root or handle it
 	}
 
 	if input.Name != nil {
@@ -88,124 +124,86 @@ func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID s
 	if err := s.repo.Node.UpdateNode(ctx, node); err != nil {
 		return nil, err
 	}
+	s.populateNodeURL(node)
 	return node, nil
 }
 
-func (s *FileSystemService) DeleteNode(ctx context.Context, id string, ownerID string) error {
-	node, err := s.repo.Node.GetNode(ctx, id)
-	if err != nil {
-		return err
-	}
-	if node == nil {
-		return apperror.NotFound("node not found")
-	}
-	if node.OwnerID != ownerID {
-		return apperror.Forbidden("permission denied")
-	}
-	if node.ParentID == nil {
-		return apperror.BadRequest("cannot delete root folder")
-	}
-
-	return s.repo.Node.RecursiveDelete(ctx, node.Path)
+func (s *FileSystemService) BulkDeleteNodes(ctx context.Context, ownerID string, ids []string) error {
+	return s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
+		for _, id := range ids {
+			if err := txRepo.Node.DeleteNode(ctx, id, ownerID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
-func (s *FileSystemService) MoveNode(ctx context.Context, id string, ownerID string, destParentID *string) error {
-	node, err := s.repo.Node.GetNode(ctx, id)
-	if err != nil {
-		return err
-	}
-	if node == nil {
-		return apperror.NotFound("node not found")
-	}
-	if node.OwnerID != ownerID {
-		return apperror.Forbidden("permission denied")
-	}
-	if node.ParentID == nil {
-		return apperror.BadRequest("cannot move root folder")
-	}
-
-	// Compute new path
-	var newPathPrefix string
+func (s *FileSystemService) BulkMoveNodes(ctx context.Context, ownerID string, ids []string, destParentID *string) error {
+	var destNode *model.Node
 	if destParentID != nil {
-		destParent, err := s.repo.Node.GetNode(ctx, *destParentID)
+		var err error
+		destNode, err = s.repo.Node.GetNode(ctx, *destParentID, ownerID)
 		if err != nil {
-			return err
-		}
-		if destParent == nil {
 			return apperror.NotFound("destination parent not found")
 		}
-		if destParent.OwnerID != ownerID {
-			return apperror.Forbidden("permission denied for destination")
+	}
+
+	nodes, err := s.repo.Node.GetNodes(ctx, ids, ownerID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.checkForCycles(nodes, destNode); err != nil {
+		return err
+	}
+
+	destPath := ""
+	if destNode != nil {
+		destPath = destNode.Path
+	}
+
+	return s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
+		for _, node := range nodes {
+			newPath := strings.ReplaceAll(node.ID, "-", "")
+			if destPath != "" {
+				newPath = destPath + "." + newPath
+			}
+
+			if err := txRepo.Node.MoveNode(ctx, node.ID, destParentID, newPath, ownerID); err != nil {
+				return err
+			}
 		}
-		newPathPrefix = destParent.Path
-	} else {
-		// Moving to root is not allowed if we assume only one root
-		return apperror.BadRequest("moving to root (nil parent) is not supported")
-	}
-
-	newPath := newPathPrefix + "." + strings.ReplaceAll(node.ID, "-", "")
-	return s.repo.Node.MoveNode(ctx, id, destParentID, newPath)
-}
-
-func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, parentID string, fileHeader *multipart.FileHeader) (*model.Node, error) {
-	// 1. Ingest asset via MemeService
-	asset, err := s.memeService.IngestMeme(ctx, fileHeader)
-	if err != nil {
-		return nil, err
-	}
-
-	// 2. Create Node
-	node := &model.Node{
-		OwnerID:    ownerID,
-		ParentID:   &parentID,
-		Name:       fileHeader.Filename,
-		Type:       model.NodeTypeFile,
-		Visibility: model.VisibilityPriv,
-		AssetID:    &asset.ID,
-	}
-
-	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-func (s *FileSystemService) CopyNode(ctx context.Context, id string, ownerID string, destParentID string) (*model.Node, error) {
-	node, err := s.repo.Node.GetNode(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil {
-		return nil, apperror.NotFound("node not found")
-	}
-	if node.OwnerID != ownerID {
-		return nil, apperror.Forbidden("permission denied")
-	}
-
-	destParent, err := s.repo.Node.GetNode(ctx, destParentID)
-	if err != nil {
-		return nil, err
-	}
-	if destParent == nil {
-		return nil, apperror.NotFound("destination parent not found")
-	}
-	if destParent.OwnerID != ownerID {
-		return nil, apperror.Forbidden("permission denied for destination")
-	}
-
-	// Recursive copy logic in transaction
-	var newNode *model.Node
-	err = s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
-		var txErr error
-		newNode, txErr = s.recursiveCopy(ctx, txRepo, node, &destParentID, ownerID)
-		return txErr
+		return nil
 	})
+}
 
-	return newNode, err
+func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, ids []string, destParentID string) error {
+	destNode, err := s.repo.Node.GetNode(ctx, destParentID, ownerID)
+	if err != nil {
+		return apperror.NotFound("destination parent not found")
+	}
+
+	nodes, err := s.repo.Node.GetNodes(ctx, ids, ownerID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.checkForCycles(nodes, destNode); err != nil {
+		return err
+	}
+
+	return s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
+		for _, node := range nodes {
+			if _, err := s.recursiveCopy(ctx, txRepo, node, &destParentID, ownerID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *FileSystemService) recursiveCopy(ctx context.Context, txRepo *repository.Repositories, sourceNode *model.Node, newParentID *string, ownerID string) (*model.Node, error) {
-	// Create current node
 	newNode := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   newParentID,
@@ -232,4 +230,61 @@ func (s *FileSystemService) recursiveCopy(ctx context.Context, txRepo *repositor
 	}
 
 	return newNode, nil
+}
+
+func (s *FileSystemService) checkForCycles(nodes []*model.Node, destNode *model.Node) error {
+	if destNode == nil {
+		return nil
+	}
+
+	for _, node := range nodes {
+		// In ltree, if path A is an ancestor of path B, then A @> B
+		// In Go string logic for ltree:
+		// node.Path: "root.folder1"
+		// destNode.Path: "root.folder1.subfolder"
+		// Cycle exists if destNode.Path == node.Path OR destNode.Path starts with node.Path + "."
+		if destNode.Path == node.Path || strings.HasPrefix(destNode.Path, node.Path+".") {
+			return apperror.BadRequest("cannot move or copy a folder into itself or its descendants")
+		}
+	}
+
+	return nil
+}
+
+func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, parentID *string, fileHeader *multipart.FileHeader) (*model.Node, error) {
+	asset, err := s.memeService.IngestMeme(ctx, fileHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	node := &model.Node{
+		OwnerID:    ownerID,
+		ParentID:   parentID,
+		Name:       "",
+		Type:       model.NodeTypeFile,
+		Visibility: model.VisibilityPriv,
+		AssetID:    &asset.ID,
+	}
+
+	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
+		return nil, err
+	}
+	s.populateNodeURL(node)
+	return node, nil
+}
+
+func (s *FileSystemService) GetAssetForContent(ctx context.Context, assetID string, token string) (*model.Asset, error) {
+	if err := s.assetService.VerifyAccessToken(assetID, token); err != nil {
+		return nil, apperror.Unauthorized(err.Error())
+	}
+
+	asset, err := s.repo.Asset.GetAsset(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if asset == nil {
+		return nil, apperror.NotFound("asset not found")
+	}
+
+	return asset, nil
 }

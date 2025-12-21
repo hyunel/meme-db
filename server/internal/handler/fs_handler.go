@@ -31,6 +31,10 @@ func (h *FileSystemHandler) CreateNode(c echo.Context) error {
 		return err
 	}
 
+	if req.ParentID != nil && *req.ParentID == "" {
+		req.ParentID = nil
+	}
+
 	node, err := h.fsService.CreateNode(c.Request().Context(), ownerID, req.ParentID, req.Name, req.Type)
 	if err != nil {
 		return err
@@ -38,36 +42,13 @@ func (h *FileSystemHandler) CreateNode(c echo.Context) error {
 	return c.JSON(http.StatusCreated, node)
 }
 
-type GetNodeRequest struct {
-	ID string `param:"id" validate:"required"`
-}
-
 func (h *FileSystemHandler) GetNode(c echo.Context) error {
-	var req GetNodeRequest
-	if err := BindAndValidate(c, &req); err != nil {
-		return err
-	}
+	ownerID := c.Get("user_id").(string)
+	id := c.Param("id")
 
-	node, err := h.fsService.GetNode(c.Request().Context(), req.ID)
+	res, err := h.fsService.GetNode(c.Request().Context(), id, ownerID)
 	if err != nil {
 		return err
-	}
-
-	// Permission check (if node is private and not owned by requester)
-	ownerID := c.Get("user_id").(string)
-	if node.Visibility == model.VisibilityPriv && node.OwnerID != ownerID {
-		return apperror.Forbidden("permission denied")
-	}
-
-	res := map[string]interface{}{
-		"node": node,
-	}
-
-	if node.Type == model.NodeTypeFolder {
-		children, err := h.fsService.ListChildren(c.Request().Context(), req.ID, ownerID)
-		if err == nil {
-			res["children"] = children
-		}
 	}
 
 	return c.JSON(http.StatusOK, res)
@@ -100,63 +81,64 @@ func (h *FileSystemHandler) UpdateNode(c echo.Context) error {
 	return c.JSON(http.StatusOK, node)
 }
 
-type DeleteNodeRequest struct {
-	ID string `param:"id" validate:"required"`
+type BulkActionRequest struct {
+	IDs          []string `json:"ids" validate:"required,gt=0"`
+	DestParentID *string  `json:"dest_parent_id"`
 }
 
-func (h *FileSystemHandler) DeleteNode(c echo.Context) error {
-	var req DeleteNodeRequest
+func (h *FileSystemHandler) BulkDelete(c echo.Context) error {
+	ownerID := c.Get("user_id").(string)
+	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	ownerID := c.Get("user_id").(string)
-
-	if err := h.fsService.DeleteNode(c.Request().Context(), req.ID, ownerID); err != nil {
+	if err := h.fsService.BulkDeleteNodes(c.Request().Context(), ownerID, req.IDs); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
 }
 
-type MoveNodeRequest struct {
-	ID           string  `param:"id" validate:"required"`
-	DestParentID *string `json:"dest_parent_id"`
-}
-
-func (h *FileSystemHandler) MoveNode(c echo.Context) error {
+func (h *FileSystemHandler) BulkMove(c echo.Context) error {
 	ownerID := c.Get("user_id").(string)
-	var req MoveNodeRequest
+	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	if err := h.fsService.MoveNode(c.Request().Context(), req.ID, ownerID, req.DestParentID); err != nil {
+	if req.DestParentID != nil && *req.DestParentID == "" {
+		req.DestParentID = nil
+	}
+
+	if err := h.fsService.BulkMoveNodes(c.Request().Context(), ownerID, req.IDs, req.DestParentID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusOK)
 }
 
-type CopyNodeRequest struct {
-	ID           string `param:"id" validate:"required"`
-	DestParentID string `json:"dest_parent_id" validate:"required"`
-}
-
-func (h *FileSystemHandler) CopyNode(c echo.Context) error {
+func (h *FileSystemHandler) BulkCopy(c echo.Context) error {
 	ownerID := c.Get("user_id").(string)
-	var req CopyNodeRequest
+	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	newNode, err := h.fsService.CopyNode(c.Request().Context(), req.ID, ownerID, req.DestParentID)
-	if err != nil {
+	if req.DestParentID != nil && *req.DestParentID == "" {
+		req.DestParentID = nil
+	}
+
+	if req.DestParentID == nil {
+		return apperror.BadRequest("dest_parent_id is required for copy")
+	}
+
+	if err := h.fsService.BulkCopyNodes(c.Request().Context(), ownerID, req.IDs, *req.DestParentID); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, newNode)
+	return c.NoContent(http.StatusCreated)
 }
 
 type UploadMemeRequest struct {
-	ParentID string                `form:"parent_id" validate:"required"`
+	ParentID *string               `form:"parent_id"`
 	File     *multipart.FileHeader `form:"file" validate:"required"`
 }
 
@@ -164,6 +146,10 @@ func (h *FileSystemHandler) UploadMeme(c echo.Context) error {
 	var req UploadMemeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
+	}
+
+	if req.ParentID != nil && *req.ParentID == "" {
+		req.ParentID = nil
 	}
 
 	ownerID := c.Get("user_id").(string)

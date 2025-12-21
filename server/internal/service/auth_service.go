@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -56,33 +54,7 @@ func (s *AuthService) Register(ctx context.Context, username, email, password st
 		return "", nil, err
 	}
 
-	var user *model.User
-	err = s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
-		// Create user
-		var txErr error
-		user, txErr = txRepo.User.CreateUser(ctx, username, email, string(hashedPassword))
-		if txErr != nil {
-			return txErr
-		}
-
-		// Create root folder for user
-		// Path for root is just its own ID (with hyphens removed for ltree)
-		ltreeID := strings.ReplaceAll(user.ID, "-", "")
-		rootNode := &model.Node{
-			OwnerID:    user.ID,
-			ParentID:   nil,
-			Path:       ltreeID,
-			Name:       "Root",
-			Type:       model.NodeTypeFolder,
-			Visibility: model.VisibilityPriv,
-		}
-		txErr = txRepo.Node.CreateNode(ctx, rootNode)
-		if txErr != nil {
-			return fmt.Errorf("failed to create root folder: %w", txErr)
-		}
-
-		return nil
-	})
+	user, err := s.repo.User.CreateUser(ctx, username, email, string(hashedPassword))
 
 	if err != nil {
 		return "", nil, err
@@ -102,7 +74,7 @@ func (s *AuthService) GetUser(ctx context.Context, id string) (*model.User, erro
 		return nil, err
 	}
 	if user == nil {
-		return nil, apperror.NotFound("user not found")
+		return nil, apperror.Unauthorized("user not found")
 	}
 	return user, nil
 }
@@ -146,7 +118,7 @@ func (s *AuthService) GenerateToken(userID string) (string, error) {
 func (s *AuthService) ParseToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, apperror.Unauthorized("unexpected signing method")
 		}
 		return []byte(s.cfg.Server.JWTSecret), nil
 	})

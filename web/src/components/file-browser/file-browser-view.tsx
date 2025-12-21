@@ -18,10 +18,10 @@ export function FileBrowserView() {
     uploadingFiles,
     selectedItems,
     clearSelection,
-    userMemes,
+    items,
     deleteItems,
     createFolder,
-    simulateUpload,
+    upload,
   } = useFileBrowser()
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -43,11 +43,11 @@ export function FileBrowserView() {
 
   const handleBulkDownload = () => {
     Array.from(selectedItems).forEach((id) => {
-      const meme = userMemes.find((m) => m.id === id)
-      if (meme) {
+      const item = items.find((m) => m.id === id)
+      if (item && item.type === "meme" && item.url) {
         const link = document.createElement("a")
-        link.href = meme.url
-        link.download = `${meme.title}.png`
+        link.href = item.url
+        link.download = `${item.name}.png`
         link.click()
       }
     })
@@ -71,12 +71,10 @@ export function FileBrowserView() {
         accept="image/*,image/gif"
         onChange={(e) => {
           if (e.target.files) {
-            simulateUpload(Array.from(e.target.files))
+            upload(Array.from(e.target.files), currentFolder?.id)
           }
         }}
       />
-
-      <UploadProgress uploadingFiles={uploadingFiles} />
 
       <div className="flex-1 flex flex-col min-h-0">
         <FileGrid
@@ -91,6 +89,8 @@ export function FileBrowserView() {
         onBulkDownload={handleBulkDownload}
         onBulkDelete={handleBulkDelete}
       />
+
+      <UploadProgress uploadingFiles={uploadingFiles} />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

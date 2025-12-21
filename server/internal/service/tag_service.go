@@ -23,18 +23,18 @@ func (s *TagService) CreateTag(ctx context.Context, name string, scope model.Tag
 	return s.repo.Tag.CreateTag(ctx, name, scope)
 }
 
-func (s *TagService) UpdateTag(ctx context.Context, id int, name string) (*model.Tag, error) {
+func (s *TagService) UpdateTag(ctx context.Context, id string, name string) (*model.Tag, error) {
 	return s.repo.Tag.UpdateTag(ctx, id, name)
 }
 
-func (s *TagService) DeleteTag(ctx context.Context, id int) error {
+func (s *TagService) DeleteTag(ctx context.Context, id string) error {
 	return s.repo.Tag.DeleteTag(ctx, id)
 }
 
-func (s *TagService) AddTagToNode(ctx context.Context, nodeID string, tagID int) error {
+func (s *TagService) AddTagToNode(ctx context.Context, nodeID string, tagID string) error {
 	return s.repo.Tag.AddTagToNode(ctx, nodeID, tagID)
 }
 
-func (s *TagService) RemoveTagFromNode(ctx context.Context, nodeID string, tagID int) error {
+func (s *TagService) RemoveTagFromNode(ctx context.Context, nodeID string, tagID string) error {
 	return s.repo.Tag.RemoveTagFromNode(ctx, nodeID, tagID)
 }

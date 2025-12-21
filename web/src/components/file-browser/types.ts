@@ -1,6 +1,6 @@
-import type { Folder, Meme } from "@/lib/mock-data"
+import type { Node } from "@/lib/api"
 
-export type BrowseItem = (Folder & { type: "folder" }) | (Meme & { type: "meme" })
+export type BrowseItem = Omit<Node, 'type'> & { type: "folder" | "meme" }
 export type SortOption = "name" | "date" | "type"
 
 export interface UploadingFile {

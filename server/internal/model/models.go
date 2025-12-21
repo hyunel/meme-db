@@ -20,15 +20,15 @@ type Asset struct {
 }
 
 type MemeInfo struct {
-	AssetID        string          `json:"asset_id" db:"asset_id"`
-	VLMJSON        json.RawMessage `json:"vlm_json" db:"vlm_json"`
-	OCRText        *string         `json:"ocr_text" db:"ocr_text"`
-	MetaphorVector pgvector.Vector `json:"-" db:"metaphor_vector"`
-	SemanticVector pgvector.Vector `json:"-" db:"semantic_vector"`
-	ClipVector     pgvector.Vector `json:"-" db:"clip_vector"`
-	Width          int             `json:"width" db:"width"`
-	Height         int             `json:"height" db:"height"`
-	AnalyzedAt     time.Time       `json:"analyzed_at" db:"analyzed_at"`
+	AssetID        string           `json:"asset_id" db:"asset_id"`
+	VLMJSON        json.RawMessage  `json:"vlm_json" db:"vlm_json"`
+	OCRText        *string          `json:"ocr_text" db:"ocr_text"`
+	MetaphorVector *pgvector.Vector `json:"-" db:"metaphor_vector"`
+	SemanticVector *pgvector.Vector `json:"-" db:"semantic_vector"`
+	ClipVector     *pgvector.Vector `json:"-" db:"clip_vector"`
+	Width          int              `json:"width" db:"width"`
+	Height         int              `json:"height" db:"height"`
+	AnalyzedAt     *time.Time       `json:"analyzed_at" db:"analyzed_at"`
 }
 
 type User struct {
@@ -60,6 +60,7 @@ type Node struct {
 	Type        NodeType   `json:"type" db:"type"`
 	Visibility  Visibility `json:"visibility" db:"visibility"`
 	AssetID     *string    `json:"asset_id" db:"asset_id"`
+	URL         string     `json:"url"`
 	IsFavorite  bool       `json:"is_favorite" db:"is_favorite"`
 	PrivateNote *string    `json:"private_note" db:"private_note"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
@@ -74,7 +75,7 @@ const (
 )
 
 type Tag struct {
-	ID        int       `json:"id" db:"id"`
+	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
 	Type      TagScope  `json:"type" db:"type"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`

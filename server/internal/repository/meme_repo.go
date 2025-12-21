@@ -20,8 +20,8 @@ func NewMemeRepository(db db.DBTX) *MemeRepository {
 
 func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) error {
 	query := `
-		INSERT INTO meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height, analyzed_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (asset_id) DO UPDATE SET
 			vlm_json = EXCLUDED.vlm_json,
 			ocr_text = EXCLUDED.ocr_text,
@@ -30,12 +30,13 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 			clip_vector = EXCLUDED.clip_vector,
 			width = EXCLUDED.width,
 			height = EXCLUDED.height,
-			analyzed_at = NOW()
+			analyzed_at = EXCLUDED.analyzed_at
 	`
 	_, err := r.db.Exec(ctx, query,
 		meme.AssetID, meme.VLMJSON, meme.OCRText,
 		meme.MetaphorVector, meme.SemanticVector, meme.ClipVector,
 		meme.Width, meme.Height,
+		meme.AnalyzedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create/update meme info: %w", err)
@@ -63,11 +64,11 @@ func (r *MemeRepository) SearchByVector(ctx context.Context, vectorColumn string
 	args = append(args, queryVector) // $1
 
 	if scope == "my" {
-		whereClause += " AND n.owner_id = $2"
+		whereClause += " AND n.owner_id = $2::uuid"
 		args = append(args, ownerID) // $2
 	} else {
 		// global: only public files or my files
-		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2)"
+		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2::uuid)"
 		args = append(args, ownerID) // $2
 	}
 
@@ -114,10 +115,10 @@ func (r *MemeRepository) SearchByOCR(ctx context.Context, textQuery string, limi
 	args = append(args, textQuery) // $1
 
 	if scope == "my" {
-		whereClause += " AND n.owner_id = $2"
+		whereClause += " AND n.owner_id = $2::uuid"
 		args = append(args, ownerID) // $2
 	} else {
-		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2)"
+		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2::uuid)"
 		args = append(args, ownerID) // $2
 	}
 
@@ -162,7 +163,7 @@ func (r *MemeRepository) GetMeme(ctx context.Context, assetID string) (*model.Me
 	query := `
 		SELECT asset_id, vlm_json, ocr_text, width, height, analyzed_at
 		FROM meme_info
-		WHERE asset_id = $1
+		WHERE asset_id = $1::uuid
 	`
 	var meme model.MemeInfo
 	err := r.db.QueryRow(ctx, query, assetID).Scan(
@@ -195,10 +196,9 @@ func (r *MemeRepository) CountMemesMissingEmbeddings(ctx context.Context) (int64
 
 func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
 	query := `
-		SELECT asset_id, vlm_json, ocr_text, analyzed_at
+		SELECT asset_id, vlm_json, analyzed_at
 		FROM meme_info
-		WHERE asset_id >= $1
-		  AND (metaphor_vector IS NULL OR semantic_vector IS NULL OR clip_vector IS NULL)
+		WHERE asset_id >= $1::uuid AND analyzed_at IS NULL
 		ORDER BY asset_id ASC
 		LIMIT $2
 		FOR UPDATE SKIP LOCKED
@@ -212,9 +212,7 @@ func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID s
 	var memes []*model.MemeInfo
 	for rows.Next() {
 		var m model.MemeInfo
-		err := rows.Scan(
-			&m.AssetID, &m.VLMJSON, &m.OCRText, &m.AnalyzedAt,
-		)
+		err := rows.Scan(&m.AssetID, &m.VLMJSON, &m.AnalyzedAt)
 		if err != nil {
 			return nil, err
 		}

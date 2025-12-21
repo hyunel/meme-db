@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
-  const { user, isLoading } = useUser()
+  const { authState } = useUser()
 
   const redirectPath = searchParams.get("redirect") || "/search"
 
@@ -37,14 +37,13 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
   }, [router, redirectPath])
 
   useEffect(() => {
-    if (!isLoading && user) {
+    if (authState === "authenticated") {
       router.replace(redirectPath)
     }
-  }, [user, isLoading, router, redirectPath])
+  }, [authState, router, redirectPath])
 
   // If we have a token or are loading, don't show the auth forms to prevent flash
-  const token = typeof window !== "undefined" ? getAuthToken() : null
-  if (token || (isLoading && !user)) {
+  if (authState === "loading" || authState === "authenticated") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />

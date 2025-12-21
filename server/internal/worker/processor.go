@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
@@ -139,15 +140,17 @@ func (h *ProcessMemesHandler) processBatch(ctx context.Context, r *repository.Re
 		return fmt.Errorf("mismatch in results count: expected %d, got %d", len(batchData), len(results))
 	}
 
+	now := time.Now()
 	for i, pm := range batchData {
 		res := results[i]
-		pm.Meme.MetaphorVector = pgvector.NewVector(res.MetaphorVector)
-		pm.Meme.SemanticVector = pgvector.NewVector(res.SemanticVector)
-		pm.Meme.ClipVector = pgvector.NewVector(res.ClipVector)
+		pm.Meme.MetaphorVector = ptr(pgvector.NewVector(res.MetaphorVector))
+		pm.Meme.SemanticVector = ptr(pgvector.NewVector(res.SemanticVector))
+		pm.Meme.ClipVector = ptr(pgvector.NewVector(res.ClipVector))
 		pm.Meme.VLMJSON = json.RawMessage(res.VlmJson)
 		pm.Meme.OCRText = &res.OcrText
 		pm.Meme.Width = res.Width
 		pm.Meme.Height = res.Height
+		pm.Meme.AnalyzedAt = &now
 
 		if err := r.Meme.CreateMeme(ctx, pm.Meme); err != nil {
 			slog.Error("Failed to save meme result", "asset_id", pm.Meme.AssetID, "error", err)
@@ -157,6 +160,10 @@ func (h *ProcessMemesHandler) processBatch(ctx context.Context, r *repository.Re
 	}
 
 	return nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
 func (h *ProcessMemesHandler) prepareItem(ctx context.Context, r *repository.Repositories, meme *model.MemeInfo) (*processedItem, error) {

@@ -52,7 +52,7 @@ func (h *TagHandler) CreateTag(c echo.Context) error {
 }
 
 type UpdateTagRequest struct {
-	ID   int    `param:"id" validate:"required"`
+	ID   string `param:"id" validate:"required"`
 	Name string `json:"name" validate:"required"`
 }
 
@@ -70,7 +70,7 @@ func (h *TagHandler) UpdateTag(c echo.Context) error {
 }
 
 type DeleteTagRequest struct {
-	ID int `param:"id" validate:"required"`
+	ID string `param:"id" validate:"required"`
 }
 
 func (h *TagHandler) DeleteTag(c echo.Context) error {
@@ -87,7 +87,7 @@ func (h *TagHandler) DeleteTag(c echo.Context) error {
 
 type AddTagToNodeRequest struct {
 	NodeID string `param:"nodeId" validate:"required"`
-	TagID  int    `json:"tag_id" validate:"required"`
+	TagID  string `json:"tag_id" validate:"required"`
 }
 
 func (h *TagHandler) AddTagToNode(c echo.Context) error {
@@ -104,7 +104,7 @@ func (h *TagHandler) AddTagToNode(c echo.Context) error {
 
 type RemoveTagFromNodeRequest struct {
 	NodeID string `param:"nodeId" validate:"required"`
-	TagID  int    `param:"tagId" validate:"required"`
+	TagID  string `param:"tagId" validate:"required"`
 }
 
 func (h *TagHandler) RemoveTagFromNode(c echo.Context) error {

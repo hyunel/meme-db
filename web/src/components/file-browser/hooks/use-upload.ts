@@ -1,55 +1,48 @@
 import { useState, useCallback } from "react"
+import { uploadMeme, type Node } from "@/lib/api"
 import type { UploadingFile } from "../types"
-import type { Meme } from "@/lib/mock-data"
 import type { User } from "@/lib/auth"
 
-export function useUpload(user: User | null, onUploadComplete: (meme: Meme) => void) {
+export function useUpload(user: User | null, onUploadComplete: () => void) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
 
-  const simulateUpload = useCallback(
-    (files: File[], targetFolderId?: string) => {
-      const uploads = files.map((file) => {
-        const preview = URL.createObjectURL(file)
-        return { name: file.name, progress: 0, preview }
-      })
-      setUploadingFiles((prev) => [...prev, ...uploads])
+  const performUpload = useCallback(
+    async (files: File[], targetFolderId?: string) => {
+      const newUploads = files.map((file) => ({
+        name: file.name,
+        progress: 0,
+        preview: URL.createObjectURL(file),
+      }))
 
-      uploads.forEach((upload, index) => {
-        let progress = 0
-        const interval = setInterval(() => {
-          progress += Math.random() * 15
-          if (progress >= 100) {
-            progress = 100
-            clearInterval(interval)
+      setUploadingFiles((prev) => [...prev, ...newUploads])
 
-            setTimeout(() => {
-              const newMeme: Meme = {
-                id: `uploaded-${Date.now()}-${index}`,
-                title: upload.name,
-                url: upload.preview || "/placeholder.svg",
-                tags: ["uploaded", "new"],
-                description: `Uploaded: ${upload.name}`,
-                userId: user?.id || "user1",
-                username: user?.username || "User",
-                folderId: targetFolderId,
-                isPublic: false,
-                createdAt: new Date().toString(),
-                processingStatus: "complete",
-              }
-              onUploadComplete(newMeme)
-              setUploadingFiles((prev) => prev.filter((u) => u.name !== upload.name))
-            }, 500)
-          }
+      // In a real scenario, we'd use XHR to track progress.
+      // For now, since request() uses fetch, we'll simulate progress but perform real upload.
+      for (const file of files) {
+        try {
+          // Real upload
+          await uploadMeme(file, targetFolderId || "")
 
-          setUploadingFiles((prev) => prev.map((u) => (u.name === upload.name ? { ...u, progress } : u)))
-        }, 200)
-      })
+          // Complete
+          setUploadingFiles((prev) =>
+            prev.map((u) => (u.name === file.name ? { ...u, progress: 100 } : u)),
+          )
+
+          setTimeout(() => {
+            setUploadingFiles((prev) => prev.filter((u) => u.name !== file.name))
+            onUploadComplete()
+          }, 500)
+        } catch (error) {
+          console.error(`Failed to upload ${file.name}:`, error)
+          setUploadingFiles((prev) => prev.filter((u) => u.name !== file.name))
+        }
+      }
     },
-    [user, onUploadComplete],
+    [onUploadComplete],
   )
 
   return {
     uploadingFiles,
-    simulateUpload,
+    upload: performUpload,
   }
 }

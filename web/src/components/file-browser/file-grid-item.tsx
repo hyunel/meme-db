@@ -4,14 +4,15 @@ import type React from "react"
 import { useRef, useCallback } from "react"
 import { FolderOpen, ImageIcon, CheckSquare } from "lucide-react"
 import { useRouter } from "next/navigation"
-import type { Folder, Meme } from "@/lib/mock-data"
+import type { Node } from "@/lib/api"
 import type { BrowseItem } from "./types"
 import { useFileBrowser } from "./file-browser-context"
+import useSWR from "swr"
+import { fetchNodes } from "@/lib/api"
 
 interface FileGridItemProps {
   item: BrowseItem
   isSelected: boolean
-  folderPreviewMemes: Meme[]
   isActiveContext: boolean
   onContextMenu: (item: BrowseItem) => void
 }
@@ -19,7 +20,6 @@ interface FileGridItemProps {
 export function FileGridItem({
   item,
   isSelected,
-  folderPreviewMemes,
   isActiveContext,
   onContextMenu,
 }: FileGridItemProps) {
@@ -36,11 +36,17 @@ export function FileGridItem({
     navigateToFolder,
   } = useFileBrowser()
 
+  const isFolderType = item.type === "folder"
+
+  // For folder previews, we need to fetch the folder's children
+  const { data: folderData } = useSWR(
+    isFolderType ? [`/api/fs/nodes`, item.id] : null,
+    () => fetchNodes(item.id)
+  )
+  const folderPreviewNodes = folderData?.children?.filter(n => n.type === 'FILE').slice(0, 4) || []
+
   const longPressTimer = useRef<NodeJS.Timeout | null>(null)
   const longPressTriggered = useRef(false)
-  const isFolderType = item.type === "folder"
-  const folder = isFolderType ? (item as Folder) : null
-  const meme = !isFolderType ? (item as Meme) : null
 
   const startLongPress = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
@@ -52,7 +58,7 @@ export function FileGridItem({
         }
       }, 500)
     },
-    [item, selectedItems, toggleSelection],
+    [item.id, selectedItems, toggleSelection],
   )
 
   const cancelLongPress = useCallback(() => {
@@ -72,7 +78,7 @@ export function FileGridItem({
       e.preventDefault()
       toggleSelection(item.id)
     } else if (isFolderType) {
-      navigateToFolder(folder!)
+      navigateToFolder(item as unknown as Node)
     } else {
       router.push(`/meme/${item.id}`)
     }
@@ -112,14 +118,14 @@ export function FileGridItem({
     >
       {isFolderType ? (
         <div className="aspect-square relative">
-          {folderPreviewMemes.length > 0 ? (
+          {folderPreviewNodes.length > 0 ? (
             <div className="grid grid-cols-2 gap-0.5 h-full w-full bg-muted">
-              {folderPreviewMemes.map((previewMeme, idx) => (
+              {folderPreviewNodes.map((previewNode, idx) => (
                 <div key={idx} className="relative overflow-hidden">
-                  <img src={previewMeme.url || "/placeholder.svg"} alt="" className="w-full h-full object-cover" />
+                  <img src={previewNode.url || "/placeholder.svg"} alt="" className="w-full h-full object-cover" />
                 </div>
               ))}
-              {Array.from({ length: 4 - folderPreviewMemes.length }).map((_, idx) => (
+              {Array.from({ length: 4 - folderPreviewNodes.length }).map((_, idx) => (
                 <div key={`empty-${idx}`} className="bg-muted flex items-center justify-center">
                   <ImageIcon className="w-6 h-6 text-muted-foreground/30" />
                 </div>
@@ -131,16 +137,16 @@ export function FileGridItem({
             </div>
           )}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-2">
-            <h3 className="font-medium text-sm truncate text-white">{folder!.name}</h3>
-            <p className="text-xs text-white/70">{folder!.memeCount} items</p>
+            <h3 className="font-medium text-sm truncate text-white">{item.name}</h3>
+            <p className="text-xs text-white/70">{item.meme_count || 0} items</p>
           </div>
         </div>
       ) : (
         <div className="aspect-square relative">
-          <img src={meme!.url || "/placeholder.svg"} alt={meme!.title} className="w-full h-full object-cover" />
+          <img src={item.url || "/placeholder.svg"} alt={item.name} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-            <div className="flex flex-wrap gap-1">
-              {meme!.tags.slice(0, 2).map((tag) => (
+             <div className="flex flex-wrap gap-1">
+              {item.tags?.slice(0, 2).map((tag) => (
                 <span key={tag} className="text-xs px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded-full text-white">
                   {tag}
                 </span>

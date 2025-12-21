@@ -105,7 +105,7 @@ func (r *taskRepo) UpdateTaskStatus(ctx context.Context, id string, status strin
 		    error_message = $2,
 		    finished_at = CASE WHEN $1::VARCHAR(20) IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE finished_at END,
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $3
+		WHERE id = $3::uuid
 	`
 	_, err := r.db.Exec(ctx, query, status, errorMessage, id)
 	return err
@@ -120,7 +120,7 @@ func (r *taskRepo) CreateHistoryFromTask(ctx context.Context, taskID string, his
 		INSERT INTO tasks (parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, context, error_message)
 		SELECT id, job_type, payload, $1, priority, cron, run_at, started_at, $2, context, $3
 		FROM tasks
-		WHERE id = $4
+		WHERE id = $4::uuid
 	`
 	_, err := r.db.Exec(ctx, insertQuery,
 		historyStatus, // $1
@@ -138,7 +138,7 @@ func (r *taskRepo) ResetTask(ctx context.Context, taskID string, runAt time.Time
 	query := `
 		UPDATE tasks
 		SET status = $1, run_at = $2, context = $3, finished_at = NULL, started_at = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $4
+		WHERE id = $4::uuid
 	`
 	_, err := r.db.Exec(ctx, query, model.TaskStatusPending, runAt, taskContext, taskID)
 	if err != nil {

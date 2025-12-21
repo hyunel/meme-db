@@ -33,7 +33,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, username, email, passwo
 }
 
 func (r *UserRepository) GetUser(ctx context.Context, id string) (*model.User, error) {
-	query := `SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE id = $1::uuid`
 	var user model.User
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt,

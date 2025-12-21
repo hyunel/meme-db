@@ -100,15 +100,26 @@ def generate_tgs_frames(f: BinaryIO) -> List[Image.Image]:
 
     return key_frames
 
+def rgba_to_rgb(image: Image.Image, background_color=(255, 255, 255)) -> Image.Image:
+    if image.mode == 'RGBA':
+        background = Image.new('RGB', image.size, background_color)
+        background.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+        return background
+    else:
+        return image.convert('RGB')
+
 def load_image_from_bytes(bytes_data: bytes, file_format: str) -> List[Image.Image]:
     """
     Load frames from any supported image/video format.
     """
     file_format = file_format.lstrip('.').lower()
+    frames = []
     with BytesIO(bytes_data) as f:
         if file_format == 'tgs':
-            return generate_tgs_frames(f)
+            frames = generate_tgs_frames(f)
         elif file_format == 'webm':
-            return generate_webm_frames(f)
+            frames = generate_webm_frames(f)
         else:
-            return [Image.open(f).copy()]
+            frames = [Image.open(f).copy()]
+
+    return [rgba_to_rgb(img) for img in frames]

@@ -6,27 +6,28 @@ import { useBrowserData } from "./hooks/use-browser-data"
 import { useSelection } from "./hooks/use-selection"
 import { useDragDrop } from "./hooks/use-drag-drop"
 import { useUpload } from "./hooks/use-upload"
-import type { BrowseItem, SortOption, UploadingFile, ContextMenuState } from "./types"
-import type { Folder, Meme } from "@/lib/mock-data"
+import type { BrowseItem, SortOption, UploadingFile } from "./types"
+import type { Node } from "@/lib/api"
 
 interface FileBrowserContextType {
   // Data
-  folderPath: Folder[]
-  currentFolder: Folder | null
+  folderPath: Node[]
+  currentFolder: Node | null
   sortBy: SortOption
   setSortBy: (sort: SortOption) => void
-  userFolders: Folder[]
-  userMemes: Meme[]
   items: BrowseItem[]
+  isLoading: boolean
+  error: any
 
   // Navigation
-  navigateToFolder: (folder: Folder) => void
+  navigateToFolder: (folder: Node) => void
   navigateToBreadcrumb: (index: number) => void
 
   // Actions
   createFolder: (name: string) => void
   deleteItems: (ids: string[]) => void
   moveItems: (ids: string[], targetFolderId?: string) => void
+  refresh: () => void
 
   // Selection
   selectedItems: Set<string>
@@ -48,7 +49,7 @@ interface FileBrowserContextType {
 
   // Upload
   uploadingFiles: UploadingFile[]
-  simulateUpload: (files: File[], targetFolderId?: string) => void
+  upload: (files: File[], targetFolderId?: string) => void
 }
 
 const FileBrowserContext = createContext<FileBrowserContextType | undefined>(undefined)
@@ -58,12 +59,12 @@ export function FileBrowserProvider({ children }: { children: React.ReactNode })
 
   const browserData = useBrowserData(user)
   const selection = useSelection()
-  const upload = useUpload(user, browserData.addMeme)
+  const upload = useUpload(user, browserData.refresh)
   const dragDrop = useDragDrop(
     selection.selectedItems,
     browserData.moveItems,
-    upload.simulateUpload,
-    browserData.sortedAndFilteredItems,
+    upload.upload,
+    browserData.items,
     selection.clearSelection,
     browserData.currentFolder?.id,
   )
@@ -71,7 +72,6 @@ export function FileBrowserProvider({ children }: { children: React.ReactNode })
   const value = useMemo(
     () => ({
       ...browserData,
-      items: browserData.sortedAndFilteredItems,
       ...selection,
       ...dragDrop,
       ...upload,

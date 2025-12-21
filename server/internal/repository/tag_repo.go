@@ -30,8 +30,8 @@ func (r *TagRepository) CreateTag(ctx context.Context, name string, scope model.
 	return &tag, nil
 }
 
-func (r *TagRepository) GetTag(ctx context.Context, id int) (*model.Tag, error) {
-	query := `SELECT id, name, type, created_at FROM tags WHERE id = $1`
+func (r *TagRepository) GetTag(ctx context.Context, id string) (*model.Tag, error) {
+	query := `SELECT id, name, type, created_at FROM tags WHERE id = $1::uuid`
 	var tag model.Tag
 	err := r.db.QueryRow(ctx, query, id).Scan(&tag.ID, &tag.Name, &tag.Type, &tag.CreatedAt)
 	if err != nil {
@@ -69,9 +69,9 @@ func (r *TagRepository) ListTags(ctx context.Context, scope *model.TagScope) ([]
 	return tags, nil
 }
 
-func (r *TagRepository) UpdateTag(ctx context.Context, id int, name string) (*model.Tag, error) {
+func (r *TagRepository) UpdateTag(ctx context.Context, id string, name string) (*model.Tag, error) {
 	query := `
-		UPDATE tags SET name = $1 WHERE id = $2
+		UPDATE tags SET name = $1 WHERE id = $2::uuid
 		RETURNING id, name, type, created_at
 	`
 	var tag model.Tag
@@ -82,20 +82,20 @@ func (r *TagRepository) UpdateTag(ctx context.Context, id int, name string) (*mo
 	return &tag, nil
 }
 
-func (r *TagRepository) DeleteTag(ctx context.Context, id int) error {
-	query := `DELETE FROM tags WHERE id = $1`
+func (r *TagRepository) DeleteTag(ctx context.Context, id string) error {
+	query := `DELETE FROM tags WHERE id = $1::uuid`
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
-func (r *TagRepository) AddTagToNode(ctx context.Context, nodeID string, tagID int) error {
-	query := `INSERT INTO node_tags (node_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`
+func (r *TagRepository) AddTagToNode(ctx context.Context, nodeID string, tagID string) error {
+	query := `INSERT INTO node_tags (node_id, tag_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`
 	_, err := r.db.Exec(ctx, query, nodeID, tagID)
 	return err
 }
 
-func (r *TagRepository) RemoveTagFromNode(ctx context.Context, nodeID string, tagID int) error {
-	query := `DELETE FROM node_tags WHERE node_id = $1 AND tag_id = $2`
+func (r *TagRepository) RemoveTagFromNode(ctx context.Context, nodeID string, tagID string) error {
+	query := `DELETE FROM node_tags WHERE node_id = $1::uuid AND tag_id = $2::uuid`
 	_, err := r.db.Exec(ctx, query, nodeID, tagID)
 	return err
 }
@@ -105,7 +105,7 @@ func (r *TagRepository) GetNodeTags(ctx context.Context, nodeID string) ([]*mode
 		SELECT t.id, t.name, t.type, t.created_at
 		FROM tags t
 		JOIN node_tags nt ON t.id = nt.tag_id
-		WHERE nt.node_id = $1
+		WHERE nt.node_id = $1::uuid
 	`
 	rows, err := r.db.Query(ctx, query, nodeID)
 	if err != nil {

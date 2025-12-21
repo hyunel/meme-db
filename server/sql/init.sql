@@ -46,8 +46,11 @@ CREATE TABLE IF NOT EXISTS meme_info (
     width INT,
     height INT,
 
-    analyzed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    analyzed_at TIMESTAMPTZ
 );
+
+-- Partial index for pending analysis
+CREATE INDEX IF NOT EXISTS idx_meme_pending_analysis ON meme_info (asset_id) WHERE analyzed_at IS NULL;
 
 -- Vector Indexes (HNSW)
 CREATE INDEX IF NOT EXISTS idx_meme_sem ON meme_info USING hnsw (semantic_vector vector_cosine_ops);
@@ -97,11 +100,15 @@ CREATE TABLE IF NOT EXISTS nodes (
     private_note TEXT,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-
-    -- Constraint: Unique names within a folder for a user
-    UNIQUE(parent_id, name, owner_id)
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Constraint: Unique names within a folder for a user
+-- Note: Empty names are allowed to be non-unique (to support unnamed uploads)
+-- UNIQUE NULLS NOT DISTINCT ensures that multiple roots (parent_id is NULL) also respect the unique constraint on name.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_unique_name_per_folder
+ON nodes (owner_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'), name)
+WHERE name <> '';
 
 -- Fast Recursive Queries (Get all descendants)
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes USING GIST (path);
@@ -116,7 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
 CREATE TYPE tag_scope AS ENUM ('SYSTEM', 'USER');
 
 CREATE TABLE IF NOT EXISTS tags (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     name VARCHAR(100) NOT NULL,
     type tag_scope NOT NULL DEFAULT 'USER',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -128,7 +135,7 @@ CREATE TABLE IF NOT EXISTS tags (
 -- Not modifiable by users.
 CREATE TABLE IF NOT EXISTS asset_tags (
     asset_id UUID REFERENCES assets(id) ON DELETE CASCADE,
-    tag_id INT REFERENCES tags(id) ON DELETE CASCADE,
+    tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
 
     PRIMARY KEY (asset_id, tag_id)
 );
@@ -137,7 +144,7 @@ CREATE TABLE IF NOT EXISTS asset_tags (
 -- Fully managed by user.
 CREATE TABLE IF NOT EXISTS node_tags (
     node_id UUID REFERENCES nodes(id) ON DELETE CASCADE,
-    tag_id INT REFERENCES tags(id) ON DELETE CASCADE,
+    tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 

@@ -51,7 +51,8 @@ func main() {
 	authService := service.NewAuthService(cfg, repo)
 	memeService := service.NewMemeService(cfg, repo, inferClient)
 	tagService := service.NewTagService(repo)
-	fsService := service.NewFileSystemService(repo, memeService)
+	assetService := service.NewAssetService(cfg)
+	fsService := service.NewFileSystemService(repo, memeService, assetService)
 
 	// 6. Setup Task Worker
 	taskWorker, err := worker.NewWorker(cfg, repo)
@@ -70,6 +71,7 @@ func main() {
 	memeHandler := handler.NewMemeHandler(memeService)
 	tagHandler := handler.NewTagHandler(tagService)
 	fsHandler := handler.NewFileSystemHandler(fsService)
+	assetHandler := handler.NewAssetHandler(cfg, fsService)
 
 	// 8. Setup Echo
 	e := echo.New()
@@ -102,6 +104,9 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	// Asset access (Token based, can be accessed without AuthMiddleware if token is valid)
+	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
+
 	// Protected Routes
 	api := e.Group("/api")
 	api.Use(authHandler.AuthMiddleware)
@@ -110,11 +115,12 @@ func main() {
 
 	// FileSystem
 	api.POST("/fs/nodes", fsHandler.CreateNode)
+	api.GET("/fs/nodes", fsHandler.GetNode) // List root
 	api.GET("/fs/nodes/:id", fsHandler.GetNode)
 	api.PATCH("/fs/nodes/:id", fsHandler.UpdateNode)
-	api.DELETE("/fs/nodes/:id", fsHandler.DeleteNode)
-	api.POST("/fs/nodes/:id/move", fsHandler.MoveNode)
-	api.POST("/fs/nodes/:id/copy", fsHandler.CopyNode)
+	api.DELETE("/fs/nodes", fsHandler.BulkDelete)
+	api.POST("/fs/nodes/move", fsHandler.BulkMove)
+	api.POST("/fs/nodes/copy", fsHandler.BulkCopy)
 	api.POST("/fs/upload", fsHandler.UploadMeme)
 
 	// Tags

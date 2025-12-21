@@ -5,7 +5,9 @@ import { useRef, useState } from "react"
 import { FolderIcon, FolderPlus, Upload, Download, Heart, Move, Trash2 } from "lucide-react"
 import { FileGridItem } from "./file-grid-item"
 import { useFileBrowser } from "./file-browser-context"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useBoxSelection } from "./hooks/use-box-selection"
+import { DestinationDialog } from "./destination-dialog"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -23,11 +25,13 @@ interface FileGridProps {
 export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
   const {
     items,
-    userMemes,
+    isLoading,
     currentFolder,
     selectedItems,
     setSelectedItems,
     deleteItems,
+    moveItems,
+    clearSelection,
     isDragging,
     dragTargetFolder,
     dragTargetBreadcrumb,
@@ -38,6 +42,7 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
 
   const [activeItem, setActiveItem] = useState<BrowseItem | null>(null)
   const [menuItems, setMenuItems] = useState<BrowseItem[]>([])
+  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { isBoxSelecting, selectionBox, handleMouseDown, handleMouseMove } = useBoxSelection(
     containerRef,
@@ -46,11 +51,10 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
 
   const handleDownload = (itemsToDownload: BrowseItem[]) => {
     itemsToDownload.forEach((item) => {
-      const meme = userMemes.find((m) => m.id === item.id)
-      if (meme) {
+      if (item.type === "meme" && item.url) {
         const link = document.createElement("a")
-        link.href = meme.url
-        link.download = `${meme.title}.png`
+        link.href = item.url
+        link.download = `${item.name}.png`
         link.click()
       }
     })
@@ -66,8 +70,6 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
 
       if (clickedItem) {
         setActiveItem(clickedItem)
-        // If the clicked item is already part of the selection, apply to the whole selection
-        // Otherwise, apply only to the clicked item
         if (selectedItems.has(clickedItem.id)) {
           const selectedObjects = items.filter((i) => selectedItems.has(i.id))
           setMenuItems(selectedObjects)
@@ -110,7 +112,16 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
             />
           )}
 
-          {items.length === 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <Skeleton className="aspect-square w-full rounded-lg" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center flex-1 min-h-[400px] text-muted-foreground">
               <FolderIcon className="w-16 h-16 mb-4 opacity-20" />
               <p className="text-lg font-medium">No items yet</p>
@@ -120,15 +131,11 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
               {items.map((item) => {
                 const isSelected = selectedItems.has(item.id)
-                const isFolderType = item.type === "folder"
-                const folderPreviewMemes = isFolderType ? userMemes.filter((m) => m.folderId === item.id).slice(0, 4) : []
-
                 return (
                   <FileGridItem
                     key={item.id}
                     item={item}
                     isSelected={isSelected}
-                    folderPreviewMemes={folderPreviewMemes}
                     isActiveContext={activeItem?.id === item.id}
                     onContextMenu={setActiveItem}
                   />
@@ -160,7 +167,7 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
                       Favorite
                     </ContextMenuItem>
                   )}
-                  <ContextMenuItem onClick={() => {}}>
+                  <ContextMenuItem onClick={() => setIsMoveDialogOpen(true)}>
                     <Move className="mr-2 h-4 w-4" />
                     Move{suffix} to...
                   </ContextMenuItem>
@@ -186,6 +193,21 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
           </>
         )}
       </ContextMenuContent>
+
+      <DestinationDialog
+        open={isMoveDialogOpen}
+        onOpenChange={setIsMoveDialogOpen}
+        title={`Move ${menuItems.length} item${menuItems.length > 1 ? "s" : ""} to...`}
+        actionLabel="Move Here"
+        excludeIds={menuItems.map((i) => i.id)}
+        onConfirm={(targetFolderId) => {
+          moveItems(
+            menuItems.map((i) => i.id),
+            targetFolderId,
+          )
+          clearSelection()
+        }}
+      />
     </ContextMenu>
   )
 }

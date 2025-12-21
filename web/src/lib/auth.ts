@@ -13,6 +13,10 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+export function hasAuthToken(): boolean {
+  return !!getAuthToken()
+}
+
 function saveAuth(token: string): void {
   localStorage.setItem(TOKEN_KEY, token)
 }
@@ -21,18 +25,20 @@ export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY)
 }
 
-export async function login(email: string, password: string): Promise<User> {
-  const response = await authLogin({ email, password })
+async function handleAuthResponse(response: { token: string; user: User }): Promise<User> {
   saveAuth(response.token)
   await mutate("/api/auth/me", response.user)
   return response.user
 }
 
+export async function login(email: string, password: string): Promise<User> {
+  const response = await authLogin({ email, password })
+  return handleAuthResponse(response)
+}
+
 export async function register(email: string, username: string, password: string): Promise<User> {
   const response = await authRegister({ email, username, password })
-  saveAuth(response.token)
-  await mutate("/api/auth/me", response.user)
-  return response.user
+  return handleAuthResponse(response)
 }
 
 export function logout(): void {

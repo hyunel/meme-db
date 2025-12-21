@@ -38,7 +38,7 @@ func (r *AssetRepository) GetAsset(ctx context.Context, id string) (*model.Asset
 	query := `
 		SELECT id, file_hash, file_size, mime_type, extension, storage_path, ref_count, public_ref_count, created_at
 		FROM assets
-		WHERE id = $1
+		WHERE id = $1::uuid
 	`
 	var asset model.Asset
 	err := r.db.QueryRow(ctx, query, id).Scan(
