@@ -120,36 +120,26 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
 -- ==============================================================================
 -- 5. TAG MANAGEMENT
 -- ==============================================================================
-CREATE TYPE tag_scope AS ENUM ('SYSTEM', 'USER');
-
 CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
-    name VARCHAR(100) NOT NULL,
-    type tag_scope NOT NULL DEFAULT 'USER',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(name, type)
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- SYSTEM TAGS: Linked to the Asset (Shared globally)
--- Not modifiable by users.
+-- Consolidated Tag Association
+-- Links tags to assets. Can be SYSTEM (global, user_id is NULL) or USER (private to user).
 CREATE TABLE IF NOT EXISTS asset_tags (
-    asset_id UUID REFERENCES assets(id) ON DELETE CASCADE,
-    tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
+    asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for SYSTEM tags
 
-    PRIMARY KEY (asset_id, tag_id)
+    UNIQUE NULLS NOT DISTINCT (asset_id, tag_id, user_id)
 );
 
--- USER TAGS: Linked to the Node (Private to user)
--- Fully managed by user.
-CREATE TABLE IF NOT EXISTS node_tags (
-    node_id UUID REFERENCES nodes(id) ON DELETE CASCADE,
-    tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
-
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (node_id, tag_id)
-);
+-- Index for querying tags of an asset (System tags + specific User tags)
+CREATE INDEX IF NOT EXISTS idx_asset_tags_asset_user ON asset_tags (asset_id, user_id);
+-- Index for finding all assets associated with a tag
+CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags (tag_id);
 
 -- ==============================================================================
 -- 6. REFERENCE COUNTING TRIGGERS
@@ -221,6 +211,7 @@ FOR EACH ROW EXECUTE FUNCTION maintain_asset_refs();
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID DEFAULT uuidv7(),
 
+    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
     parent_task_id UUID,
     job_type VARCHAR(50) NOT NULL,
     payload JSONB NOT NULL,

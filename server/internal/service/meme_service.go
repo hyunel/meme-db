@@ -2,192 +2,110 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"os"
-	"path/filepath"
+	"sort"
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/pgvector/pgvector-go"
+	"golang.org/x/sync/errgroup"
 )
 
 type MemeService struct {
-	cfg         *config.Config
-	repo        *repository.Provider
-	inferClient inference.InferenceService
+	cfg          *config.Config
+	repo         *repository.Provider
+	assetService *AssetService
+	inferClient  inference.InferenceService
 }
 
 func NewMemeService(
 	cfg *config.Config,
 	repo *repository.Provider,
+	assetService *AssetService,
 	inferClient inference.InferenceService,
 ) *MemeService {
 	return &MemeService{
-		cfg:         cfg,
-		repo:        repo,
-		inferClient: inferClient,
+		cfg:          cfg,
+		repo:         repo,
+		assetService: assetService,
+		inferClient:  inferClient,
 	}
 }
 
-func (s *MemeService) IngestMeme(ctx context.Context, fileHeader *multipart.FileHeader) (*model.Asset, error) {
-	file, err := fileHeader.Open()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
+type SearchParams struct {
+	Query    string
+	Limit    int
+	Scope    string
+	OwnerID  string
+	FolderID string
+}
 
-	// 1. Calculate Hash
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, fmt.Errorf("failed to hash file: %w", err)
-	}
-	hash := hex.EncodeToString(hasher.Sum(nil))
-
-	// 2. Check if asset exists
-	existing, err := s.repo.Asset.GetAssetByHash(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		return existing, nil
+func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.SearchResult, error) {
+	if params.Limit <= 0 {
+		params.Limit = 10
 	}
 
-	// 3. Save file to storage
-	file.Seek(0, 0)
-
-	ext := filepath.Ext(fileHeader.Filename)
-	relPath := filepath.Join(hash[:2], hash[2:4], hash[4:]+ext)
-	absPath := filepath.Join(s.cfg.Server.StoragePath, relPath)
-
-	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	dst, err := os.Create(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, file); err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
-	}
-
-	var asset *model.Asset
-	err = s.repo.Transaction(ctx, func(r *repository.Repositories) error {
-		// a. Create Asset Record
-		asset = &model.Asset{
-			FileHash:    hash,
-			FileSize:    fileHeader.Size,
-			MimeType:    fileHeader.Header.Get("Content-Type"),
-			Extension:   ext,
-			StoragePath: relPath,
+	var folderPath *string
+	if params.FolderID != "" {
+		node, err := s.repo.Node.GetNode(ctx, params.FolderID, params.OwnerID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get folder node: %w", err)
 		}
-		if err := r.Asset.CreateAsset(ctx, asset); err != nil {
+		folderPath = &node.Path
+	}
+
+	var metaVec, clipVec []float32
+	g, gCtx := errgroup.WithContext(ctx)
+
+	const task = "Given user query keywords, retrieve the most relevant paragraphs"
+
+	// 1. Get Embeddings in Parallel
+	g.Go(func() error {
+		vecs, err := s.inferClient.TextEmbedding(gCtx, []string{params.Query}, task)
+		if err != nil {
 			return err
 		}
-
-		// b. Create MemeInfo Stub
-		memeInfo := &model.MemeInfo{
-			AssetID: asset.ID,
-		}
-		if err := r.Meme.CreateMeme(ctx, memeInfo); err != nil {
-			return fmt.Errorf("failed to create meme info stub: %w", err)
-		}
-
-		// c. Trigger Processing Task
-		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]string{
-			"start_id": asset.ID,
-		}, &repository.TaskOpts{Priority: 10})
-		if err != nil {
-			return fmt.Errorf("failed to create processing task: %w", err)
-		}
-
+		metaVec = vecs[0]
 		return nil
 	})
 
-	if err != nil {
-		os.Remove(absPath)
-		return nil, err
-	}
-
-	return asset, nil
-}
-
-func (s *MemeService) TriggerFixMissing(ctx context.Context) (string, error) {
-	task, err := s.repo.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]string{
-		"start_id": "",
-	}, &repository.TaskOpts{Priority: 0})
-	if err != nil {
-		return "", fmt.Errorf("failed to create process task: %w", err)
-	}
-	return task.ID, nil
-}
-
-func (s *MemeService) Search(ctx context.Context, query string, limit int, scope string, ownerID string, folderID string) ([]repository.SearchResult, error) {
-	var folderPath *string
-	if folderID != "" {
-		node, err := s.repo.Node.GetNode(ctx, folderID, ownerID)
-		if err == nil {
-			folderPath = &node.Path
+	g.Go(func() error {
+		vecs, err := s.inferClient.ClipTextEmbedding(gCtx, []string{params.Query})
+		if err != nil {
+			return err
 		}
-	}
-	return s.repo.Meme.SearchByOCR(ctx, query, limit, scope, ownerID, folderPath)
-}
+		clipVec = vecs[0]
+		return nil
+	})
 
-func (s *MemeService) FullSearch(
-	ctx context.Context,
-	query string,
-	limit int,
-	scope string,
-	ownerID string,
-	folderID string,
-) ([]map[string]interface{}, error) {
-	var folderPath *string
-	if folderID != "" {
-		node, err := s.repo.Node.GetNode(ctx, folderID, ownerID)
-		if err == nil {
-			folderPath = &node.Path
-		}
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to get embeddings: %w", err)
 	}
 
-	metaVecs, err := s.inferClient.TextEmbedding(ctx, []string{query}, "search_query")
+	// 2. Perform Combined DB Search
+	results, err := s.repo.Meme.SearchCombined(ctx, repository.SearchCombinedParams{
+		Metaphor:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec)},
+		Semantic:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec)},
+		Clip:       repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(clipVec)},
+		OCR:        repository.RecallConfig[string]{Value: params.Query},
+		Limit:      params.Limit,
+		Scope:      params.Scope,
+		OwnerID:    params.OwnerID,
+		FolderPath: folderPath,
+	})
 	if err != nil {
-		return nil, err
-	}
-	clipVecs, err := s.inferClient.ClipTextEmbedding(ctx, []string{query})
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to perform database search: %w", err)
 	}
 
-	resMeta, _ := s.repo.Meme.SearchByVector(ctx, "metaphor_vector", pgvector.NewVector(metaVecs[0]), limit, scope, ownerID, folderPath)
-	resSem, _ := s.repo.Meme.SearchByVector(ctx, "semantic_vector", pgvector.NewVector(metaVecs[0]), limit, scope, ownerID, folderPath)
-	resClip, _ := s.repo.Meme.SearchByVector(ctx, "clip_vector", pgvector.NewVector(clipVecs[0]), limit, scope, ownerID, folderPath)
-	resOCR, _ := s.repo.Meme.SearchByOCR(ctx, query, limit, scope, ownerID, folderPath)
-
-	seen := make(map[string]repository.SearchResult)
-	for _, r := range resMeta {
-		seen[r.AssetID] = r
-	}
-	for _, r := range resSem {
-		seen[r.AssetID] = r
-	}
-	for _, r := range resClip {
-		seen[r.AssetID] = r
-	}
-	for _, r := range resOCR {
-		seen[r.AssetID] = r
+	if len(results) == 0 {
+		return []model.SearchResult{}, nil
 	}
 
-	candidates := make([]repository.SearchResult, 0, len(seen))
-	docs := make([]string, 0, len(seen))
-	for _, r := range seen {
+	candidates := make([]repository.SearchResult, 0, len(results))
+	docs := make([]string, 0, len(results))
+	for _, r := range results {
 		candidates = append(candidates, r)
 		doc := ""
 		if r.OCRText != nil {
@@ -196,33 +114,65 @@ func (s *MemeService) FullSearch(
 		docs = append(docs, doc)
 	}
 
-	if len(candidates) == 0 {
-		return nil, nil
+	// 4. Rerank
+	scores, err := s.inferClient.Rerank(ctx, params.Query, docs, task)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rerank: %w", err)
 	}
 
-	scores, err := s.inferClient.Rerank(ctx, query, docs, "rerank")
+	finalRes := make([]model.SearchResult, len(candidates))
+	for i, c := range candidates {
+		dto, err := s.assembleMemeDTO(ctx, c.MemeInfo, params.OwnerID)
+		if err != nil {
+			return nil, err
+		}
+		finalRes[i] = model.SearchResult{
+			Meme:       dto,
+			RecallType: c.RecallType,
+			Score:      scores[i],
+			Similarity: c.Similarity,
+		}
+	}
+
+	// Sort by rerank score descending
+	sort.Slice(finalRes, func(i, j int) bool {
+		return finalRes[i].Score > finalRes[j].Score
+	})
+
+	// Truncate to requested limit
+	if len(finalRes) > params.Limit {
+		finalRes = finalRes[:params.Limit]
+	}
+
+	return finalRes, nil
+}
+
+func (s *MemeService) assembleMemeDTO(ctx context.Context, info model.MemeInfo, ownerID string) (*model.MemeDTO, error) {
+	var userIDPtr *string
+	if ownerID != "" {
+		userIDPtr = &ownerID
+	}
+	tags, err := s.repo.Tag.GetAssetTags(ctx, info.AssetID, userIDPtr)
 	if err != nil {
 		return nil, err
 	}
 
-	type RankedResult struct {
-		Result repository.SearchResult
-		Score  float32
+	asset, err := s.repo.Asset.GetAsset(ctx, info.AssetID)
+	if err != nil {
+		return nil, err
 	}
-	ranked := make([]RankedResult, len(candidates))
-	for i, c := range candidates {
-		ranked[i] = RankedResult{Result: c, Score: scores[i]}
-	}
-
-	finalRes := make([]map[string]interface{}, len(ranked))
-	for i, r := range ranked {
-		finalRes[i] = map[string]interface{}{
-			"asset_id":   r.Result.AssetID,
-			"score":      r.Score,
-			"ocr_text":   r.Result.OCRText,
-			"similarity": r.Result.Similarity,
-		}
+	var url *string
+	if asset != nil {
+		u := s.assetService.GetAssetURL(info.AssetID)
+		url = &u
 	}
 
-	return finalRes, nil
+	return &model.MemeDTO{
+		AssetID:    info.AssetID,
+		Width:      info.Width,
+		Height:     info.Height,
+		Tags:       tags,
+		URL:        url,
+		AnalyzedAt: info.AnalyzedAt,
+	}, nil
 }

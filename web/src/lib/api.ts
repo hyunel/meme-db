@@ -98,7 +98,6 @@ export interface Node {
     parent_id?: string;
     asset_id?: string;
     url?: string;
-    meme_count?: number;
     username?: string;
     tags?: string[];
     is_favorite: boolean;
@@ -144,12 +143,92 @@ export function bulkMoveNodes(ids: string[], destParentId: string): Promise<void
     });
 }
 
-export function uploadMeme(file: File, parentId: string): Promise<Node> {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('parent_id', parentId);
-    return request('/api/fs/upload', {
-        method: 'POST',
-        body: formData,
+export function uploadMeme(
+    file: File,
+    parentId: string,
+    onProgress?: (progress: number) => void
+): Promise<Node> {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const url = `${process.env.NEXT_PUBLIC_API_BASE || ''}/api/fs/upload`;
+
+        xhr.open('POST', url);
+
+        // Add auth token
+        const token = getAuthToken();
+        if (token) {
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+
+        if (onProgress) {
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    onProgress(percentComplete);
+                }
+            };
+        }
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    resolve(response);
+                } catch (e) {
+                    resolve(xhr.responseText as any);
+                }
+            } else {
+                if (xhr.status === 401) clearAuth();
+                reject(new ApiError(xhr.status, xhr.responseText));
+            }
+        };
+
+        xhr.onerror = () => {
+            reject(new Error('Network error'));
+        };
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('parent_id', parentId);
+        xhr.send(formData);
+    });
+}
+
+/* Meme APIs */
+export interface Tag {
+    id: string;
+    name: string;
+    created_at: string;
+}
+
+export interface Meme {
+    asset_id: string;
+    title: string; // added for UI display
+    width: number;
+    height: number;
+    tags: Tag[];
+    url: string | null;
+    is_favorite: boolean; // added for UI heart icon
+    analyzed_at: string | null;
+}
+
+export interface SearchRequest {
+    q: string;
+    scope?: 'global' | 'my';
+    folder_id?: string;
+    limit?: number;
+}
+
+export interface SearchResult {
+    meme: Meme;
+    recall_type: string;
+    score: number;
+    similarity: number;
+}
+
+export function searchMemes(params: SearchRequest): Promise<SearchResult[]> {
+    return request('/api/search', {
+        method: 'GET',
+        params: params as any,
     });
 }

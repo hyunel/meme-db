@@ -138,7 +138,7 @@ export function FileGridItem({
           )}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-2">
             <h3 className="font-medium text-sm truncate text-white">{item.name}</h3>
-            <p className="text-xs text-white/70">{item.meme_count || 0} items</p>
+            <p className="text-xs text-white/70">{folderData?.children.length || 0} items</p>
           </div>
         </div>
       ) : (

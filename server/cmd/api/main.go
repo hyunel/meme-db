@@ -49,9 +49,8 @@ func main() {
 
 	// 5. Setup Services
 	authService := service.NewAuthService(cfg, repo)
-	memeService := service.NewMemeService(cfg, repo, inferClient)
-	tagService := service.NewTagService(repo)
-	assetService := service.NewAssetService(cfg)
+	assetService := service.NewAssetService(cfg, repo)
+	memeService := service.NewMemeService(cfg, repo, assetService, inferClient)
 	fsService := service.NewFileSystemService(repo, memeService, assetService)
 
 	// 6. Setup Task Worker
@@ -68,8 +67,7 @@ func main() {
 
 	// 7. Setup Handlers
 	authHandler := handler.NewAuthHandler(authService)
-	memeHandler := handler.NewMemeHandler(memeService)
-	tagHandler := handler.NewTagHandler(tagService)
+	memeHandler := handler.NewMemeHandler(memeService, assetService)
 	fsHandler := handler.NewFileSystemHandler(fsService)
 	assetHandler := handler.NewAssetHandler(cfg, fsService)
 
@@ -96,6 +94,7 @@ func main() {
 	}))
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
+	e.Use(authHandler.IdentifyMiddleware)
 
 	// Public Routes
 	e.POST("/api/auth/register", authHandler.Register)
@@ -103,8 +102,7 @@ func main() {
 	e.GET("/api/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-
-	// Asset access (Token based, can be accessed without AuthMiddleware if token is valid)
+	e.GET("/api/search", memeHandler.Search)
 	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
 
 	// Protected Routes
@@ -122,16 +120,6 @@ func main() {
 	api.POST("/fs/nodes/move", fsHandler.BulkMove)
 	api.POST("/fs/nodes/copy", fsHandler.BulkCopy)
 	api.POST("/fs/upload", fsHandler.UploadMeme)
-
-	// Tags
-	api.GET("/tags", tagHandler.ListTags)
-	api.POST("/tags", tagHandler.CreateTag)
-	api.PUT("/tags/:id", tagHandler.UpdateTag)
-	api.DELETE("/tags/:id", tagHandler.DeleteTag)
-	api.POST("/fs/nodes/:nodeId/tags", tagHandler.AddTagToNode)
-	api.DELETE("/fs/nodes/:nodeId/tags/:tagId", tagHandler.RemoveTagFromNode)
-
-	api.GET("/search", memeHandler.Search)
 
 	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

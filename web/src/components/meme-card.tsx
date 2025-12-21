@@ -2,7 +2,7 @@
 import Link from "next/link"
 import type React from "react"
 
-import type { Meme } from "@/lib/mock-data"
+import type { Meme } from "@/lib/api"
 import { Heart, MoreVertical } from "lucide-react"
 import { useState } from "react"
 import {
@@ -54,7 +54,7 @@ export function MemeCard({
             alt={meme.title}
             className={`w-full ${fixedHeight ? "h-full object-cover" : "h-auto object-cover"}`}
           />
-          <Link href={`/meme/${meme.id}`} className="absolute inset-0 z-10">
+          <Link href={`/meme/${meme.asset_id}`} className="absolute inset-0 z-10">
             <span className="sr-only">View {meme.title}</span>
           </Link>
 
@@ -62,15 +62,18 @@ export function MemeCard({
             {/* Tags at bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-3 z-20">
               <div className="flex flex-wrap gap-1">
-                {meme.tags.slice(0, 3).map((tag) => (
-                  <Link
-                    href={`/tag/${tag}`}
-                    key={tag}
-                    className="text-xs px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/30 transition-colors"
-                  >
-                    {tag}
-                  </Link>
-                ))}
+                {meme.tags.slice(0, 3).map((tag) => {
+                  const tagName = typeof tag === "string" ? tag : tag.name
+                  return (
+                    <Link
+                      href={`/tag/${tagName}`}
+                      key={tagName}
+                      className="text-xs px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/30 transition-colors"
+                    >
+                      {tagName}
+                    </Link>
+                  )
+                })}
               </div>
             </div>
 
@@ -81,7 +84,7 @@ export function MemeCard({
                 className="p-1.5 bg-black/50 backdrop-blur-sm rounded-sm hover:bg-black/70 transition-colors"
               >
                 <Heart
-                  className={`w-4 h-4 ${isFavoriteProp || meme.isFavorite ? "fill-primary text-primary" : "text-white"}`}
+                  className={`w-4 h-4 ${isFavoriteProp || meme.is_favorite ? "fill-primary text-primary" : "text-white"}`}
                 />
               </button>
               <DropdownMenu open={open} onOpenChange={setOpen}>

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"mime/multipart"
 	"net/http"
 
 	"github.com/hyunel/MemeDB/internal/service"
@@ -9,34 +8,14 @@ import (
 )
 
 type MemeHandler struct {
-	memeService *service.MemeService
+	memeService  *service.MemeService
+	assetService *service.AssetService
 }
 
-func NewMemeHandler(memeService *service.MemeService) *MemeHandler {
+func NewMemeHandler(memeService *service.MemeService, assetService *service.AssetService) *MemeHandler {
 	return &MemeHandler{
 		memeService: memeService,
 	}
-}
-
-type IngestMemeRequest struct {
-	File *multipart.FileHeader `form:"file" validate:"required"`
-}
-
-func (h *MemeHandler) IngestMeme(c echo.Context) error {
-	var req IngestMemeRequest
-
-	if err := BindAndValidate(c, &req); err != nil {
-		return err
-	}
-
-	// TODO: Limit file size, type, etc.
-
-	asset, err := h.memeService.IngestMeme(c.Request().Context(), req.File)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, asset)
 }
 
 type SearchRequest struct {
@@ -53,16 +32,20 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		return err
 	}
 
-	limit := req.Limit
-	if limit == 0 {
-		limit = 10
+	ownerID, _ := c.Get("user_id").(string)
+
+	// If user is not logged in, scope must be global
+	if ownerID == "" {
+		req.Scope = "global"
 	}
 
-	ownerID := c.Get("user_id").(string)
-
-	// Use FullSearch which uses the internal inferClient
-	// We need to pass scope and ownerID to filter results
-	results, err := h.memeService.FullSearch(c.Request().Context(), req.Query, limit, req.Scope, ownerID, req.FolderID)
+	results, err := h.memeService.Search(c.Request().Context(), service.SearchParams{
+		Query:    req.Query,
+		Limit:    req.Limit,
+		Scope:    req.Scope,
+		OwnerID:  ownerID,
+		FolderID: req.FolderID,
+	})
 	if err != nil {
 		return err
 	}

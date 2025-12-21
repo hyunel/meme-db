@@ -78,24 +78,34 @@ func (h *AuthHandler) GetMe(c echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-func (h *AuthHandler) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+func (h *AuthHandler) IdentifyMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		authHeader := c.Request().Header.Get("Authorization")
 		if authHeader == "" {
-			return apperror.Unauthorized("missing authorization header")
+			return next(c)
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			return apperror.Unauthorized("invalid authorization header")
+			return next(c)
 		}
 
 		claims, err := h.authService.ParseToken(parts[1])
 		if err != nil {
-			return err
+			return next(c)
 		}
 
 		c.Set("user_id", claims.UserID)
+		return next(c)
+	}
+}
+
+func (h *AuthHandler) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		userID, ok := c.Get("user_id").(string)
+		if !ok || userID == "" {
+			return apperror.Unauthorized("unauthorized")
+		}
 		return next(c)
 	}
 }

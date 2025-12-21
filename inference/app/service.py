@@ -121,7 +121,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
                 clip_vector=clip_embeddings[i],
                 metaphor_vector=metaphor_embs[i],
                 semantic_vector=semantic_embs[i],
-                vlm_json=json.dumps(vlm_results, ensure_ascii=False),
+                vlm_json=json.dumps(vlm_result, ensure_ascii=False),
                 width=width,
                 height=height
             )

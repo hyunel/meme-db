@@ -7,7 +7,6 @@ import (
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
 )
 
 type MemeRepository struct {
@@ -16,6 +15,100 @@ type MemeRepository struct {
 
 func NewMemeRepository(db db.DBTX) *MemeRepository {
 	return &MemeRepository{db: db}
+}
+
+func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error) {
+	var args []interface{}
+	commonWhere := "WHERE 1=1"
+
+	if params.Scope == "my" {
+		commonWhere += " AND n.owner_id = $1::uuid"
+		args = append(args, params.OwnerID) // $1
+	} else if params.OwnerID != "" {
+		commonWhere += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $1::uuid)"
+		args = append(args, params.OwnerID) // $1
+	} else {
+		commonWhere += " AND n.visibility = 'PUBLIC'"
+	}
+
+	if params.FolderPath != nil {
+		commonWhere += fmt.Sprintf(" AND n.path <@ $%d::ltree", len(args)+1)
+		args = append(args, *params.FolderPath)
+	}
+
+	// Helper to build subquery for each channel
+	buildSubquery := func(recallType string, vectorCol string, value interface{}, threshold float32, limit int) string {
+		paramIdx := len(args) + 1
+		args = append(args, value)
+
+		where := commonWhere
+		if threshold > 0 {
+			if vectorCol == "ocr_text" {
+				where += fmt.Sprintf(" AND similarity(m.ocr_text, $%d) >= %f", paramIdx, threshold)
+			} else {
+				where += fmt.Sprintf(" AND 1 - (m.%s <=> $%d) >= %f", vectorCol, paramIdx, threshold)
+			}
+		}
+
+		selectSimilarity := ""
+		if vectorCol == "ocr_text" {
+			selectSimilarity = fmt.Sprintf("similarity(m.ocr_text, $%d)", paramIdx)
+		} else {
+			selectSimilarity = fmt.Sprintf("1 - (m.%s <=> $%d)", vectorCol, paramIdx)
+		}
+
+		subLimit := limit
+		if subLimit <= 0 {
+			subLimit = params.Limit
+		}
+
+		return fmt.Sprintf(`
+			(SELECT m.asset_id, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
+			 FROM meme_info m
+			 JOIN nodes n ON m.asset_id = n.asset_id
+			 %s
+			 ORDER BY similarity DESC
+			 LIMIT %d)`, selectSimilarity, recallType, where, subLimit)
+	}
+
+	subqueries := []string{
+		buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Value, params.Metaphor.Threshold, params.Metaphor.Limit),
+		buildSubquery("semantic", "semantic_vector", params.Semantic.Value, params.Semantic.Threshold, params.Semantic.Limit),
+		buildSubquery("clip", "clip_vector", params.Clip.Value, params.Clip.Threshold, params.Clip.Limit),
+		buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit),
+	}
+
+	args = append(args, params.Limit)
+
+	// Correcting query building
+	query := "SELECT DISTINCT ON (asset_id) asset_id, width, height, analyzed_at, similarity, recall_type FROM ("
+	for i, sub := range subqueries {
+		if i > 0 {
+			query += " UNION ALL "
+		}
+		query += sub
+	}
+	query += fmt.Sprintf(") AS combined ORDER BY asset_id, similarity DESC LIMIT $%d", len(args))
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]SearchResult, 0)
+	for rows.Next() {
+		var sr SearchResult
+		err := rows.Scan(
+			&sr.AssetID, &sr.Width, &sr.Height, &sr.AnalyzedAt,
+			&sr.Similarity, &sr.RecallType,
+		)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, sr)
+	}
+	return results, nil
 }
 
 func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) error {
@@ -42,121 +135,6 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 		return fmt.Errorf("failed to create/update meme info: %w", err)
 	}
 	return nil
-}
-
-type SearchResult struct {
-	model.MemeInfo
-	Similarity float32 `json:"similarity"`
-}
-
-func (r *MemeRepository) SearchByVector(ctx context.Context, vectorColumn string, queryVector pgvector.Vector, limit int, scope string, ownerID string, folderPath *string) ([]SearchResult, error) {
-	validColumns := map[string]bool{
-		"metaphor_vector": true,
-		"semantic_vector": true,
-		"clip_vector":     true,
-	}
-	if !validColumns[vectorColumn] {
-		return nil, fmt.Errorf("invalid vector column: %s", vectorColumn)
-	}
-
-	whereClause := "WHERE 1=1"
-	var args []interface{}
-	args = append(args, queryVector) // $1
-
-	if scope == "my" {
-		whereClause += " AND n.owner_id = $2::uuid"
-		args = append(args, ownerID) // $2
-	} else {
-		// global: only public files or my files
-		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2::uuid)"
-		args = append(args, ownerID) // $2
-	}
-
-	if folderPath != nil {
-		whereClause += fmt.Sprintf(" AND n.path <@ $%d::ltree", len(args)+1)
-		args = append(args, *folderPath)
-	}
-
-	query := fmt.Sprintf(`
-		SELECT DISTINCT ON (m.asset_id) m.asset_id, m.vlm_json, m.ocr_text, m.analyzed_at,
-		       1 - (m.%s <=> $1) as similarity
-		FROM meme_info m
-		JOIN nodes n ON m.asset_id = n.asset_id
-		%s
-		ORDER BY m.asset_id, m.%s <=> $1
-		LIMIT $%d
-	`, vectorColumn, whereClause, vectorColumn, len(args)+1)
-	args = append(args, limit)
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var results []SearchResult
-	for rows.Next() {
-		var sr SearchResult
-		err := rows.Scan(
-			&sr.AssetID, &sr.VLMJSON, &sr.OCRText, &sr.AnalyzedAt,
-			&sr.Similarity,
-		)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, sr)
-	}
-	return results, nil
-}
-
-func (r *MemeRepository) SearchByOCR(ctx context.Context, textQuery string, limit int, scope string, ownerID string, folderPath *string) ([]SearchResult, error) {
-	whereClause := "WHERE m.ocr_text IS NOT NULL"
-	var args []interface{}
-	args = append(args, textQuery) // $1
-
-	if scope == "my" {
-		whereClause += " AND n.owner_id = $2::uuid"
-		args = append(args, ownerID) // $2
-	} else {
-		whereClause += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $2::uuid)"
-		args = append(args, ownerID) // $2
-	}
-
-	if folderPath != nil {
-		whereClause += fmt.Sprintf(" AND n.path <@ $%d::ltree", len(args)+1)
-		args = append(args, *folderPath)
-	}
-
-	query := fmt.Sprintf(`
-		SELECT DISTINCT ON (m.asset_id) m.asset_id, m.vlm_json, m.ocr_text, m.analyzed_at,
-		       similarity(m.ocr_text, $1) as similarity
-		FROM meme_info m
-		JOIN nodes n ON m.asset_id = n.asset_id
-		%s
-		ORDER BY m.asset_id, similarity(m.ocr_text, $1) DESC
-		LIMIT $%d
-	`, whereClause, len(args)+1)
-	args = append(args, limit)
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var results []SearchResult
-	for rows.Next() {
-		var sr SearchResult
-		err := rows.Scan(
-			&sr.AssetID, &sr.VLMJSON, &sr.OCRText, &sr.AnalyzedAt,
-			&sr.Similarity,
-		)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, sr)
-	}
-	return results, nil
 }
 
 func (r *MemeRepository) GetMeme(ctx context.Context, assetID string) (*model.MemeInfo, error) {
@@ -209,7 +187,7 @@ func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID s
 	}
 	defer rows.Close()
 
-	var memes []*model.MemeInfo
+	memes := make([]*model.MemeInfo, 0)
 	for rows.Next() {
 		var m model.MemeInfo
 		err := rows.Scan(&m.AssetID, &m.VLMJSON, &m.AnalyzedAt)

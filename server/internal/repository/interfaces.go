@@ -14,10 +14,33 @@ type AssetRepo interface {
 	GetAssetByHash(ctx context.Context, hash string) (*model.Asset, error)
 }
 
+type RecallConfig[T any] struct {
+	Value     T
+	Threshold float32
+	Limit     int
+}
+
+type SearchCombinedParams struct {
+	Metaphor RecallConfig[pgvector.Vector]
+	Semantic RecallConfig[pgvector.Vector]
+	Clip     RecallConfig[pgvector.Vector]
+	OCR      RecallConfig[string]
+
+	Limit      int
+	Scope      string
+	OwnerID    string
+	FolderPath *string
+}
+
+type SearchResult struct {
+	model.MemeInfo
+	Similarity float32 `json:"similarity"`
+	RecallType string  `json:"recall_type"`
+}
+
 type MemeRepo interface {
 	CreateMeme(ctx context.Context, meme *model.MemeInfo) error
-	SearchByVector(ctx context.Context, vectorColumn string, queryVector pgvector.Vector, limit int, scope string, ownerID string, folderPath *string) ([]SearchResult, error)
-	SearchByOCR(ctx context.Context, textQuery string, limit int, scope string, ownerID string, folderPath *string) ([]SearchResult, error)
+	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error)
 	GetMeme(ctx context.Context, assetID string) (*model.MemeInfo, error)
 	CountMemes(ctx context.Context) (int64, error)
 	CountMemesMissingEmbeddings(ctx context.Context) (int64, error)
@@ -55,12 +78,6 @@ type NodeRepo interface {
 }
 
 type TagRepo interface {
-	CreateTag(ctx context.Context, name string, scope model.TagScope) (*model.Tag, error)
-	GetTag(ctx context.Context, id string) (*model.Tag, error)
-	ListTags(ctx context.Context, scope *model.TagScope) ([]*model.Tag, error)
-	UpdateTag(ctx context.Context, id string, name string) (*model.Tag, error)
-	DeleteTag(ctx context.Context, id string) error
-	AddTagToNode(ctx context.Context, nodeID string, tagID string) error
-	RemoveTagFromNode(ctx context.Context, nodeID string, tagID string) error
-	GetNodeTags(ctx context.Context, nodeID string) ([]*model.Tag, error)
+	GetAssetTags(ctx context.Context, assetID string, userID *string) ([]*model.Tag, error)
+	GetAssetsByTag(ctx context.Context, tagID string) ([]*model.Asset, error)
 }

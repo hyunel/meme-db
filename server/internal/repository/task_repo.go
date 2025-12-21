@@ -16,6 +16,7 @@ type taskRepo struct {
 }
 
 type TaskOpts struct {
+	OwnerID  *string
 	Priority int
 	RunAt    time.Time
 	Cron     *string
@@ -36,11 +37,13 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 	}
 
 	// Default values
+	var ownerID *string
 	priority := 0
 	runAt := time.Now()
 	var cron *string
 
 	if opts != nil {
+		ownerID = opts.OwnerID
 		priority = opts.Priority
 		if !opts.RunAt.IsZero() {
 			runAt = opts.RunAt
@@ -51,14 +54,14 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 	}
 
 	query := `
-		INSERT INTO tasks (job_type, payload, status, priority, run_at, cron, context)
-		VALUES ($1, $2, $3, $4, $5, $6, '{}')
-		RETURNING id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, context, created_at, updated_at
+		INSERT INTO tasks (owner_id, job_type, payload, status, priority, run_at, cron, context)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, '{}')
+		RETURNING id, owner_id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, context, created_at, updated_at
 	`
 
 	var task model.Task
-	err = r.db.QueryRow(ctx, query, jobType, payloadBytes, model.TaskStatusPending, priority, runAt, cron).Scan(
-		&task.ID, &task.ParentTaskID, &task.JobType, &task.Payload, &task.Status, &task.Priority, &task.Cron, &task.RunAt, &task.StartedAt, &task.FinishedAt, &task.Context, &task.CreatedAt, &task.UpdatedAt,
+	err = r.db.QueryRow(ctx, query, ownerID, jobType, payloadBytes, model.TaskStatusPending, priority, runAt, cron).Scan(
+		&task.ID, &task.OwnerID, &task.ParentTaskID, &task.JobType, &task.Payload, &task.Status, &task.Priority, &task.Cron, &task.RunAt, &task.StartedAt, &task.FinishedAt, &task.Context, &task.CreatedAt, &task.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
@@ -117,8 +120,8 @@ func (r *taskRepo) CreateHistoryFromTask(ctx context.Context, taskID string, his
 	}
 
 	insertQuery := `
-		INSERT INTO tasks (parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, context, error_message)
-		SELECT id, job_type, payload, $1, priority, cron, run_at, started_at, $2, context, $3
+		INSERT INTO tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, context, error_message)
+		SELECT owner_id, id, job_type, payload, $1, priority, cron, run_at, started_at, $2, context, $3
 		FROM tasks
 		WHERE id = $4::uuid
 	`

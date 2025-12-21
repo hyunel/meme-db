@@ -59,7 +59,7 @@ export function FileBrowserProvider({ children }: { children: React.ReactNode })
 
   const browserData = useBrowserData(user)
   const selection = useSelection()
-  const upload = useUpload(user, browserData.refresh)
+  const upload = useUpload(browserData.refresh)
   const dragDrop = useDragDrop(
     selection.selectedItems,
     browserData.moveItems,

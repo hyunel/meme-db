@@ -89,7 +89,7 @@ func (r *NodeRepository) GetNodes(ctx context.Context, ids []string, ownerID str
 	}
 	defer rows.Close()
 
-	var nodes []*model.Node
+	nodes := make([]*model.Node, 0)
 	for rows.Next() {
 		node := &model.Node{}
 		err := rows.Scan(
@@ -134,7 +134,7 @@ func (r *NodeRepository) ListNodes(ctx context.Context, parentID *string, ownerI
 	}
 	defer rows.Close()
 
-	var nodes []*model.Node
+	nodes := make([]*model.Node, 0)
 	for rows.Next() {
 		node := &model.Node{}
 		err := rows.Scan(
@@ -223,7 +223,7 @@ func (r *NodeRepository) GetSubtree(ctx context.Context, path string) ([]*model.
 	}
 	defer rows.Close()
 
-	var nodes []*model.Node
+	nodes := make([]*model.Node, 0)
 	for rows.Next() {
 		node := &model.Node{}
 		err := rows.Scan(
@@ -252,7 +252,7 @@ func (r *NodeRepository) GetAncestors(ctx context.Context, path string) ([]*mode
 	}
 	defer rows.Close()
 
-	var nodes []*model.Node
+	nodes := make([]*model.Node, 0)
 	for rows.Next() {
 		node := &model.Node{}
 		err := rows.Scan(

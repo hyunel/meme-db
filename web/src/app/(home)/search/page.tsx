@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Sparkles, TrendingUp, Clock, Zap } from "lucide-react"
 import { useUser } from "@/hooks/use-user"
-import { searchMemes, type Meme } from "@/lib/mock-data"
+import { searchMemes } from "@/lib/api"
+import type { Meme } from "@/lib/api"
 import { MemeCard } from "@/components/meme-card"
 import { EmptyState } from "@/components/ui/empty-state"
+import { toast } from "sonner"
 
 const DEMO_SEARCHES = [
   { icon: TrendingUp, text: "Trending memes", tag: "viral" },
@@ -23,23 +25,31 @@ const DEMO_SEARCHES = [
 export default function SearchPage() {
   const { user } = useUser()
   const [query, setQuery] = useState("")
-  const [scope, setScope] = useState<"global" | "library">("global")
+  const [scope, setScope] = useState<"global" | "my">("global")
   const [results, setResults] = useState<Meme[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
 
-  const handleSearch = (e: React.FormEvent, searchQuery?: string) => {
+  const handleSearch = async (e: React.FormEvent, searchQuery?: string) => {
     e.preventDefault()
-    const finalQuery = searchQuery || query
+    const finalQuery = (searchQuery || query).trim()
+    if (!finalQuery) return
 
     setIsSearching(true)
     setHasSearched(true)
 
-    setTimeout(() => {
-      const searchResults = searchMemes(finalQuery, scope, user?.id)
-      setResults(searchResults)
+    try {
+      const searchResults = await searchMemes({
+        q: finalQuery,
+        scope: scope,
+      })
+      setResults(searchResults.map((r) => r.meme))
+    } catch (error) {
+      console.error("Search failed:", error)
+      setResults([])
+    } finally {
       setIsSearching(false)
-    }, 800)
+    }
   }
 
   const handleDemoClick = (tag: string) => {
@@ -90,9 +100,9 @@ export default function SearchPage() {
                   </Button>
                   <Button
                     type="button"
-                    variant={scope === "library" ? "default" : "outline"}
+                    variant={scope === "my" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setScope("library")}
+                    onClick={() => setScope("my")}
                   >
                     My Library
                   </Button>
@@ -172,7 +182,7 @@ export default function SearchPage() {
                 columnClassName="pl-3 bg-clip-padding"
                 items={results}
                 renderItem={(meme, index) => (
-                  <MemeCard key={meme.id} meme={meme} fixedHeight={false} index={index} className="mb-3" />
+                  <MemeCard key={meme.asset_id} meme={meme} fixedHeight={false} index={index} className="mb-3" />
                 )}
               />
             </>

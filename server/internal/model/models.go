@@ -67,22 +67,31 @@ type Node struct {
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
 
-type TagScope string
-
-const (
-	TagScopeSystem TagScope = "SYSTEM"
-	TagScopeUser   TagScope = "USER"
-)
-
 type Tag struct {
 	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
-	Type      TagScope  `json:"type" db:"type"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+type MemeDTO struct {
+	AssetID    string     `json:"asset_id"`
+	Width      int        `json:"width"`
+	Height     int        `json:"height"`
+	Tags       []*Tag     `json:"tags"`
+	URL        *string    `json:"url"`
+	AnalyzedAt *time.Time `json:"analyzed_at"`
+}
+
+type SearchResult struct {
+	Meme       *MemeDTO `json:"meme"`
+	RecallType string   `json:"recall_type"`
+	Score      float32  `json:"score"`
+	Similarity float32  `json:"similarity"`
 }
 
 type Task struct {
 	ID           string          `json:"id" db:"id"`
+	OwnerID      *string         `json:"owner_id" db:"owner_id"`
 	ParentTaskID *string         `json:"parent_task_id" db:"parent_task_id"`
 	JobType      string          `json:"job_type" db:"job_type"`
 	Payload      json.RawMessage `json:"payload" db:"payload"`

@@ -26,8 +26,7 @@ func NewFileSystemService(repo *repository.Provider, memeService *MemeService, a
 
 func (s *FileSystemService) populateNodeURL(node *model.Node) {
 	if node.Type == model.NodeTypeFile && node.AssetID != nil {
-		token, _ := s.assetService.GenerateAccessToken(*node.AssetID)
-		node.URL = "/api/assets/" + *node.AssetID + "?token=" + token
+		node.URL = s.assetService.GetAssetURL(*node.AssetID)
 	}
 }
 
@@ -252,7 +251,7 @@ func (s *FileSystemService) checkForCycles(nodes []*model.Node, destNode *model.
 }
 
 func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, parentID *string, fileHeader *multipart.FileHeader) (*model.Node, error) {
-	asset, err := s.memeService.IngestMeme(ctx, fileHeader)
+	asset, err := s.assetService.CreateAsset(ctx, fileHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +259,7 @@ func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, pare
 	node := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   parentID,
-		Name:       "",
+		Name:       fileHeader.Filename,
 		Type:       model.NodeTypeFile,
 		Visibility: model.VisibilityPriv,
 		AssetID:    &asset.ID,

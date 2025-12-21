@@ -1,9 +1,8 @@
 import { useState, useCallback } from "react"
-import { uploadMeme, type Node } from "@/lib/api"
+import { uploadMeme } from "@/lib/api"
 import type { UploadingFile } from "../types"
-import type { User } from "@/lib/auth"
 
-export function useUpload(user: User | null, onUploadComplete: () => void) {
+export function useUpload(onUploadComplete: () => void) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
 
   const performUpload = useCallback(
@@ -16,17 +15,13 @@ export function useUpload(user: User | null, onUploadComplete: () => void) {
 
       setUploadingFiles((prev) => [...prev, ...newUploads])
 
-      // In a real scenario, we'd use XHR to track progress.
-      // For now, since request() uses fetch, we'll simulate progress but perform real upload.
       for (const file of files) {
         try {
-          // Real upload
-          await uploadMeme(file, targetFolderId || "")
-
-          // Complete
-          setUploadingFiles((prev) =>
-            prev.map((u) => (u.name === file.name ? { ...u, progress: 100 } : u)),
-          )
+          await uploadMeme(file, targetFolderId || "", (progress) => {
+            setUploadingFiles((prev) =>
+              prev.map((u) => (u.name === file.name ? { ...u, progress } : u)),
+            )
+          })
 
           setTimeout(() => {
             setUploadingFiles((prev) => prev.filter((u) => u.name !== file.name))
