@@ -12,6 +12,12 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database"`
 	Inference InferenceConfig `yaml:"inference"`
 	VLM       VLMConfig       `yaml:"vlm"`
+	Prompt    PromptConfig    `yaml:"prompt"`
+}
+
+type PromptConfig struct {
+	Caption   string `yaml:"caption"`
+	Retrieval string `yaml:"retrieval"`
 }
 
 type ServerConfig struct {

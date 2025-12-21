@@ -79,11 +79,12 @@ def perform_request(stub, args, text_data, image_data):
                 pairs=pairs
             )
             stub.Rerank(req)
-        elif args.task_type == 'analyze-image':
-            req = inference_pb2.AnalyzeImageRequest(
-                inputs=[inference_pb2.AnalyzeImageInput(image=img) for img in image_data]
+        elif args.task_type == 'caption':
+            req = inference_pb2.ImageCaptionRequest(
+                prompt=args.prompt,
+                images=image_data
             )
-            stub.AnalyzeImage(req)
+            stub.ImageCaption(req)
         else:
             raise ValueError(f"Unknown task type: {args.task_type}")
 
@@ -111,7 +112,7 @@ def worker(args, server_address, tasks_per_worker, pbar=None):
         current_batch = min(args.batch_size, remaining)
 
         batch_text = random.choices(text_pool, k=current_batch)
-        batch_image = random.choices(image_pool, k=current_batch) if args.task_type in ['clip-image', 'analyze-image'] else []
+        batch_image = random.choices(image_pool, k=current_batch) if args.task_type in ['clip-image', 'caption'] else []
 
         latency, error = perform_request(stub, args, batch_text, batch_image)
         stats.record(latency, error, current_batch)
@@ -127,8 +128,6 @@ def run_benchmark(args):
     print(f'  Total Tasks: {args.total}')
     print(f"  Concurrency: {args.concurrency}")
     print(f"  Batch Size: {args.batch_size}")
-    if args.task_desc:
-        print(f"  Task Desc: {args.task_desc}")
     print()
 
     start_time = time.time()
@@ -183,11 +182,12 @@ def run_benchmark(args):
 def main():
     parser = argparse.ArgumentParser(description="gRPC Benchmark for Inference Service")
     parser.add_argument("--host", default="localhost:50051", help="Server address (host:port)")
-    parser.add_argument("-t", "--task-type", required=True, choices=['text', 'clip-text', 'clip-image', 'rerank', 'analyze-image'], help="Task type to benchmark")
+    parser.add_argument("-t", "--task-type", required=True, choices=['text', 'clip-text', 'clip-image', 'rerank', 'caption'], help="Task type to benchmark")
     parser.add_argument("-c", "--concurrency", type=int, default=1, help="Number of concurrent workers")
     parser.add_argument("-n", "--total", type=int, default=100, help="Total number of tasks to process")
     parser.add_argument("-b", "--batch-size", type=int, default=8, help="Number of items per request")
     parser.add_argument("--task-desc", default="Retrieval", help="Task description for text embedding/rerank")
+    parser.add_argument("--prompt", default="Describe this image", help="Prompt for image captioning")
 
     args = parser.parse_args()
 

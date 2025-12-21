@@ -17,8 +17,8 @@ service InferenceService {
   // Rerank text pairs using Qwen
   rpc Rerank (RerankRequest) returns (RerankResponse);
 
-  // Extract VLM features from image
-  rpc AnalyzeImage (AnalyzeImageRequest) returns (AnalyzeImageResponse);
+  // Caption image using VLM
+  rpc ImageCaption (ImageCaptionRequest) returns (ImageCaptionResponse);
 }
 
 message Image {
@@ -69,25 +69,18 @@ message RerankResponse {
   repeated float scores = 1;
 }
 
-message AnalyzeImageInput {
-  Image image = 1;
-  string vlm_json = 2;
+message ImageCaptionRequest {
+  string prompt = 1;
+  repeated Image images = 2;
 }
 
-message AnalyzeImageRequest {
-  repeated AnalyzeImageInput inputs = 1;
+message ImageCaptionResult {
+  string caption = 1;
+  int32 width = 2;
+  int32 height = 3;
+  Embedding clip_embedding = 4;
 }
 
-message AnalyzedImage {
-  string ocr_text = 1;
-  repeated float clip_vector = 2;
-  repeated float metaphor_vector = 3;
-  repeated float semantic_vector = 4;
-  string vlm_json = 5;
-  int32 width = 6;
-  int32 height = 7;
-}
-
-message AnalyzeImageResponse {
-  repeated AnalyzedImage results = 1;
+message ImageCaptionResponse {
+  repeated ImageCaptionResult results = 1;
 }

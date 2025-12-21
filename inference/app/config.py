@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Literal, Union, Any
-import torch
 import yaml
 import os
 import re
@@ -14,6 +13,7 @@ class OpenAIConfig(BaseModel):
     model: str = "gpt-4o"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    max_retries: int = 3
 
 class LocalVLMConfig(BaseModel):
     model: str = "Qwen/Qwen3-VL-2B-Instruct"

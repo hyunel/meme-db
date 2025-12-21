@@ -98,22 +98,20 @@ type Task struct {
 	Status       string          `json:"status" db:"status"`
 	ErrorMessage *string         `json:"error_message" db:"error_message"`
 
-	Priority   int             `json:"priority" db:"priority"`
-	Cron       *string         `json:"cron" db:"cron"`
-	RunAt      time.Time       `json:"run_at" db:"run_at"`
-	StartedAt  *time.Time      `json:"started_at" db:"started_at"`
-	FinishedAt *time.Time      `json:"finished_at" db:"finished_at"`
-	Context    json.RawMessage `json:"context" db:"context"`
+	Priority   int        `json:"priority" db:"priority"`
+	Cron       *string    `json:"cron" db:"cron"`
+	RunAt      time.Time  `json:"run_at" db:"run_at"`
+	StartedAt  *time.Time `json:"started_at" db:"started_at"`
+	FinishedAt *time.Time `json:"finished_at" db:"finished_at"`
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 const (
-	TaskStatusPending    = "pending"
-	TaskStatusProcessing = "processing"
-	TaskStatusCompleted  = "completed"
-	TaskStatusFailed     = "failed"
+	TaskStatusPending   = "pending"
+	TaskStatusCompleted = "completed"
+	TaskStatusFailed    = "failed"
 
 	JobProcessMemes = "process_memes"
 )

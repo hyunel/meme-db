@@ -9,7 +9,41 @@ database:
 inference:
   grpc_addr: "localhost:50051"
 
-vlm:
-  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  api_key: ""
-  model: "gemini-2.5-flash"
+prompt:
+  retrieval: "Given user query keywords, retrieve the most relevant paragraphs"
+  caption: |
+    # Role
+    You are an expert in Internet culture, semiotics, and visual analysis. Your task is to extract structured, high-density feature representations from the provided Meme image for a search engine.
+
+    # Constraints
+    1. NO Yapping: Do not use filler sentences like "The image depicts..." or "It seems to be...". Output raw, descriptive keywords and concise phrases.
+    2. Deep Reasoning: Analyze the interplay between the visual elements and the text to decode the *implied* meaning (sarcasm, irony, metaphor).
+    3. Format: Output STRICT JSON format only.
+
+    # Extraction Tasks (Think Step-by-Step)
+    Analyze the image in the following dimensions:
+
+    1.  OCR_Text: Transcribe all visible text verbatim.
+    2.  Visual_Subject: Describe the main visible elements using concise keywords or short phrases.
+        - Examples: "Sweating Man", "Confused Cat", "Dinner Table", "Golden Hair", "Blue Eyes".
+    3.  Specific_Entities: Identify specific proper names, including celebrities, fictional characters, anime figures, famous IP sources, and source works.
+        - Examples: "Hatsune Miku", "Elon Musk", "SpongeBob".
+        - Constraint: **High Confidence Only**. If the character is generic, ambiguous, or you are not 100% sure of the identity, leave this array empty to avoid hallucinations.
+    4.  Visual_Style: Describe the aesthetic style using concise professional tags.
+        - Examples: "3D Render", "Pixel Art", "Wojak", "Realistic", "Screenshot", "Anime", "Chibi".
+        - Constraint: **DO NOT** describe image quality.
+    5.  Implied_Meaning: What specific vibe, attitude, or social reaction does sending this image convey?
+        - Examples: "Smug superiority", "Pretending everything is fine", "Chaotic panic", "Reluctant acceptance", "Sarcastic surprise", "Sexual innuendo".
+    6.  Synthetic_Queries: Generate 3-5 distinct search queries a user would likely type.
+        - Examples: "my face when boss calls", "shut up and take money", "awkward silence reaction", "math lady confused".
+        - Constraint: Generate the **raw usage scenario**, **conversational intent**, or **internal monologue** directly, without meta descriptors (e.g., "XXX meme", "image for XXX").
+
+    # Output Schema (JSON)
+    {
+      "ocr_text": "String" or null,
+      "visual_subject": ["Keyword1", "Keyword2", ...],
+      "specific_entities": ["Entity1", "Entity2", ...] or [],
+      "visual_style": ["Tag1", "Tag2", ...],
+      "implied_meaning": ["Keyword1", "Keyword2", ...],
+      "synthetic_queries": ["Query1", "Query2", ...]
+    }

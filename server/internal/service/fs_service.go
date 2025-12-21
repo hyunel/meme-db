@@ -203,10 +203,15 @@ func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, i
 }
 
 func (s *FileSystemService) recursiveCopy(ctx context.Context, txRepo *repository.Repositories, sourceNode *model.Node, newParentID *string, ownerID string) (*model.Node, error) {
+	newName := ""
+	if sourceNode.Name != "" {
+		newName = sourceNode.Name + " (Copy)"
+	}
+
 	newNode := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   newParentID,
-		Name:       sourceNode.Name + " (Copy)",
+		Name:       newName,
 		Type:       sourceNode.Type,
 		Visibility: sourceNode.Visibility,
 		AssetID:    sourceNode.AssetID,
@@ -237,10 +242,6 @@ func (s *FileSystemService) checkForCycles(nodes []*model.Node, destNode *model.
 	}
 
 	for _, node := range nodes {
-		// In ltree, if path A is an ancestor of path B, then A @> B
-		// In Go string logic for ltree:
-		// node.Path: "root.folder1"
-		// destNode.Path: "root.folder1.subfolder"
 		// Cycle exists if destNode.Path == node.Path OR destNode.Path starts with node.Path + "."
 		if destNode.Path == node.Path || strings.HasPrefix(destNode.Path, node.Path+".") {
 			return apperror.BadRequest("cannot move or copy a folder into itself or its descendants")
@@ -259,7 +260,7 @@ func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, pare
 	node := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   parentID,
-		Name:       fileHeader.Filename,
+		Name:       "", // Intentionally left blank
 		Type:       model.NodeTypeFile,
 		Visibility: model.VisibilityPriv,
 		AssetID:    &asset.ID,

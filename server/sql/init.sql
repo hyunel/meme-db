@@ -105,7 +105,6 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 -- Constraint: Unique names within a folder for a user
 -- Note: Empty names are allowed to be non-unique (to support unnamed uploads)
--- UNIQUE NULLS NOT DISTINCT ensures that multiple roots (parent_id is NULL) also respect the unique constraint on name.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_unique_name_per_folder
 ON nodes (owner_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'), name)
 WHERE name <> '';
@@ -233,9 +232,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 ) PARTITION BY LIST (status);
 
 -- Partitions for Active and Historical Tasks
-CREATE TABLE IF NOT EXISTS tasks_active PARTITION OF tasks FOR VALUES IN ('pending', 'processing');
+CREATE TABLE IF NOT EXISTS tasks_active PARTITION OF tasks FOR VALUES IN ('pending');
 CREATE TABLE IF NOT EXISTS tasks_history PARTITION OF tasks FOR VALUES IN ('completed', 'failed');
 
-CREATE INDEX IF NOT EXISTS idx_tasks_active_queue ON tasks_active(status, priority DESC, run_at ASC);
-CREATE INDEX IF NOT EXISTS idx_tasks_active_stale ON tasks_active(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_active_queue ON tasks_active(priority DESC, run_at ASC);
 CREATE INDEX IF NOT EXISTS idx_tasks_history_created ON tasks_history(created_at);

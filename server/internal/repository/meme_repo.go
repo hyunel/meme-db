@@ -57,18 +57,13 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 			selectSimilarity = fmt.Sprintf("1 - (m.%s <=> $%d)", vectorCol, paramIdx)
 		}
 
-		subLimit := limit
-		if subLimit <= 0 {
-			subLimit = params.Limit
-		}
-
 		return fmt.Sprintf(`
-			(SELECT m.asset_id, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
+			(SELECT m.asset_id, m.vlm_json, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
 			 FROM meme_info m
 			 JOIN nodes n ON m.asset_id = n.asset_id
 			 %s
 			 ORDER BY similarity DESC
-			 LIMIT %d)`, selectSimilarity, recallType, where, subLimit)
+			 LIMIT %d)`, selectSimilarity, recallType, where, limit)
 	}
 
 	subqueries := []string{
@@ -78,17 +73,15 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 		buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit),
 	}
 
-	args = append(args, params.Limit)
-
 	// Correcting query building
-	query := "SELECT DISTINCT ON (asset_id) asset_id, width, height, analyzed_at, similarity, recall_type FROM ("
+	query := "SELECT DISTINCT ON (asset_id) asset_id, vlm_json, width, height, analyzed_at, similarity, recall_type FROM ("
 	for i, sub := range subqueries {
 		if i > 0 {
 			query += " UNION ALL "
 		}
 		query += sub
 	}
-	query += fmt.Sprintf(") AS combined ORDER BY asset_id, similarity DESC LIMIT $%d", len(args))
+	query += ") AS combined ORDER BY asset_id, similarity DESC"
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -100,7 +93,7 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 	for rows.Next() {
 		var sr SearchResult
 		err := rows.Scan(
-			&sr.AssetID, &sr.Width, &sr.Height, &sr.AnalyzedAt,
+			&sr.AssetID, &sr.VLMJSON, &sr.Width, &sr.Height, &sr.AnalyzedAt,
 			&sr.Similarity, &sr.RecallType,
 		)
 		if err != nil {
@@ -174,12 +167,17 @@ func (r *MemeRepository) CountMemesMissingEmbeddings(ctx context.Context) (int64
 
 func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
 	query := `
-		SELECT asset_id, vlm_json, analyzed_at
-		FROM meme_info
-		WHERE asset_id >= $1::uuid AND analyzed_at IS NULL
-		ORDER BY asset_id ASC
-		LIMIT $2
-		FOR UPDATE SKIP LOCKED
+		UPDATE meme_info
+		SET analyzed_at = NOW()
+		WHERE asset_id IN (
+			SELECT asset_id
+			FROM meme_info
+			WHERE asset_id >= $1::uuid AND analyzed_at IS NULL
+			ORDER BY asset_id ASC
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING asset_id, vlm_json, analyzed_at
 	`
 	rows, err := r.db.Query(ctx, query, startID, limit)
 	if err != nil {

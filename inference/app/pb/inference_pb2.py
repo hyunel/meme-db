@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/pb/inference.proto\x12\tinference\"*\n\x05Image\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x13\n\x0b\x66ile_format\x18\x02 \x01(\t\"\x1b\n\tEmbedding\x12\x0e\n\x06values\x18\x01 \x03(\x02\"?\n\x14TextEmbeddingRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12\r\n\x05texts\x18\x02 \x03(\t\"A\n\x15TextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"=\n\x19\x43lipImageEmbeddingRequest\x12 \n\x06images\x18\x01 \x03(\x0b\x32\x10.inference.Image\"F\n\x1a\x43lipImageEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\")\n\x18\x43lipTextEmbeddingRequest\x12\r\n\x05texts\x18\x01 \x03(\t\"E\n\x19\x43lipTextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"-\n\nRerankPair\x12\r\n\x05query\x18\x01 \x01(\t\x12\x10\n\x08\x64ocument\x18\x02 \x01(\t\"O\n\rRerankRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12$\n\x05pairs\x18\x02 \x03(\x0b\x32\x15.inference.RerankPair\" \n\x0eRerankResponse\x12\x0e\n\x06scores\x18\x01 \x03(\x02\"F\n\x11\x41nalyzeImageInput\x12\x1f\n\x05image\x18\x01 \x01(\x0b\x32\x10.inference.Image\x12\x10\n\x08vlm_json\x18\x02 \x01(\t\"C\n\x13\x41nalyzeImageRequest\x12,\n\x06inputs\x18\x01 \x03(\x0b\x32\x1c.inference.AnalyzeImageInput\"\x99\x01\n\rAnalyzedImage\x12\x10\n\x08ocr_text\x18\x01 \x01(\t\x12\x13\n\x0b\x63lip_vector\x18\x02 \x03(\x02\x12\x17\n\x0fmetaphor_vector\x18\x03 \x03(\x02\x12\x17\n\x0fsemantic_vector\x18\x04 \x03(\x02\x12\x10\n\x08vlm_json\x18\x05 \x01(\t\x12\r\n\x05width\x18\x06 \x01(\x05\x12\x0e\n\x06height\x18\x07 \x01(\x05\"A\n\x14\x41nalyzeImageResponse\x12)\n\x07results\x18\x01 \x03(\x0b\x32\x18.inference.AnalyzedImage2\xb9\x03\n\x10InferenceService\x12R\n\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12\x61\n\x12\x43lipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n\x11\x43lipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n\x0c\x41nalyzeImage\x12\x1e.inference.AnalyzeImageRequest\x1a\x1f.inference.AnalyzeImageResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/pb/inference.proto\x12\tinference\"*\n\x05Image\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x13\n\x0b\x66ile_format\x18\x02 \x01(\t\"\x1b\n\tEmbedding\x12\x0e\n\x06values\x18\x01 \x03(\x02\"?\n\x14TextEmbeddingRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12\r\n\x05texts\x18\x02 \x03(\t\"A\n\x15TextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"=\n\x19\x43lipImageEmbeddingRequest\x12 \n\x06images\x18\x01 \x03(\x0b\x32\x10.inference.Image\"F\n\x1a\x43lipImageEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\")\n\x18\x43lipTextEmbeddingRequest\x12\r\n\x05texts\x18\x01 \x03(\t\"E\n\x19\x43lipTextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"-\n\nRerankPair\x12\r\n\x05query\x18\x01 \x01(\t\x12\x10\n\x08\x64ocument\x18\x02 \x01(\t\"O\n\rRerankRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12$\n\x05pairs\x18\x02 \x03(\x0b\x32\x15.inference.RerankPair\" \n\x0eRerankResponse\x12\x0e\n\x06scores\x18\x01 \x03(\x02\"G\n\x13ImageCaptionRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12 \n\x06images\x18\x02 \x03(\x0b\x32\x10.inference.Image\"r\n\x12ImageCaptionResult\x12\x0f\n\x07\x63\x61ption\x18\x01 \x01(\t\x12\r\n\x05width\x18\x02 \x01(\x05\x12\x0e\n\x06height\x18\x03 \x01(\x05\x12,\n\x0e\x63lip_embedding\x18\x04 \x01(\x0b\x32\x14.inference.Embedding\"F\n\x14ImageCaptionResponse\x12.\n\x07results\x18\x01 \x03(\x0b\x32\x1d.inference.ImageCaptionResult2\xb9\x03\n\x10InferenceService\x12R\n\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12\x61\n\x12\x43lipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n\x11\x43lipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n\x0cImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -54,14 +54,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_RERANKREQUEST']._serialized_end=617
   _globals['_RERANKRESPONSE']._serialized_start=619
   _globals['_RERANKRESPONSE']._serialized_end=651
-  _globals['_ANALYZEIMAGEINPUT']._serialized_start=653
-  _globals['_ANALYZEIMAGEINPUT']._serialized_end=723
-  _globals['_ANALYZEIMAGEREQUEST']._serialized_start=725
-  _globals['_ANALYZEIMAGEREQUEST']._serialized_end=792
-  _globals['_ANALYZEDIMAGE']._serialized_start=795
-  _globals['_ANALYZEDIMAGE']._serialized_end=948
-  _globals['_ANALYZEIMAGERESPONSE']._serialized_start=950
-  _globals['_ANALYZEIMAGERESPONSE']._serialized_end=1015
-  _globals['_INFERENCESERVICE']._serialized_start=1018
-  _globals['_INFERENCESERVICE']._serialized_end=1459
+  _globals['_IMAGECAPTIONREQUEST']._serialized_start=653
+  _globals['_IMAGECAPTIONREQUEST']._serialized_end=724
+  _globals['_IMAGECAPTIONRESULT']._serialized_start=726
+  _globals['_IMAGECAPTIONRESULT']._serialized_end=840
+  _globals['_IMAGECAPTIONRESPONSE']._serialized_start=842
+  _globals['_IMAGECAPTIONRESPONSE']._serialized_end=912
+  _globals['_INFERENCESERVICE']._serialized_start=915
+  _globals['_INFERENCESERVICE']._serialized_end=1356
 # @@protoc_insertion_point(module_scope)

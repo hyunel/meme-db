@@ -1,8 +1,9 @@
-from typing import List, Dict, Any
+from typing import List
 import logging
 import torch
+import outlines
 from PIL import Image
-from .base import VLMModel, VLM_PROMPT
+from .base import VLMModel
 from ...config import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -25,77 +26,44 @@ class LocalVLM(VLMModel):
 
         logger.info(f"Loading local VLM: {model_id} on {self.config.device}")
 
-        self.model = AutoModelForImageTextToText.from_pretrained(
+        self.processor = AutoProcessor.from_pretrained(
+            model_id,
+            trust_remote_code=True
+        )
+
+        model = AutoModelForImageTextToText.from_pretrained(
             model_id,
             dtype=self.config.vlm.dtype,
             attn_implementation=self.config.vlm.attn_implementation,
             trust_remote_code=True
         ).to(self.config.device).eval()
 
-        self.processor = AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True
-        )
-
         if self.config.vlm.do_compile:
-            self.model = torch.compile(self.model)
+            model = torch.compile(model)
 
-    def analyze_images(self, images: List[Image.Image]) -> List[Dict[str, Any]]:
+        self.model = outlines.from_transformers(model, self.processor)
+
+    def generate_caption(self, prompt: str, images: List[Image.Image]) -> List[str]:
         if not images:
             return []
 
         # Prepare batch of messages
-        texts = []
+        messages = []
         for img in images:
-            messages = [
-                {
-                    "role": "system",
-                    "content": VLM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": img}
-                    ]
-                }
-            ]
-            text = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            texts.append(text)
+            messages.append([
+                {"role": "user", "content": [
+                    { "type": "text", "text": prompt },
+                    { "type": "image", "image": outlines.inputs.Image(img) }
+                ]}
+            ])
 
         # Batch process all images at once
-        inputs = self.processor(
-            text=texts,
-            images=images,
-            return_tensors="pt",
-            padding=True
-        ).to(self.config.device)
-
-        # Generate for all images in batch
-        with torch.no_grad():
-            output_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=2048,
-                temperature=0.0,
-                do_sample=False
-            )
-
-        # Decode all outputs
-        generated_texts = self.processor.batch_decode(
-            output_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False
+        return self.model.generate_batch(
+            messages,
+            output_type=outlines.backends.get_cfg_logits_processor(
+                outlines.backends.CFG_DEFAULT_BACKEND,
+                self.model,
+                outlines.grammars.json
+            ),
+            do_sample=False
         )
-
-        # Extract JSON from each response
-        results = []
-        for generated_text in generated_texts:
-            try:
-                result = self._extract_json(generated_text)
-                results.append(result)
-            except Exception as e:
-                logger.error(f"Failed to parse VLM output: {e}")
-                results.append(self._get_empty_result())
-
-        return results

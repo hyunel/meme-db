@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/hyunel/MemeDB/internal/config"
@@ -43,10 +44,6 @@ type SearchParams struct {
 }
 
 func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.SearchResult, error) {
-	if params.Limit <= 0 {
-		params.Limit = 10
-	}
-
 	var folderPath *string
 	if params.FolderID != "" {
 		node, err := s.repo.Node.GetNode(ctx, params.FolderID, params.OwnerID)
@@ -59,11 +56,9 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	var metaVec, clipVec []float32
 	g, gCtx := errgroup.WithContext(ctx)
 
-	const task = "Given user query keywords, retrieve the most relevant paragraphs"
-
 	// 1. Get Embeddings in Parallel
 	g.Go(func() error {
-		vecs, err := s.inferClient.TextEmbedding(gCtx, []string{params.Query}, task)
+		vecs, err := s.inferClient.TextEmbedding(gCtx, []string{params.Query}, s.cfg.Prompt.Retrieval)
 		if err != nil {
 			return err
 		}
@@ -86,11 +81,10 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 
 	// 2. Perform Combined DB Search
 	results, err := s.repo.Meme.SearchCombined(ctx, repository.SearchCombinedParams{
-		Metaphor:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec)},
-		Semantic:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec)},
-		Clip:       repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(clipVec)},
-		OCR:        repository.RecallConfig[string]{Value: params.Query},
-		Limit:      params.Limit,
+		Metaphor:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec), Limit: 10},
+		Semantic:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec), Limit: 10},
+		Clip:       repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(clipVec), Limit: 10},
+		OCR:        repository.RecallConfig[string]{Value: params.Query, Limit: 20},
 		Scope:      params.Scope,
 		OwnerID:    params.OwnerID,
 		FolderPath: folderPath,
@@ -104,18 +98,21 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	}
 
 	candidates := make([]repository.SearchResult, 0, len(results))
+
 	docs := make([]string, 0, len(results))
 	for _, r := range results {
 		candidates = append(candidates, r)
-		doc := ""
-		if r.OCRText != nil {
-			doc += *r.OCRText
+
+		out, err := inference.ParseVLMOutput(string(r.VLMJSON))
+		if err != nil {
+			slog.Warn("Failed to parse VLM output for rerank doc", "asset_id", r.AssetID, "error", err)
+			continue
 		}
-		docs = append(docs, doc)
+		docs = append(docs, out.GetRerankDoc())
 	}
 
 	// 4. Rerank
-	scores, err := s.inferClient.Rerank(ctx, params.Query, docs, task)
+	scores, err := s.inferClient.Rerank(ctx, params.Query, docs, s.cfg.Prompt.Retrieval)
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank: %w", err)
 	}
@@ -140,7 +137,7 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	})
 
 	// Truncate to requested limit
-	if len(finalRes) > params.Limit {
+	if params.Limit > 0 && len(finalRes) > params.Limit {
 		finalRes = finalRes[:params.Limit]
 	}
 

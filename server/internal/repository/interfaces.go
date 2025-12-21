@@ -26,7 +26,6 @@ type SearchCombinedParams struct {
 	Clip     RecallConfig[pgvector.Vector]
 	OCR      RecallConfig[string]
 
-	Limit      int
 	Scope      string
 	OwnerID    string
 	FolderPath *string
@@ -54,7 +53,6 @@ type TaskRepo interface {
 	UpdateTaskStatus(ctx context.Context, id string, status string, errorMessage *string) error
 	CreateHistoryFromTask(ctx context.Context, taskID string, historyStatus string, finishedAt *time.Time, errorMessage *string) error
 	ResetTask(ctx context.Context, taskID string, runAt time.Time, taskContext interface{}) error
-	ResetStaleTasks(ctx context.Context, duration time.Duration) error
 }
 
 type UserRepo interface {

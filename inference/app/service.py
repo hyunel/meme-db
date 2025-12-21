@@ -1,4 +1,3 @@
-import json
 import grpc
 import logging
 from .manager import ModelManager
@@ -23,11 +22,10 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
     def ClipImageEmbedding(self, request: inference_pb2.ClipImageEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipImageEmbeddingResponse:
         images = []
         for img_msg in request.images:
-            # Use utils to handle various formats
             frames = load_image_from_bytes(img_msg.data, img_msg.file_format)
-            # For CLIP, use the middle frame
-            middle_idx = len(frames) // 2
-            images.append(frames[middle_idx])
+            assert frames, "No frames extracted from image data"
+
+            images.append(frames[len(frames) // 2])
 
         model = self.model_manager.clip
         embeddings = model.get_image_embedding(images)
@@ -48,83 +46,50 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         scores = model.predict(pairs, request.task_description)
         return inference_pb2.RerankResponse(scores=scores)
 
-    def AnalyzeImage(self, request: inference_pb2.AnalyzeImageRequest, context: grpc.ServicerContext) -> inference_pb2.AnalyzeImageResponse:
+    def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
         """
-        Analyze images using VLM and CLIP to extract features.
-        Handles multiple image formats including webm, tgs, etc.
-        Processes all images in parallel/batch for efficiency.
+        Generate captions for images using VLM and extract CLIP embeddings.
         """
         if ModelType.VLM not in self.model_manager.models:
             context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
         vlm_model = self.model_manager.vlm
         clip_model = self.model_manager.clip
-        text_model = self.model_manager.text_embedding
 
         # Prepare all images for batch processing
         clip_images = []
         vlm_images = []
-        vlm_results = []
         image_dims = []
 
-        for i, item in enumerate(request.inputs):
+        for img_msg in request.images:
             # Load frames from various formats
-            frames = load_image_from_bytes(item.image.data, item.image.file_format)
+            frames = load_image_from_bytes(img_msg.data, img_msg.file_format)
+            assert frames, "No frames extracted from image data"
 
-            if frames:
-                image_dims.append((frames[0].width, frames[0].height))
-            else:
-                image_dims.append((0, 0))
+            image_dims.append((frames[0].width, frames[0].height))
 
             # For CLIP: use middle frame
-            middle_idx = len(frames) // 2
-            clip_images.append(frames[middle_idx])
+            clip_images.append(frames[len(frames) // 2])
 
-            if item.vlm_json:
-                vlm_results.append(json.loads(item.vlm_json))
-            else:
-                vlm_images.append(draw_stitch(frames))
-                vlm_results.append(None)
+            # For VLM: use stitched image
+            vlm_images.append(draw_stitch(frames))
 
         # Batch process CLIP embeddings
         clip_embeddings = clip_model.get_image_embedding(clip_images)
 
-        # Process VLM analysis (parallel for OpenAI, batch for local)
-        if vlm_images:
-            new_vlm_results = iter(vlm_model.analyze_images(vlm_images))
-            vlm_results = [
-                next(new_vlm_results) if r is None else r
-                for r in vlm_results
-            ]
-
-        # Prepare text embedding requests
-        metaphor_texts = []
-        semantic_texts = []
-
-        for vlm_result in vlm_results:
-            metaphor_array = vlm_result.get('synthetic_queries', []) + vlm_result.get('implied_meaning', [])
-            semantic_array = vlm_result.get('specific_entities', []) + vlm_result.get('visual_subject', []) + vlm_result.get('visual_style', [])
-
-            metaphor_texts.append(', '.join(metaphor_array) if metaphor_array else '')
-            semantic_texts.append(', '.join(semantic_array) if semantic_array else '')
-
-        # Batch process text embeddings
-        metaphor_embs = text_model.get_embedding(metaphor_texts)
-        semantic_embs = text_model.get_embedding(semantic_texts)
+        # Process VLM caption generation
+        captions = vlm_model.generate_caption(request.prompt, vlm_images)
 
         # Create results
         results = []
-        for i, vlm_result in enumerate(vlm_results):
+        for i, caption in enumerate(captions):
             width, height = image_dims[i]
-            result = inference_pb2.AnalyzedImage(
-                ocr_text=vlm_result.get("ocr_text", ""),
-                clip_vector=clip_embeddings[i],
-                metaphor_vector=metaphor_embs[i],
-                semantic_vector=semantic_embs[i],
-                vlm_json=json.dumps(vlm_result, ensure_ascii=False),
+            result = inference_pb2.ImageCaptionResult(
+                caption=caption,
                 width=width,
-                height=height
+                height=height,
+                clip_embedding=inference_pb2.Embedding(values=clip_embeddings[i])
             )
             results.append(result)
 
-        return inference_pb2.AnalyzeImageResponse(results=results)
+        return inference_pb2.ImageCaptionResponse(results=results)

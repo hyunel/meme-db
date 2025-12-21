@@ -9,5 +9,5 @@ type InferenceService interface {
 	ClipImageEmbedding(ctx context.Context, images []ImageInput) ([][]float32, error)
 	ClipTextEmbedding(ctx context.Context, texts []string) ([][]float32, error)
 	Rerank(ctx context.Context, query string, documents []string, task string) ([]float32, error)
-	AnalyzeImage(ctx context.Context, inputs []AnalyzeInput) ([]*AnalyzeOutput, error)
+	ImageCaption(ctx context.Context, prompt string, images []ImageInput) ([]*ImageCaptionResult, error)
 }

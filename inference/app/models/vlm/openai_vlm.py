@@ -1,11 +1,10 @@
-from typing import List, Dict, Any
+from typing import List
 import logging
-import json
 import asyncio
 from PIL import Image
 from io import BytesIO
 from base64 import b64encode
-from .base import VLMModel, VLM_PROMPT
+from .base import VLMModel
 from ...config import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -27,37 +26,36 @@ class OpenAIVLM(VLMModel):
         self.model_name = self.config.vlm.openai.model
         self.client = AsyncOpenAI(
             api_key=self.config.vlm.openai.api_key,
-            base_url=self.config.vlm.openai.base_url
+            base_url=self.config.vlm.openai.base_url,
+            max_retries=self.config.vlm.openai.max_retries,
         )
 
-    def analyze_images(self, images: List[Image.Image]) -> List[Dict[str, Any]]:
+    def generate_caption(self, prompt: str, images: List[Image.Image]) -> List[str]:
         if not images:
             return []
 
-        async def analyze_single_image(img: Image.Image) -> Dict[str, Any]:
+        async def analyze_single_image(img: Image.Image) -> str:
             with BytesIO() as buffer:
                 img.save(buffer, format='PNG')
                 img_b64 = b64encode(buffer.getvalue()).decode('utf-8')
 
-            image_content = {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img_b64}"}
-            }
-
             response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": VLM_PROMPT},
-                    {"role": "user", "content": [image_content]}
+                    {"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+                        }
+                    ]}
                 ],
                 temperature=0,
-                max_tokens=4096,
+                top_p=1,
                 response_format={"type": "json_object"}
             )
 
-            content = response.choices[0].message.content
-            result = json.loads(content)
-            return result
+            return response.choices[0].message.content
 
         async def analyze_all():
             tasks = [analyze_single_image(img) for img in images]

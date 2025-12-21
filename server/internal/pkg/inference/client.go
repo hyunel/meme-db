@@ -19,19 +19,11 @@ type ImageInput struct {
 	Format string
 }
 
-type AnalyzeInput struct {
-	Image   ImageInput
-	VlmJson string
-}
-
-type AnalyzeOutput struct {
-	OcrText        string
-	ClipVector     []float32
-	MetaphorVector []float32
-	SemanticVector []float32
-	VlmJson        string
-	Width          int
-	Height         int
+type ImageCaptionResult struct {
+	Caption       string
+	Width         int
+	Height        int
+	ClipEmbedding []float32
 }
 
 func NewClient(addr string) (*Client, error) {
@@ -122,37 +114,37 @@ func (c *Client) Rerank(ctx context.Context, query string, documents []string, t
 	return resp.Scores, nil
 }
 
-func (c *Client) AnalyzeImage(ctx context.Context, inputs []AnalyzeInput) ([]*AnalyzeOutput, error) {
-	pbInputs := make([]*pb.AnalyzeImageInput, len(inputs))
-	for i, input := range inputs {
-		pbInputs[i] = &pb.AnalyzeImageInput{
-			Image: &pb.Image{
-				Data:       input.Image.Data,
-				FileFormat: input.Image.Format,
-			},
-			VlmJson: input.VlmJson,
+func (c *Client) ImageCaption(ctx context.Context, prompt string, images []ImageInput) ([]*ImageCaptionResult, error) {
+	pbImages := make([]*pb.Image, len(images))
+	for i, img := range images {
+		pbImages[i] = &pb.Image{
+			Data:       img.Data,
+			FileFormat: img.Format,
 		}
 	}
 
-	resp, err := c.client.AnalyzeImage(ctx, &pb.AnalyzeImageRequest{
-		Inputs: pbInputs,
+	resp, err := c.client.ImageCaption(ctx, &pb.ImageCaptionRequest{
+		Prompt: prompt,
+		Images: pbImages,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	outputs := make([]*AnalyzeOutput, len(resp.Results))
+	results := make([]*ImageCaptionResult, len(resp.Results))
 	for i, res := range resp.Results {
-		outputs[i] = &AnalyzeOutput{
-			OcrText:        res.OcrText,
-			ClipVector:     res.ClipVector,
-			MetaphorVector: res.MetaphorVector,
-			SemanticVector: res.SemanticVector,
-			VlmJson:        res.VlmJson,
-			Width:          int(res.Width),
-			Height:         int(res.Height),
+		var clipEmbedding []float32
+		if res.ClipEmbedding != nil {
+			clipEmbedding = res.ClipEmbedding.Values
+		}
+
+		results[i] = &ImageCaptionResult{
+			Caption:       res.Caption,
+			Width:         int(res.Width),
+			Height:        int(res.Height),
+			ClipEmbedding: clipEmbedding,
 		}
 	}
 
-	return outputs, nil
+	return results, nil
 }

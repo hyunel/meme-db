@@ -537,28 +537,28 @@ func (x *RerankResponse) GetScores() []float32 {
 	return nil
 }
 
-type AnalyzeImageInput struct {
+type ImageCaptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Image         *Image                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
-	VlmJson       string                 `protobuf:"bytes,2,opt,name=vlm_json,json=vlmJson,proto3" json:"vlm_json,omitempty"`
+	Prompt        string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Images        []*Image               `protobuf:"bytes,2,rep,name=images,proto3" json:"images,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AnalyzeImageInput) Reset() {
-	*x = AnalyzeImageInput{}
+func (x *ImageCaptionRequest) Reset() {
+	*x = ImageCaptionRequest{}
 	mi := &file_inference_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AnalyzeImageInput) String() string {
+func (x *ImageCaptionRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AnalyzeImageInput) ProtoMessage() {}
+func (*ImageCaptionRequest) ProtoMessage() {}
 
-func (x *AnalyzeImageInput) ProtoReflect() protoreflect.Message {
+func (x *ImageCaptionRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_inference_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -570,46 +570,49 @@ func (x *AnalyzeImageInput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AnalyzeImageInput.ProtoReflect.Descriptor instead.
-func (*AnalyzeImageInput) Descriptor() ([]byte, []int) {
+// Deprecated: Use ImageCaptionRequest.ProtoReflect.Descriptor instead.
+func (*ImageCaptionRequest) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *AnalyzeImageInput) GetImage() *Image {
+func (x *ImageCaptionRequest) GetPrompt() string {
 	if x != nil {
-		return x.Image
-	}
-	return nil
-}
-
-func (x *AnalyzeImageInput) GetVlmJson() string {
-	if x != nil {
-		return x.VlmJson
+		return x.Prompt
 	}
 	return ""
 }
 
-type AnalyzeImageRequest struct {
+func (x *ImageCaptionRequest) GetImages() []*Image {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+type ImageCaptionResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Inputs        []*AnalyzeImageInput   `protobuf:"bytes,1,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	Caption       string                 `protobuf:"bytes,1,opt,name=caption,proto3" json:"caption,omitempty"`
+	Width         int32                  `protobuf:"varint,2,opt,name=width,proto3" json:"width,omitempty"`
+	Height        int32                  `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
+	ClipEmbedding *Embedding             `protobuf:"bytes,4,opt,name=clip_embedding,json=clipEmbedding,proto3" json:"clip_embedding,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AnalyzeImageRequest) Reset() {
-	*x = AnalyzeImageRequest{}
+func (x *ImageCaptionResult) Reset() {
+	*x = ImageCaptionResult{}
 	mi := &file_inference_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AnalyzeImageRequest) String() string {
+func (x *ImageCaptionResult) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AnalyzeImageRequest) ProtoMessage() {}
+func (*ImageCaptionResult) ProtoMessage() {}
 
-func (x *AnalyzeImageRequest) ProtoReflect() protoreflect.Message {
+func (x *ImageCaptionResult) ProtoReflect() protoreflect.Message {
 	mi := &file_inference_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -621,132 +624,61 @@ func (x *AnalyzeImageRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AnalyzeImageRequest.ProtoReflect.Descriptor instead.
-func (*AnalyzeImageRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ImageCaptionResult.ProtoReflect.Descriptor instead.
+func (*ImageCaptionResult) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *AnalyzeImageRequest) GetInputs() []*AnalyzeImageInput {
+func (x *ImageCaptionResult) GetCaption() string {
 	if x != nil {
-		return x.Inputs
-	}
-	return nil
-}
-
-type AnalyzedImage struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	OcrText        string                 `protobuf:"bytes,1,opt,name=ocr_text,json=ocrText,proto3" json:"ocr_text,omitempty"`
-	ClipVector     []float32              `protobuf:"fixed32,2,rep,packed,name=clip_vector,json=clipVector,proto3" json:"clip_vector,omitempty"`
-	MetaphorVector []float32              `protobuf:"fixed32,3,rep,packed,name=metaphor_vector,json=metaphorVector,proto3" json:"metaphor_vector,omitempty"`
-	SemanticVector []float32              `protobuf:"fixed32,4,rep,packed,name=semantic_vector,json=semanticVector,proto3" json:"semantic_vector,omitempty"`
-	VlmJson        string                 `protobuf:"bytes,5,opt,name=vlm_json,json=vlmJson,proto3" json:"vlm_json,omitempty"`
-	Width          int32                  `protobuf:"varint,6,opt,name=width,proto3" json:"width,omitempty"`
-	Height         int32                  `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *AnalyzedImage) Reset() {
-	*x = AnalyzedImage{}
-	mi := &file_inference_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AnalyzedImage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AnalyzedImage) ProtoMessage() {}
-
-func (x *AnalyzedImage) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AnalyzedImage.ProtoReflect.Descriptor instead.
-func (*AnalyzedImage) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *AnalyzedImage) GetOcrText() string {
-	if x != nil {
-		return x.OcrText
+		return x.Caption
 	}
 	return ""
 }
 
-func (x *AnalyzedImage) GetClipVector() []float32 {
-	if x != nil {
-		return x.ClipVector
-	}
-	return nil
-}
-
-func (x *AnalyzedImage) GetMetaphorVector() []float32 {
-	if x != nil {
-		return x.MetaphorVector
-	}
-	return nil
-}
-
-func (x *AnalyzedImage) GetSemanticVector() []float32 {
-	if x != nil {
-		return x.SemanticVector
-	}
-	return nil
-}
-
-func (x *AnalyzedImage) GetVlmJson() string {
-	if x != nil {
-		return x.VlmJson
-	}
-	return ""
-}
-
-func (x *AnalyzedImage) GetWidth() int32 {
+func (x *ImageCaptionResult) GetWidth() int32 {
 	if x != nil {
 		return x.Width
 	}
 	return 0
 }
 
-func (x *AnalyzedImage) GetHeight() int32 {
+func (x *ImageCaptionResult) GetHeight() int32 {
 	if x != nil {
 		return x.Height
 	}
 	return 0
 }
 
-type AnalyzeImageResponse struct {
+func (x *ImageCaptionResult) GetClipEmbedding() *Embedding {
+	if x != nil {
+		return x.ClipEmbedding
+	}
+	return nil
+}
+
+type ImageCaptionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Results       []*AnalyzedImage       `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	Results       []*ImageCaptionResult  `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AnalyzeImageResponse) Reset() {
-	*x = AnalyzeImageResponse{}
-	mi := &file_inference_proto_msgTypes[14]
+func (x *ImageCaptionResponse) Reset() {
+	*x = ImageCaptionResponse{}
+	mi := &file_inference_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AnalyzeImageResponse) String() string {
+func (x *ImageCaptionResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AnalyzeImageResponse) ProtoMessage() {}
+func (*ImageCaptionResponse) ProtoMessage() {}
 
-func (x *AnalyzeImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[14]
+func (x *ImageCaptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_inference_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -757,12 +689,12 @@ func (x *AnalyzeImageResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AnalyzeImageResponse.ProtoReflect.Descriptor instead.
-func (*AnalyzeImageResponse) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{14}
+// Deprecated: Use ImageCaptionResponse.ProtoReflect.Descriptor instead.
+func (*ImageCaptionResponse) Descriptor() ([]byte, []int) {
+	return file_inference_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *AnalyzeImageResponse) GetResults() []*AnalyzedImage {
+func (x *ImageCaptionResponse) GetResults() []*ImageCaptionResult {
 	if x != nil {
 		return x.Results
 	}
@@ -807,29 +739,23 @@ const file_inference_proto_rawDesc = "" +
 	"\x10task_description\x18\x01 \x01(\tR\x0ftaskDescription\x12+\n" +
 	"\x05pairs\x18\x02 \x03(\v2\x15.inference.RerankPairR\x05pairs\"(\n" +
 	"\x0eRerankResponse\x12\x16\n" +
-	"\x06scores\x18\x01 \x03(\x02R\x06scores\"V\n" +
-	"\x11AnalyzeImageInput\x12&\n" +
-	"\x05image\x18\x01 \x01(\v2\x10.inference.ImageR\x05image\x12\x19\n" +
-	"\bvlm_json\x18\x02 \x01(\tR\avlmJson\"K\n" +
-	"\x13AnalyzeImageRequest\x124\n" +
-	"\x06inputs\x18\x01 \x03(\v2\x1c.inference.AnalyzeImageInputR\x06inputs\"\xe6\x01\n" +
-	"\rAnalyzedImage\x12\x19\n" +
-	"\bocr_text\x18\x01 \x01(\tR\aocrText\x12\x1f\n" +
-	"\vclip_vector\x18\x02 \x03(\x02R\n" +
-	"clipVector\x12'\n" +
-	"\x0fmetaphor_vector\x18\x03 \x03(\x02R\x0emetaphorVector\x12'\n" +
-	"\x0fsemantic_vector\x18\x04 \x03(\x02R\x0esemanticVector\x12\x19\n" +
-	"\bvlm_json\x18\x05 \x01(\tR\avlmJson\x12\x14\n" +
-	"\x05width\x18\x06 \x01(\x05R\x05width\x12\x16\n" +
-	"\x06height\x18\a \x01(\x05R\x06height\"J\n" +
-	"\x14AnalyzeImageResponse\x122\n" +
-	"\aresults\x18\x01 \x03(\v2\x18.inference.AnalyzedImageR\aresults2\xb9\x03\n" +
+	"\x06scores\x18\x01 \x03(\x02R\x06scores\"W\n" +
+	"\x13ImageCaptionRequest\x12\x16\n" +
+	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12(\n" +
+	"\x06images\x18\x02 \x03(\v2\x10.inference.ImageR\x06images\"\x99\x01\n" +
+	"\x12ImageCaptionResult\x12\x18\n" +
+	"\acaption\x18\x01 \x01(\tR\acaption\x12\x14\n" +
+	"\x05width\x18\x02 \x01(\x05R\x05width\x12\x16\n" +
+	"\x06height\x18\x03 \x01(\x05R\x06height\x12;\n" +
+	"\x0eclip_embedding\x18\x04 \x01(\v2\x14.inference.EmbeddingR\rclipEmbedding\"O\n" +
+	"\x14ImageCaptionResponse\x127\n" +
+	"\aresults\x18\x01 \x03(\v2\x1d.inference.ImageCaptionResultR\aresults2\xb9\x03\n" +
 	"\x10InferenceService\x12R\n" +
 	"\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12a\n" +
 	"\x12ClipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n" +
 	"\x11ClipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n" +
 	"\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n" +
-	"\fAnalyzeImage\x12\x1e.inference.AnalyzeImageRequest\x1a\x1f.inference.AnalyzeImageResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3"
+	"\fImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3"
 
 var (
 	file_inference_proto_rawDescOnce sync.Once
@@ -843,7 +769,7 @@ func file_inference_proto_rawDescGZIP() []byte {
 	return file_inference_proto_rawDescData
 }
 
-var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_inference_proto_goTypes = []any{
 	(*Image)(nil),                      // 0: inference.Image
 	(*Embedding)(nil),                  // 1: inference.Embedding
@@ -856,10 +782,9 @@ var file_inference_proto_goTypes = []any{
 	(*RerankPair)(nil),                 // 8: inference.RerankPair
 	(*RerankRequest)(nil),              // 9: inference.RerankRequest
 	(*RerankResponse)(nil),             // 10: inference.RerankResponse
-	(*AnalyzeImageInput)(nil),          // 11: inference.AnalyzeImageInput
-	(*AnalyzeImageRequest)(nil),        // 12: inference.AnalyzeImageRequest
-	(*AnalyzedImage)(nil),              // 13: inference.AnalyzedImage
-	(*AnalyzeImageResponse)(nil),       // 14: inference.AnalyzeImageResponse
+	(*ImageCaptionRequest)(nil),        // 11: inference.ImageCaptionRequest
+	(*ImageCaptionResult)(nil),         // 12: inference.ImageCaptionResult
+	(*ImageCaptionResponse)(nil),       // 13: inference.ImageCaptionResponse
 }
 var file_inference_proto_depIdxs = []int32{
 	1,  // 0: inference.TextEmbeddingResponse.embeddings:type_name -> inference.Embedding
@@ -867,19 +792,19 @@ var file_inference_proto_depIdxs = []int32{
 	1,  // 2: inference.ClipImageEmbeddingResponse.embeddings:type_name -> inference.Embedding
 	1,  // 3: inference.ClipTextEmbeddingResponse.embeddings:type_name -> inference.Embedding
 	8,  // 4: inference.RerankRequest.pairs:type_name -> inference.RerankPair
-	0,  // 5: inference.AnalyzeImageInput.image:type_name -> inference.Image
-	11, // 6: inference.AnalyzeImageRequest.inputs:type_name -> inference.AnalyzeImageInput
-	13, // 7: inference.AnalyzeImageResponse.results:type_name -> inference.AnalyzedImage
+	0,  // 5: inference.ImageCaptionRequest.images:type_name -> inference.Image
+	1,  // 6: inference.ImageCaptionResult.clip_embedding:type_name -> inference.Embedding
+	12, // 7: inference.ImageCaptionResponse.results:type_name -> inference.ImageCaptionResult
 	2,  // 8: inference.InferenceService.TextEmbedding:input_type -> inference.TextEmbeddingRequest
 	4,  // 9: inference.InferenceService.ClipImageEmbedding:input_type -> inference.ClipImageEmbeddingRequest
 	6,  // 10: inference.InferenceService.ClipTextEmbedding:input_type -> inference.ClipTextEmbeddingRequest
 	9,  // 11: inference.InferenceService.Rerank:input_type -> inference.RerankRequest
-	12, // 12: inference.InferenceService.AnalyzeImage:input_type -> inference.AnalyzeImageRequest
+	11, // 12: inference.InferenceService.ImageCaption:input_type -> inference.ImageCaptionRequest
 	3,  // 13: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
 	5,  // 14: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
 	7,  // 15: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
 	10, // 16: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
-	14, // 17: inference.InferenceService.AnalyzeImage:output_type -> inference.AnalyzeImageResponse
+	13, // 17: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
 	13, // [13:18] is the sub-list for method output_type
 	8,  // [8:13] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
@@ -898,7 +823,7 @@ func file_inference_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_inference_proto_rawDesc), len(file_inference_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
