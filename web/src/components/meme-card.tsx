@@ -15,12 +15,22 @@ import {
 interface MemeCardProps extends React.HTMLAttributes<HTMLDivElement> {
   meme: Meme
   fixedHeight?: boolean
-  index?: number,
+  index?: number
+  isFavorite?: boolean
   onFavorite?: () => void
   onDownload?: (format: string) => void
 }
 
-export function MemeCard({ meme, fixedHeight = true, index = 0, className, onFavorite, onDownload, ...props }: MemeCardProps) {
+export function MemeCard({
+  meme,
+  fixedHeight = true,
+  index = 0,
+  isFavorite: isFavoriteProp,
+  className,
+  onFavorite,
+  onDownload,
+  ...props
+}: MemeCardProps) {
   const [open, setOpen] = useState(false)
 
   const handleDownload = (format: string) => {
@@ -70,7 +80,9 @@ export function MemeCard({ meme, fixedHeight = true, index = 0, className, onFav
                 onClick={handleFavorite}
                 className="p-1.5 bg-black/50 backdrop-blur-sm rounded-sm hover:bg-black/70 transition-colors"
               >
-                <Heart className="w-4 h-4 text-white" />
+                <Heart
+                  className={`w-4 h-4 ${isFavoriteProp || meme.isFavorite ? "fill-primary text-primary" : "text-white"}`}
+                />
               </button>
               <DropdownMenu open={open} onOpenChange={setOpen}>
                 <DropdownMenuTrigger asChild>

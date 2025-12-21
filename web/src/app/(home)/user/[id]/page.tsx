@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { MemeCard } from "@/components/meme-card"
 import { MemeGrid } from "@/components/meme-grid"
 import { EmptyState } from "@/components/ui/empty-state"
+import { FolderCard } from "@/components/folder-card"
 
 const ITEMS_PER_PREVIEW = 8
 
@@ -62,37 +63,10 @@ export default function UserPage() {
           </h2>
           {userFolders.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {displayedFolders.map((folder) => {
-                  const folderMemes = mockMemes.filter((m) => m.folderId === folder.id && m.isPublic).slice(0, 4)
-                  return (
-                    <Link href={`/folder/${folder.id}`} key={folder.id}>
-                      <div className="bg-card border border-border rounded-xl p-6 hover:shadow-lg hover:border-primary/50 transition-all group">
-                        <div className="flex items-center gap-3 mb-4">
-                          <FolderOpen className="w-8 h-8 text-primary group-hover:scale-110 transition-transform" />
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-lg">{folder.name}</h3>
-                            <p className="text-sm text-muted-foreground">{folder.memeCount} memes</p>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                        </div>
-                        {folderMemes.length > 0 && (
-                          <div className="grid grid-cols-4 gap-2">
-                            {folderMemes.map((meme) => (
-                              <div key={meme.id} className="aspect-square rounded-lg overflow-hidden bg-muted">
-                                <img
-                                  src={meme.url || "/placeholder.svg"}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </Link>
-                  )
-                })}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {displayedFolders.map((folder) => (
+                  <FolderCard key={folder.id} folder={folder} />
+                ))}
               </div>
               {userFolders.length > ITEMS_PER_PREVIEW && !showAllFolders && (
                 <div className="mt-6 text-center">

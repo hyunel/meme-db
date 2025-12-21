@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Heart, FolderOpen, ChevronLeft, ChevronRight } from "lucide-react"
+import { MemeCard } from "@/components/meme-card"
+import { FolderCard } from "@/components/folder-card"
 
 function FavoritesPageContent() {
   const { user } = useUser()
@@ -52,27 +54,8 @@ function FavoritesPageContent() {
               {paginatedMemes.length > 0 ? (
                 <>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {paginatedMemes.map((meme) => (
-                      <Link href={`/meme/${meme.id}`} key={meme.id}>
-                        <div className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg transition-shadow group">
-                          <div className="aspect-square relative">
-                            <img
-                              src={meme.url || "/placeholder.svg"}
-                              alt={meme.title}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute top-2 right-2">
-                              <div className="bg-background/90 backdrop-blur-sm rounded-full p-2">
-                                <Heart className="w-4 h-4 fill-primary text-primary" />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="p-3">
-                            <h3 className="font-medium text-sm mb-1 truncate">{meme.title}</h3>
-                            <p className="text-xs text-muted-foreground">@{meme.username}</p>
-                          </div>
-                        </div>
-                      </Link>
+                    {paginatedMemes.map((meme, index) => (
+                      <MemeCard key={meme.id} meme={meme} isFavorite={true} index={index} />
                     ))}
                   </div>
 
@@ -121,23 +104,7 @@ function FavoritesPageContent() {
                 <>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {paginatedFolders.map((folder) => (
-                      <Link href={`/folder/${folder.id}`} key={folder.id}>
-                        <div className="bg-card border border-border rounded-xl p-6 hover:shadow-lg transition-shadow group cursor-pointer">
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="p-3 bg-primary/10 rounded-lg">
-                              <FolderOpen className="w-6 h-6 text-primary" />
-                            </div>
-                            <div className="bg-background/90 backdrop-blur-sm rounded-full p-2">
-                              <Heart className="w-4 h-4 fill-primary text-primary" />
-                            </div>
-                          </div>
-                          <h3 className="font-semibold mb-2">{folder.name}</h3>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">@{folder.username}</span>
-                            <span className="text-muted-foreground">{folder.memeCount} memes</span>
-                          </div>
-                        </div>
-                      </Link>
+                      <FolderCard key={folder.id} folder={folder} />
                     ))}
                   </div>
 

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Search, FolderOpen, Heart, Globe, Zap, Shield, ArrowRight, Sparkles } from "lucide-react"
+import { FeatureCard } from "@/components/feature-card"
 
 export default function LandingPage() {
   const [scrollY, setScrollY] = useState(0)
@@ -229,29 +230,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-    </div>
-  )
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-  delay,
-}: {
-  icon: React.ReactNode
-  title: string
-  description: string
-  delay: string
-}) {
-  return (
-    <div
-      className="group bg-card border border-border rounded-2xl p-8 space-y-4 hover:shadow-xl hover:border-primary/50 transition-all duration-300 hover:-translate-y-1 animate-fade-in"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="text-primary group-hover:scale-110 transition-transform duration-300 inline-block mb-0">{icon}</div>
-      <h3 className="text-xl font-bold text-card-foreground">{title}</h3>
-      <p className="text-muted-foreground leading-relaxed">{description}</p>
     </div>
   )
 }
