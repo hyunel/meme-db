@@ -79,6 +79,7 @@ type MemeDTO struct {
 	Height     int        `json:"height"`
 	Tags       []*Tag     `json:"tags"`
 	URL        *string    `json:"url"`
+	InLibrary  bool       `json:"in_library"`
 	AnalyzedAt *time.Time `json:"analyzed_at"`
 }
 

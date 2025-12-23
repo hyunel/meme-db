@@ -40,9 +40,9 @@ func main() {
 
 	// 4. Setup External Clients
 	// vlmClient := service.NewVLMClient(&cfg.VLM)
-	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr)
+	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr, cfg.Inference.Batch)
 	if err != nil {
-		slog.Error("Fatal to create inference client", "error", err)
+		slog.Error("Failed to create inference client", "error", err)
 		os.Exit(1)
 	}
 	defer inferClient.Close()
@@ -103,6 +103,7 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	e.GET("/api/search", memeHandler.Search)
+	e.GET("/api/memes/:id", memeHandler.GetMeme)
 	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
 
 	// Protected Routes

@@ -15,6 +15,7 @@ type AssetRepo interface {
 }
 
 type RecallConfig[T any] struct {
+	Enabled   bool
 	Value     T
 	Threshold float32
 	Limit     int
@@ -40,10 +41,8 @@ type SearchResult struct {
 type MemeRepo interface {
 	CreateMeme(ctx context.Context, meme *model.MemeInfo) error
 	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error)
-	GetMeme(ctx context.Context, assetID string) (*model.MemeInfo, error)
-	CountMemes(ctx context.Context) (int64, error)
-	CountMemesMissingEmbeddings(ctx context.Context) (int64, error)
-	GetPendingMemesForUpdate(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
+	GetMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error)
+	GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
 }
 
 type TaskRepo interface {

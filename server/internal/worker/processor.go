@@ -14,6 +14,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/pgvector/pgvector-go"
+	"golang.org/x/sync/errgroup"
 )
 
 type ProcessMemesHandler struct {
@@ -36,7 +37,6 @@ func NewProcessMemesHandler(
 
 type ProcessPayload struct {
 	StartID          string `json:"start_id"`
-	BatchSize        int    `json:"batch_size"`
 	ShouldReschedule bool   `json:"should_reschedule"`
 }
 
@@ -48,7 +48,7 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 		}
 	}
 
-	batchSize := payload.BatchSize
+	batchSize := h.cfg.Inference.Batch.ImageCaption
 	if batchSize <= 0 {
 		return fmt.Errorf("invalid batch size: %d", batchSize)
 	}
@@ -56,7 +56,7 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 	var shouldReschedule bool
 
 	// 1. Fetch pending memes
-	memes, err := h.repo.Meme.GetPendingMemesForUpdate(ctx, payload.StartID, batchSize)
+	memes, err := h.repo.Meme.GetPendingMemes(ctx, payload.StartID, batchSize)
 	if err != nil {
 		return fmt.Errorf("failed to get pending memes: %w", err)
 	}
@@ -112,6 +112,8 @@ func (h *ProcessMemesHandler) processBatch(ctx context.Context, items []*model.M
 		return nil
 	}
 
+	// 1. Get Image Caption for all items concurrently and individually
+
 	// imageInputs := make([]inference.ImageInput, len(batchData))
 	// for i, item := range batchData {
 	// 	imageInputs[i] = inference.ImageInput{
@@ -125,64 +127,63 @@ func (h *ProcessMemesHandler) processBatch(ctx context.Context, items []*model.M
 	// 	return fmt.Errorf("failed to get image captions: %w", err)
 	// }
 
-	// 1. Get Image Caption and Parse concurrently
 	type result struct {
+		index   int
 		item    *processedItem
 		caption *inference.ImageCaptionResult
 		vlmOut  *inference.VLMOutput
 	}
-	resultChan := make(chan result, len(batchData))
-	errChan := make(chan error, len(batchData))
 
-	for _, item := range batchData {
-		go func(item *processedItem) {
-			imageInput := inference.ImageInput{
-				Data:   item.FileBytes,
-				Format: item.FileExt,
-			}
-			res, err := h.inferClient.ImageCaption(ctx, h.cfg.Prompt.Caption, []inference.ImageInput{imageInput})
+	g, gCtx := errgroup.WithContext(ctx)
+
+	resultsChan := make(chan result, len(batchData))
+	for i, item := range batchData {
+		g.Go(func() error {
+			res, err := h.inferClient.ImageCaption(gCtx, h.cfg.Prompt.Caption, []inference.ImageInput{
+				{Data: item.FileBytes, Format: item.FileExt},
+			})
 			if err != nil || len(res) == 0 {
-				errChan <- fmt.Errorf("failed to get caption for %s: %w", item.Meme.AssetID, err)
-				return
+				slog.Warn("Failed to get caption for meme", "asset_id", item.Meme.AssetID, "error", err)
+				return nil // Don't fail the whole group
 			}
 
 			vlmOut, err := inference.ParseVLMOutput(res[0].Caption)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to parse VLM output for %s: %w", item.Meme.AssetID, err)
-				return
+				slog.Warn("Failed to parse VLM output for meme", "asset_id", item.Meme.AssetID, "error", err)
+				return nil
 			}
 
-			resultChan <- result{item: item, caption: res[0], vlmOut: vlmOut}
-		}(item)
+			resultsChan <- result{index: i, item: item, caption: res[0], vlmOut: vlmOut}
+			return nil
+		})
 	}
 
-	// 2. Collect successful results
+	// Close results channel when all workers are done
+	go func() {
+		g.Wait()
+		close(resultsChan)
+	}()
+
+	// 2. Collect results
 	successfulItems := make([]*processedItem, 0, len(batchData))
 	successfulCaptions := make([]*inference.ImageCaptionResult, 0, len(batchData))
 	ocrTexts := make([]string, 0, len(batchData))
 	metaphorTexts := make([]string, 0, len(batchData))
 	semanticTexts := make([]string, 0, len(batchData))
 
-	for i := 0; i < len(batchData); i++ {
-		select {
-		case res := <-resultChan:
-			successfulItems = append(successfulItems, res.item)
-			successfulCaptions = append(successfulCaptions, res.caption)
-			ocrTexts = append(ocrTexts, res.vlmOut.OCRText)
-			metaphorTexts = append(metaphorTexts, res.vlmOut.GetMetaphorText())
-			semanticTexts = append(semanticTexts, res.vlmOut.GetSemanticText())
-		case err := <-errChan:
-			slog.Warn("Skipping meme due to processing error", "error", err)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	for res := range resultsChan {
+		successfulItems = append(successfulItems, res.item)
+		successfulCaptions = append(successfulCaptions, res.caption)
+		ocrTexts = append(ocrTexts, res.vlmOut.OCRText)
+		metaphorTexts = append(metaphorTexts, res.vlmOut.GetMetaphorText())
+		semanticTexts = append(semanticTexts, res.vlmOut.GetSemanticText())
 	}
 
 	if len(successfulItems) == 0 {
 		return nil
 	}
 
-	// 3. Get Metaphor and Semantic embeddings for valid items in batch
+	// 3. Get Metaphor and Semantic embeddings for valid items
 	metaphorEmbs, err := h.inferClient.TextEmbedding(ctx, metaphorTexts, h.cfg.Prompt.Retrieval)
 	if err != nil {
 		return fmt.Errorf("failed to get metaphor embeddings: %w", err)

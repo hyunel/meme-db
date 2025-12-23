@@ -6,7 +6,6 @@ import (
 
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
-	"github.com/jackc/pgx/v5"
 )
 
 type MemeRepository struct {
@@ -41,7 +40,7 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 		paramIdx := len(args) + 1
 		args = append(args, value)
 
-		where := commonWhere
+		where := commonWhere + fmt.Sprintf(" AND m.%s IS NOT NULL", vectorCol)
 		if threshold > 0 {
 			if vectorCol == "ocr_text" {
 				where += fmt.Sprintf(" AND similarity(m.ocr_text, $%d) >= %f", paramIdx, threshold)
@@ -66,11 +65,22 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 			 LIMIT %d)`, selectSimilarity, recallType, where, limit)
 	}
 
-	subqueries := []string{
-		buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Value, params.Metaphor.Threshold, params.Metaphor.Limit),
-		buildSubquery("semantic", "semantic_vector", params.Semantic.Value, params.Semantic.Threshold, params.Semantic.Limit),
-		buildSubquery("clip", "clip_vector", params.Clip.Value, params.Clip.Threshold, params.Clip.Limit),
-		buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit),
+	var subqueries []string
+	if params.Metaphor.Enabled {
+		subqueries = append(subqueries, buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Value, params.Metaphor.Threshold, params.Metaphor.Limit))
+	}
+	if params.Semantic.Enabled {
+		subqueries = append(subqueries, buildSubquery("semantic", "semantic_vector", params.Semantic.Value, params.Semantic.Threshold, params.Semantic.Limit))
+	}
+	if params.Clip.Enabled {
+		subqueries = append(subqueries, buildSubquery("clip", "clip_vector", params.Clip.Value, params.Clip.Threshold, params.Clip.Limit))
+	}
+	if params.OCR.Enabled {
+		subqueries = append(subqueries, buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit))
+	}
+
+	if len(subqueries) == 0 {
+		return nil, nil
 	}
 
 	// Correcting query building
@@ -130,42 +140,7 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 	return nil
 }
 
-func (r *MemeRepository) GetMeme(ctx context.Context, assetID string) (*model.MemeInfo, error) {
-	query := `
-		SELECT asset_id, vlm_json, ocr_text, width, height, analyzed_at
-		FROM meme_info
-		WHERE asset_id = $1::uuid
-	`
-	var meme model.MemeInfo
-	err := r.db.QueryRow(ctx, query, assetID).Scan(
-		&meme.AssetID, &meme.VLMJSON, &meme.OCRText, &meme.Width, &meme.Height, &meme.AnalyzedAt,
-	)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &meme, nil
-}
-
-func (r *MemeRepository) CountMemes(ctx context.Context) (int64, error) {
-	var count int64
-	err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM meme_info").Scan(&count)
-	return count, err
-}
-
-func (r *MemeRepository) CountMemesMissingEmbeddings(ctx context.Context) (int64, error) {
-	query := `
-		SELECT COUNT(*) FROM meme_info
-		WHERE metaphor_vector IS NULL OR semantic_vector IS NULL OR clip_vector IS NULL
-	`
-	var count int64
-	err := r.db.QueryRow(ctx, query).Scan(&count)
-	return count, err
-}
-
-func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
+func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
 	query := `
 		UPDATE meme_info
 		SET analyzed_at = NOW()
@@ -195,4 +170,49 @@ func (r *MemeRepository) GetPendingMemesForUpdate(ctx context.Context, startID s
 		memes = append(memes, &m)
 	}
 	return memes, nil
+}
+
+func (r *MemeRepository) GetMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error) {
+	if len(assetIDs) == 0 {
+		return make(map[string]*model.MemeDTO), nil
+	}
+
+	query := `
+		SELECT
+			mi.asset_id::text, mi.width, mi.height, mi.analyzed_at,
+			EXISTS(SELECT 1 FROM nodes n WHERE n.asset_id = mi.asset_id AND n.owner_id = $2::uuid) as in_library,
+			COALESCE((
+				SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'created_at', t.created_at))
+				FROM asset_tags at
+				JOIN tags t ON at.tag_id = t.id
+				WHERE at.asset_id = mi.asset_id
+				  AND (at.user_id IS NULL OR at.user_id = $2::uuid)
+			), '[]'::json) as tags
+		FROM meme_info mi
+		JOIN assets a ON mi.asset_id = a.id
+		WHERE mi.asset_id = ANY($1::uuid[])
+		  AND (a.public_ref_count > 0 OR EXISTS(SELECT 1 FROM nodes n WHERE n.asset_id = mi.asset_id AND n.owner_id = $2::uuid))
+	`
+	rows, err := r.db.Query(ctx, query, assetIDs, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch meme dtos: %w", err)
+	}
+	defer rows.Close()
+
+	dtos := make(map[string]*model.MemeDTO)
+	for rows.Next() {
+		var assetID string
+		dto := &model.MemeDTO{}
+		err := rows.Scan(
+			&assetID, &dto.Width, &dto.Height, &dto.AnalyzedAt,
+			&dto.InLibrary, &dto.Tags,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan meme dto: %w", err)
+		}
+		dto.AssetID = assetID
+		dtos[assetID] = dto
+	}
+
+	return dtos, nil
 }

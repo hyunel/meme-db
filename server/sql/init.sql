@@ -113,6 +113,7 @@ WHERE name <> '';
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes USING GIST (path);
 -- Fast Reverse Lookup (Asset -> User/Location)
 CREATE INDEX IF NOT EXISTS idx_nodes_asset ON nodes(asset_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_asset_owner ON nodes(asset_id, owner_id);
 -- Fast List Directory
 CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/pgvector/pgvector-go"
@@ -81,10 +82,10 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 
 	// 2. Perform Combined DB Search
 	results, err := s.repo.Meme.SearchCombined(ctx, repository.SearchCombinedParams{
-		Metaphor:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec), Limit: 10},
-		Semantic:   repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(metaVec), Limit: 10},
-		Clip:       repository.RecallConfig[pgvector.Vector]{Value: pgvector.NewVector(clipVec), Limit: 10},
-		OCR:        repository.RecallConfig[string]{Value: params.Query, Limit: 20},
+		Metaphor:   repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(metaVec), Limit: 10},
+		Semantic:   repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(metaVec), Limit: 10},
+		Clip:       repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(clipVec), Limit: 10},
+		OCR:        repository.RecallConfig[string]{Enabled: true, Value: params.Query, Limit: 20},
 		Scope:      params.Scope,
 		OwnerID:    params.OwnerID,
 		FolderPath: folderPath,
@@ -112,17 +113,29 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	}
 
 	// 4. Rerank
+	// The inferClient handles batching internally based on configuration
 	scores, err := s.inferClient.Rerank(ctx, params.Query, docs, s.cfg.Prompt.Retrieval)
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank: %w", err)
 	}
 
+	// 5. Assemble DTOs in batch
+	assetIDs := make([]string, len(candidates))
+	for i, c := range candidates {
+		assetIDs[i] = c.AssetID
+	}
+	dtoMap, err := s.BatchAssembleMemeDTOs(ctx, assetIDs, params.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+
 	finalRes := make([]model.SearchResult, len(candidates))
 	for i, c := range candidates {
-		dto, err := s.assembleMemeDTO(ctx, c.MemeInfo, params.OwnerID)
-		if err != nil {
-			return nil, err
+		dto, ok := dtoMap[c.AssetID]
+		if !ok {
+			return nil, fmt.Errorf("missing meme dto for asset %s", c.AssetID)
 		}
+
 		finalRes[i] = model.SearchResult{
 			Meme:       dto,
 			RecallType: c.RecallType,
@@ -144,32 +157,28 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	return finalRes, nil
 }
 
-func (s *MemeService) assembleMemeDTO(ctx context.Context, info model.MemeInfo, ownerID string) (*model.MemeDTO, error) {
-	var userIDPtr *string
-	if ownerID != "" {
-		userIDPtr = &ownerID
-	}
-	tags, err := s.repo.Tag.GetAssetTags(ctx, info.AssetID, userIDPtr)
+func (s *MemeService) AssembleMemeDTO(ctx context.Context, assetID string, ownerID string) (*model.MemeDTO, error) {
+	dtos, err := s.BatchAssembleMemeDTOs(ctx, []string{assetID}, ownerID)
 	if err != nil {
 		return nil, err
 	}
+	dto, ok := dtos[assetID]
+	if !ok {
+		return nil, apperror.NotFound(fmt.Sprintf("meme not found: %s", assetID))
+	}
+	return dto, nil
+}
 
-	asset, err := s.repo.Asset.GetAsset(ctx, info.AssetID)
+func (s *MemeService) BatchAssembleMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error) {
+	dtoMap, err := s.repo.Meme.GetMemeDTOs(ctx, assetIDs, ownerID)
 	if err != nil {
-		return nil, err
-	}
-	var url *string
-	if asset != nil {
-		u := s.assetService.GetAssetURL(info.AssetID)
-		url = &u
+		return nil, fmt.Errorf("failed to assemble meme dtos: %w", err)
 	}
 
-	return &model.MemeDTO{
-		AssetID:    info.AssetID,
-		Width:      info.Width,
-		Height:     info.Height,
-		Tags:       tags,
-		URL:        url,
-		AnalyzedAt: info.AnalyzedAt,
-	}, nil
+	for assetID, dto := range dtoMap {
+		u := s.assetService.GetAssetURL(assetID)
+		dto.URL = &u
+	}
+
+	return dtoMap, nil
 }

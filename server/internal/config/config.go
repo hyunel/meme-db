@@ -31,7 +31,15 @@ type DatabaseConfig struct {
 }
 
 type InferenceConfig struct {
-	GRPCAddr string `yaml:"grpc_addr"`
+	GRPCAddr string      `yaml:"grpc_addr"`
+	Batch    BatchConfig `yaml:"batch"`
+}
+
+type BatchConfig struct {
+	TextEmbedding int `yaml:"text_embedding"`
+	ClipEmbedding int `yaml:"clip_embedding"`
+	Rerank        int `yaml:"rerank"`
+	ImageCaption  int `yaml:"image_caption"`
 }
 
 type VLMConfig struct {
