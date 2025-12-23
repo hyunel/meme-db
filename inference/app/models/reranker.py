@@ -25,9 +25,9 @@ class RerankerModel(BaseModel):
             model_id,
             dtype=self.config.reranker.dtype,
             attn_implementation=self.config.reranker.attn_implementation
-        ).to(self.config.device).eval()
+        ).to(self.config.reranker.device).eval()
 
-        if self.config.reranker.do_compile:
+        if self.config.reranker.compile:
             self.model = torch.compile(self.model)
 
         # Cache IDs and Template Tokens
@@ -36,24 +36,22 @@ class RerankerModel(BaseModel):
         self.prefix_tokens = self.tokenizer.encode(self.PREFIX, add_special_tokens=False)
         self.suffix_tokens = self.tokenizer.encode(self.SUFFIX, add_special_tokens=False)
 
-    def predict(self, pairs: List[Tuple[str, str]], task_description: str = "") -> List[float]:
+    def predict(self, items: List[Tuple[Tuple[str, str], str]]) -> List[float]:
         """
         Rerank a list of (query, document) pairs.
 
         Args:
-            pairs: List of (query_str, document_str) tuples.
-            task_description: Optional instruction.
+            items: List of ((query_str, document_str), task_description) tuples.
 
         Returns:
             List of relevance scores (probabilities of 'yes').
         """
-        if not task_description:
-            task_description = "Given a web search query, retrieve relevant passages that answer the query"
+        default_description = "Given a web search query, retrieve relevant passages that answer the query"
 
-        prompts = [
-            f'<Instruct>: {task_description}\n<Query>: {q}\n<Document>: {d}'
-            for q, d in pairs
-        ]
+        prompts = []
+        for (q, d), desc in items:
+            desc = desc or default_description
+            prompts.append(f'<Instruct>: {desc}\n<Query>: {q}\n<Document>: {d}')
 
         max_length = 8192
         # Tokenize body first
@@ -70,7 +68,7 @@ class RerankerModel(BaseModel):
             inputs['input_ids'][i] = self.prefix_tokens + ele + self.suffix_tokens
 
         # Pad final inputs
-        padded_inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt").to(self.config.device)
+        padded_inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt").to(self.config.reranker.device)
 
         with torch.no_grad():
             outputs = self.model(**padded_inputs)

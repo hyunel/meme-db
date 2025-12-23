@@ -97,8 +97,8 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 		// c. Trigger Processing Task
 		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
 			"start_id":   asset.ID,
-			"batch_size": 8,
-		}, &repository.TaskOpts{Priority: 10})
+			"batch_size": s.cfg.Inference.BatchSize,
+		}, &repository.TaskOpts{Priority: model.PriorityNormal})
 		if err != nil {
 			return fmt.Errorf("failed to create processing task: %w", err)
 		}

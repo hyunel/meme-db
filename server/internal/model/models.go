@@ -48,7 +48,6 @@ const (
 	NodeTypeFile   NodeType   = "FILE"
 	VisibilityPriv Visibility = "PRIVATE"
 	VisibilityPub  Visibility = "PUBLIC"
-	VisibilityLink Visibility = "LINK"
 )
 
 type Node struct {
@@ -74,13 +73,14 @@ type Tag struct {
 }
 
 type MemeDTO struct {
-	AssetID    string     `json:"asset_id"`
-	Width      int        `json:"width"`
-	Height     int        `json:"height"`
-	Tags       []*Tag     `json:"tags"`
-	URL        *string    `json:"url"`
-	InLibrary  bool       `json:"in_library"`
-	AnalyzedAt *time.Time `json:"analyzed_at"`
+	AssetID          string     `json:"asset_id"`
+	Width            int        `json:"width"`
+	Height           int        `json:"height"`
+	Tags             []*Tag     `json:"tags"`
+	URL              *string    `json:"url"`
+	InLibrary        bool       `json:"in_library"`
+	AnalyzedAt       *time.Time `json:"analyzed_at"`
+	ProcessingStatus string     `json:"processing_status"`
 }
 
 type SearchResult struct {
@@ -113,6 +113,8 @@ const (
 	TaskStatusPending   = "pending"
 	TaskStatusCompleted = "completed"
 	TaskStatusFailed    = "failed"
+)
 
+const (
 	JobProcessMemes = "process_memes"
 )

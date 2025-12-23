@@ -1,7 +1,7 @@
 import argparse
 import logging
 import sys
-from concurrent import futures
+import asyncio
 import grpc
 from .manager import ModelManager
 from .service import InferenceService
@@ -19,11 +19,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MemeDB Inference Service")
     parser.add_argument('--host', type=str, default='[::]', help='Host to bind to')
     parser.add_argument('--port', type=int, default=50051, help='Port to bind to')
-    parser.add_argument('--workers', type=int, default=8, help='Number of worker threads')
+    parser.add_argument('--workers', type=int, default=8, help='Number of worker threads (unused for async server)')
     parser.add_argument('-c', '--model-config', type=str, default='models.yaml', help='Path to model config file')
     return parser.parse_args()
 
-def serve() -> None:
+async def serve() -> None:
     args = parse_args()
 
     try:
@@ -33,21 +33,26 @@ def serve() -> None:
         logger.critical(f"Failed to load models: {e}", exc_info=True)
         sys.exit(1)
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=args.workers))
+    server = grpc.aio.server()
+    service = InferenceService(model_manager)
     inference_pb2_grpc.add_InferenceServiceServicer_to_server(
-        InferenceService(model_manager), server
+        service, server
     )
 
     address = f'{args.host}:{args.port}'
     server.add_insecure_port(address)
-    logger.info(f"Inference service starting on {address} with {args.workers} workers...")
+    logger.info(f"Inference service starting on {address}...")
+
+    await service.start()
+    await server.start()
 
     try:
-        server.start()
-        server.wait_for_termination()
-    except KeyboardInterrupt:
+        await server.wait_for_termination()
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Shutting down...")
-        server.stop(0)
+    finally:
+        await service.stop()
+        await server.stop(0)
 
 if __name__ == '__main__':
-    serve()
+    asyncio.run(serve())

@@ -1,8 +1,6 @@
-from typing import List, Dict, Any
+from typing import List
 from abc import abstractmethod
 from PIL import Image
-import json
-import re
 from ..base import BaseModel
 
 class VLMModel(BaseModel):
@@ -16,8 +14,11 @@ class VLMModel(BaseModel):
         pass
 
     @abstractmethod
-    def generate_caption(self, prompt: str, images: List[Image.Image]) -> List[str]:
+    def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:
         """
         Generate captions for images using VLM.
+
+        Args:
+            items: List of (image, prompt) tuples.
         """
         pass

@@ -30,13 +30,13 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type InferenceServiceClient interface {
-	// Batch text embedding using Qwen
+	// Single text embedding using Qwen
 	TextEmbedding(ctx context.Context, in *TextEmbeddingRequest, opts ...grpc.CallOption) (*TextEmbeddingResponse, error)
-	// Batch image embedding using CLIP
+	// Single image embedding using CLIP
 	ClipImageEmbedding(ctx context.Context, in *ClipImageEmbeddingRequest, opts ...grpc.CallOption) (*ClipImageEmbeddingResponse, error)
-	// Batch text embedding using CLIP
+	// Single text embedding using CLIP
 	ClipTextEmbedding(ctx context.Context, in *ClipTextEmbeddingRequest, opts ...grpc.CallOption) (*ClipTextEmbeddingResponse, error)
-	// Rerank text pairs using Qwen
+	// Rerank text pair using Qwen
 	Rerank(ctx context.Context, in *RerankRequest, opts ...grpc.CallOption) (*RerankResponse, error)
 	// Caption image using VLM
 	ImageCaption(ctx context.Context, in *ImageCaptionRequest, opts ...grpc.CallOption) (*ImageCaptionResponse, error)
@@ -104,13 +104,13 @@ func (c *inferenceServiceClient) ImageCaption(ctx context.Context, in *ImageCapt
 // All implementations must embed UnimplementedInferenceServiceServer
 // for forward compatibility.
 type InferenceServiceServer interface {
-	// Batch text embedding using Qwen
+	// Single text embedding using Qwen
 	TextEmbedding(context.Context, *TextEmbeddingRequest) (*TextEmbeddingResponse, error)
-	// Batch image embedding using CLIP
+	// Single image embedding using CLIP
 	ClipImageEmbedding(context.Context, *ClipImageEmbeddingRequest) (*ClipImageEmbeddingResponse, error)
-	// Batch text embedding using CLIP
+	// Single text embedding using CLIP
 	ClipTextEmbedding(context.Context, *ClipTextEmbeddingRequest) (*ClipTextEmbeddingResponse, error)
-	// Rerank text pairs using Qwen
+	// Rerank text pair using Qwen
 	Rerank(context.Context, *RerankRequest) (*RerankResponse, error)
 	// Caption image using VLM
 	ImageCaption(context.Context, *ImageCaptionRequest) (*ImageCaptionResponse, error)

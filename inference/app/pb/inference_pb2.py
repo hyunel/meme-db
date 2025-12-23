@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/pb/inference.proto\x12\tinference\"*\n\x05Image\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x13\n\x0b\x66ile_format\x18\x02 \x01(\t\"\x1b\n\tEmbedding\x12\x0e\n\x06values\x18\x01 \x03(\x02\"?\n\x14TextEmbeddingRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12\r\n\x05texts\x18\x02 \x03(\t\"A\n\x15TextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"=\n\x19\x43lipImageEmbeddingRequest\x12 \n\x06images\x18\x01 \x03(\x0b\x32\x10.inference.Image\"F\n\x1a\x43lipImageEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\")\n\x18\x43lipTextEmbeddingRequest\x12\r\n\x05texts\x18\x01 \x03(\t\"E\n\x19\x43lipTextEmbeddingResponse\x12(\n\nembeddings\x18\x01 \x03(\x0b\x32\x14.inference.Embedding\"-\n\nRerankPair\x12\r\n\x05query\x18\x01 \x01(\t\x12\x10\n\x08\x64ocument\x18\x02 \x01(\t\"O\n\rRerankRequest\x12\x18\n\x10task_description\x18\x01 \x01(\t\x12$\n\x05pairs\x18\x02 \x03(\x0b\x32\x15.inference.RerankPair\" \n\x0eRerankResponse\x12\x0e\n\x06scores\x18\x01 \x03(\x02\"G\n\x13ImageCaptionRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12 \n\x06images\x18\x02 \x03(\x0b\x32\x10.inference.Image\"r\n\x12ImageCaptionResult\x12\x0f\n\x07\x63\x61ption\x18\x01 \x01(\t\x12\r\n\x05width\x18\x02 \x01(\x05\x12\x0e\n\x06height\x18\x03 \x01(\x05\x12,\n\x0e\x63lip_embedding\x18\x04 \x01(\x0b\x32\x14.inference.Embedding\"F\n\x14ImageCaptionResponse\x12.\n\x07results\x18\x01 \x03(\x0b\x32\x1d.inference.ImageCaptionResult2\xb9\x03\n\x10InferenceService\x12R\n\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12\x61\n\x12\x43lipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n\x11\x43lipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n\x0cImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/pb/inference.proto\x12\tinference\"\x1f\n\x0bTaskOptions\x12\x10\n\x08priority\x18\x01 \x01(\x05\"*\n\x05Image\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x13\n\x0b\x66ile_format\x18\x02 \x01(\t\"\x1b\n\tEmbedding\x12\x0e\n\x06values\x18\x01 \x03(\x02\"g\n\x14TextEmbeddingRequest\x12\'\n\x07options\x18\x01 \x01(\x0b\x32\x16.inference.TaskOptions\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x18\n\x10task_description\x18\x03 \x01(\t\"@\n\x15TextEmbeddingResponse\x12\'\n\tembedding\x18\x01 \x01(\x0b\x32\x14.inference.Embedding\"e\n\x19\x43lipImageEmbeddingRequest\x12\'\n\x07options\x18\x01 \x01(\x0b\x32\x16.inference.TaskOptions\x12\x1f\n\x05image\x18\x02 \x01(\x0b\x32\x10.inference.Image\"E\n\x1a\x43lipImageEmbeddingResponse\x12\'\n\tembedding\x18\x01 \x01(\x0b\x32\x14.inference.Embedding\"Q\n\x18\x43lipTextEmbeddingRequest\x12\'\n\x07options\x18\x01 \x01(\x0b\x32\x16.inference.TaskOptions\x12\x0c\n\x04text\x18\x02 \x01(\t\"D\n\x19\x43lipTextEmbeddingResponse\x12\'\n\tembedding\x18\x01 \x01(\x0b\x32\x14.inference.Embedding\"s\n\rRerankRequest\x12\'\n\x07options\x18\x01 \x01(\x0b\x32\x16.inference.TaskOptions\x12\r\n\x05query\x18\x02 \x01(\t\x12\x10\n\x08\x64ocument\x18\x03 \x01(\t\x12\x18\n\x10task_description\x18\x04 \x01(\t\"\x1f\n\x0eRerankResponse\x12\r\n\x05score\x18\x01 \x01(\x02\"o\n\x13ImageCaptionRequest\x12\'\n\x07options\x18\x01 \x01(\x0b\x32\x16.inference.TaskOptions\x12\x1f\n\x05image\x18\x02 \x01(\x0b\x32\x10.inference.Image\x12\x0e\n\x06prompt\x18\x03 \x01(\t\"t\n\x14ImageCaptionResponse\x12\x0f\n\x07\x63\x61ption\x18\x01 \x01(\t\x12\r\n\x05width\x18\x02 \x01(\x05\x12\x0e\n\x06height\x18\x03 \x01(\x05\x12,\n\x0e\x63lip_embedding\x18\x04 \x01(\x0b\x32\x14.inference.Embedding2\xb9\x03\n\x10InferenceService\x12R\n\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12\x61\n\x12\x43lipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n\x11\x43lipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n\x0cImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,34 +32,32 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'app.pb.inference_pb2', _glo
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z+github.com/hyunel/MemeDB/server/internal/pb'
-  _globals['_IMAGE']._serialized_start=37
-  _globals['_IMAGE']._serialized_end=79
-  _globals['_EMBEDDING']._serialized_start=81
-  _globals['_EMBEDDING']._serialized_end=108
-  _globals['_TEXTEMBEDDINGREQUEST']._serialized_start=110
-  _globals['_TEXTEMBEDDINGREQUEST']._serialized_end=173
-  _globals['_TEXTEMBEDDINGRESPONSE']._serialized_start=175
-  _globals['_TEXTEMBEDDINGRESPONSE']._serialized_end=240
-  _globals['_CLIPIMAGEEMBEDDINGREQUEST']._serialized_start=242
-  _globals['_CLIPIMAGEEMBEDDINGREQUEST']._serialized_end=303
-  _globals['_CLIPIMAGEEMBEDDINGRESPONSE']._serialized_start=305
-  _globals['_CLIPIMAGEEMBEDDINGRESPONSE']._serialized_end=375
-  _globals['_CLIPTEXTEMBEDDINGREQUEST']._serialized_start=377
-  _globals['_CLIPTEXTEMBEDDINGREQUEST']._serialized_end=418
-  _globals['_CLIPTEXTEMBEDDINGRESPONSE']._serialized_start=420
-  _globals['_CLIPTEXTEMBEDDINGRESPONSE']._serialized_end=489
-  _globals['_RERANKPAIR']._serialized_start=491
-  _globals['_RERANKPAIR']._serialized_end=536
-  _globals['_RERANKREQUEST']._serialized_start=538
-  _globals['_RERANKREQUEST']._serialized_end=617
-  _globals['_RERANKRESPONSE']._serialized_start=619
-  _globals['_RERANKRESPONSE']._serialized_end=651
-  _globals['_IMAGECAPTIONREQUEST']._serialized_start=653
-  _globals['_IMAGECAPTIONREQUEST']._serialized_end=724
-  _globals['_IMAGECAPTIONRESULT']._serialized_start=726
-  _globals['_IMAGECAPTIONRESULT']._serialized_end=840
-  _globals['_IMAGECAPTIONRESPONSE']._serialized_start=842
-  _globals['_IMAGECAPTIONRESPONSE']._serialized_end=912
-  _globals['_INFERENCESERVICE']._serialized_start=915
-  _globals['_INFERENCESERVICE']._serialized_end=1356
+  _globals['_TASKOPTIONS']._serialized_start=37
+  _globals['_TASKOPTIONS']._serialized_end=68
+  _globals['_IMAGE']._serialized_start=70
+  _globals['_IMAGE']._serialized_end=112
+  _globals['_EMBEDDING']._serialized_start=114
+  _globals['_EMBEDDING']._serialized_end=141
+  _globals['_TEXTEMBEDDINGREQUEST']._serialized_start=143
+  _globals['_TEXTEMBEDDINGREQUEST']._serialized_end=246
+  _globals['_TEXTEMBEDDINGRESPONSE']._serialized_start=248
+  _globals['_TEXTEMBEDDINGRESPONSE']._serialized_end=312
+  _globals['_CLIPIMAGEEMBEDDINGREQUEST']._serialized_start=314
+  _globals['_CLIPIMAGEEMBEDDINGREQUEST']._serialized_end=415
+  _globals['_CLIPIMAGEEMBEDDINGRESPONSE']._serialized_start=417
+  _globals['_CLIPIMAGEEMBEDDINGRESPONSE']._serialized_end=486
+  _globals['_CLIPTEXTEMBEDDINGREQUEST']._serialized_start=488
+  _globals['_CLIPTEXTEMBEDDINGREQUEST']._serialized_end=569
+  _globals['_CLIPTEXTEMBEDDINGRESPONSE']._serialized_start=571
+  _globals['_CLIPTEXTEMBEDDINGRESPONSE']._serialized_end=639
+  _globals['_RERANKREQUEST']._serialized_start=641
+  _globals['_RERANKREQUEST']._serialized_end=756
+  _globals['_RERANKRESPONSE']._serialized_start=758
+  _globals['_RERANKRESPONSE']._serialized_end=789
+  _globals['_IMAGECAPTIONREQUEST']._serialized_start=791
+  _globals['_IMAGECAPTIONREQUEST']._serialized_end=902
+  _globals['_IMAGECAPTIONRESPONSE']._serialized_start=904
+  _globals['_IMAGECAPTIONRESPONSE']._serialized_end=1020
+  _globals['_INFERENCESERVICE']._serialized_start=1023
+  _globals['_INFERENCESERVICE']._serialized_end=1464
 # @@protoc_insertion_point(module_scope)

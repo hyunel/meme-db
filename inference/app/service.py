@@ -1,95 +1,163 @@
 import grpc
 import logging
+import asyncio
 from .manager import ModelManager
-from .models.base import ModelType
+from .config import ModelType
 from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
-
+from .schedulers import BatchScheduler, SimpleScheduler, ResourceManager
 
 logger = logging.getLogger(__name__)
+
 
 class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
     def __init__(self, model_manager: ModelManager):
         self.model_manager = model_manager
+        self.schedulers = {}
+        # Dual resource managers
+        self.gpu_res = ResourceManager(concurrency=1)
+        self.cpu_res = ResourceManager(concurrency=self.model_manager.config.concurrency)
+        self._init_schedulers()
 
-    def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
-        model = self.model_manager.text_embedding
-        embeddings = model.get_embedding(list(request.texts), request.task_description)
+    def _init_schedulers(self):
+        configs = self.model_manager.config.get_model_configs()
+
+        # Define scheduler mapping
+        scheduler_map = {
+            ModelType.TEXT_EMBEDDING: [
+                ("text_embedding", self.model_manager[ModelType.TEXT_EMBEDDING].get_embedding)
+            ],
+            ModelType.RERANKER: [
+                ("reranker", self.model_manager[ModelType.RERANKER].predict)
+            ],
+            ModelType.CLIP: [
+                ("clip_image", self.model_manager[ModelType.CLIP].get_image_embedding),
+                ("clip_text", self.model_manager[ModelType.CLIP].get_text_embedding),
+            ],
+            ModelType.VLM: [
+                ("vlm", self.model_manager[ModelType.VLM].generate_caption)
+            ],
+        }
+
+        for model_type, entries in scheduler_map.items():
+            if model_type not in self.model_manager.models:
+                continue
+
+            model = self.model_manager[model_type]
+            cfg = configs[model_type]
+
+            for name, func in entries:
+                if model.is_gpu:
+                    self.schedulers[name] = BatchScheduler(
+                        resource_manager=self.gpu_res,
+                        process_func=func,
+                        batch_size=cfg.batch_size,
+                        max_latency=cfg.max_latency,
+                    )
+                else:
+                    self.schedulers[name] = SimpleScheduler(
+                        resource_manager=self.cpu_res,
+                        process_func=func,
+                        concurrency=cfg.concurrency,
+                    )
+
+    async def start(self):
+        await self.gpu_res.start()
+        await self.cpu_res.start()
+        for s in self.schedulers.values():
+            await s.start()
+
+    async def stop(self):
+        for s in self.schedulers.values():
+            await s.stop()
+        await self.gpu_res.stop()
+        await self.cpu_res.stop()
+
+    # --- RPC Methods ---
+
+    async def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
+        priority = request.options.priority
+        embedding = await self.schedulers['text_embedding'].submit(
+            (request.text, request.task_description),
+            priority=priority,
+            context=context
+        )
         return inference_pb2.TextEmbeddingResponse(
-            embeddings=[inference_pb2.Embedding(values=e) for e in embeddings]
+            embedding=inference_pb2.Embedding(values=embedding)
         )
 
-    def ClipImageEmbedding(self, request: inference_pb2.ClipImageEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipImageEmbeddingResponse:
-        images = []
-        for img_msg in request.images:
-            frames = load_image_from_bytes(img_msg.data, img_msg.file_format)
-            assert frames, "No frames extracted from image data"
+    async def ClipImageEmbedding(self, request: inference_pb2.ClipImageEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipImageEmbeddingResponse:
+        loop = asyncio.get_running_loop()
+        frames = await loop.run_in_executor(None, load_image_from_bytes, request.image.data, request.image.file_format)
+        if not frames:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No frames extracted from image")
 
-            images.append(frames[len(frames) // 2])
+        image = frames[len(frames) // 2]
 
-        model = self.model_manager.clip
-        embeddings = model.get_image_embedding(images)
+        priority = request.options.priority
+        embedding = await self.schedulers['clip_image'].submit(
+            image,
+            priority=priority,
+            context=context
+        )
         return inference_pb2.ClipImageEmbeddingResponse(
-            embeddings=[inference_pb2.Embedding(values=e) for e in embeddings]
+            embedding=inference_pb2.Embedding(values=embedding)
         )
 
-    def ClipTextEmbedding(self, request: inference_pb2.ClipTextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipTextEmbeddingResponse:
-        model = self.model_manager.clip
-        embeddings = model.get_text_embedding(list(request.texts))
+    async def ClipTextEmbedding(self, request: inference_pb2.ClipTextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipTextEmbeddingResponse:
+        priority = request.options.priority
+        embedding = await self.schedulers['clip_text'].submit(
+            request.text,
+            priority=priority,
+            context=context
+        )
         return inference_pb2.ClipTextEmbeddingResponse(
-            embeddings=[inference_pb2.Embedding(values=e) for e in embeddings]
+            embedding=inference_pb2.Embedding(values=embedding)
         )
 
-    def Rerank(self, request: inference_pb2.RerankRequest, context: grpc.ServicerContext) -> inference_pb2.RerankResponse:
-        pairs = [(p.query, p.document) for p in request.pairs]
-        model = self.model_manager.reranker
-        scores = model.predict(pairs, request.task_description)
-        return inference_pb2.RerankResponse(scores=scores)
+    async def Rerank(self, request: inference_pb2.RerankRequest, context: grpc.ServicerContext) -> inference_pb2.RerankResponse:
+        priority = request.options.priority
+        score = await self.schedulers['reranker'].submit(
+            ((request.query, request.document), request.task_description),
+            priority=priority,
+            context=context
+        )
+        return inference_pb2.RerankResponse(score=score)
 
-    def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
-        """
-        Generate captions for images using VLM and extract CLIP embeddings.
-        """
-        if ModelType.VLM not in self.model_manager.models:
+    async def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
+        if 'vlm' not in self.schedulers:
             context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
-        vlm_model = self.model_manager.vlm
-        clip_model = self.model_manager.clip
+        loop = asyncio.get_running_loop()
+        frames = await loop.run_in_executor(None, load_image_from_bytes, request.image.data, request.image.file_format)
+        if not frames:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No frames extracted from image")
 
-        # Prepare all images for batch processing
-        clip_images = []
-        vlm_images = []
-        image_dims = []
+        # Prepare inputs
+        clip_image = frames[len(frames) // 2]
+        vlm_image = draw_stitch(frames)
+        width, height = frames[0].width, frames[0].height
 
-        for img_msg in request.images:
-            # Load frames from various formats
-            frames = load_image_from_bytes(img_msg.data, img_msg.file_format)
-            assert frames, "No frames extracted from image data"
+        priority = request.options.priority
 
-            image_dims.append((frames[0].width, frames[0].height))
+        # Submit to both schedulers
+        clip_future = self.schedulers['clip_image'].submit(
+            clip_image,
+            priority=priority,
+            context=context
+        )
+        vlm_future = self.schedulers['vlm'].submit(
+            (vlm_image, request.prompt),
+            priority=priority,
+            context=context
+        )
 
-            # For CLIP: use middle frame
-            clip_images.append(frames[len(frames) // 2])
+        # Wait for results
+        clip_embedding, caption = await asyncio.gather(clip_future, vlm_future)
 
-            # For VLM: use stitched image
-            vlm_images.append(draw_stitch(frames))
-
-        # Batch process CLIP embeddings
-        clip_embeddings = clip_model.get_image_embedding(clip_images)
-
-        # Process VLM caption generation
-        captions = vlm_model.generate_caption(request.prompt, vlm_images)
-
-        # Create results
-        results = []
-        for i, caption in enumerate(captions):
-            width, height = image_dims[i]
-            result = inference_pb2.ImageCaptionResult(
-                caption=caption,
-                width=width,
-                height=height,
-                clip_embedding=inference_pb2.Embedding(values=clip_embeddings[i])
-            )
-            results.append(result)
-
-        return inference_pb2.ImageCaptionResponse(results=results)
+        return inference_pb2.ImageCaptionResponse(
+            caption=caption,
+            width=width,
+            height=height,
+            clip_embedding=inference_pb2.Embedding(values=clip_embedding)
+        )

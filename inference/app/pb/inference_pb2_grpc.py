@@ -65,28 +65,28 @@ class InferenceServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def TextEmbedding(self, request, context):
-        """Batch text embedding using Qwen
+        """Single text embedding using Qwen
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ClipImageEmbedding(self, request, context):
-        """Batch image embedding using CLIP
+        """Single image embedding using CLIP
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ClipTextEmbedding(self, request, context):
-        """Batch text embedding using CLIP
+        """Single text embedding using CLIP
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Rerank(self, request, context):
-        """Rerank text pairs using Qwen
+        """Rerank text pair using Qwen
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

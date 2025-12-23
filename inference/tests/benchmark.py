@@ -34,16 +34,14 @@ class BenchmarkStats:
         self.latencies: List[float] = [] # in milliseconds
         self.errors: int = 0
         self.successes: int = 0
-        self.total_tasks: int = 0  # Track actual number of tasks processed
         self.lock = threading.Lock()
 
-    def record(self, latency_ms: float, is_error: bool = False, batch_size: int = 1):
+    def record(self, latency_ms: float, is_error: bool = False):
         with self.lock:
             if is_error:
                 self.errors += 1
             else:
                 self.successes += 1
-                self.total_tasks += batch_size  # Count actual tasks
                 self.latencies.append(latency_ms)
 
     def merge(self, other: 'BenchmarkStats'):
@@ -51,42 +49,47 @@ class BenchmarkStats:
             self.latencies.extend(other.latencies)
             self.errors += other.errors
             self.successes += other.successes
-            self.total_tasks += other.total_tasks
 
-def perform_request(stub, args, text_data, image_data):
+def perform_request(stub, args, text, image, task_type):
     start = time.perf_counter()
+    options = inference_pb2.TaskOptions(priority=0)
     try:
-        if args.task_type == 'text':
+        if task_type == 'text':
             req = inference_pb2.TextEmbeddingRequest(
+                options=options,
                 task_description=args.task_desc,
-                texts=text_data
+                text=text
             )
             stub.TextEmbedding(req)
-        elif args.task_type == 'clip-text':
+        elif task_type == 'clip-text':
             req = inference_pb2.ClipTextEmbeddingRequest(
-                texts=text_data
+                options=options,
+                text=text
             )
             stub.ClipTextEmbedding(req)
-        elif args.task_type == 'clip-image':
+        elif task_type == 'clip-image':
             req = inference_pb2.ClipImageEmbeddingRequest(
-                images=image_data
+                options=options,
+                image=image
             )
             stub.ClipImageEmbedding(req)
-        elif args.task_type == 'rerank':
-            pairs = [inference_pb2.RerankPair(query=text, document=text) for text in text_data]
+        elif task_type == 'rerank':
             req = inference_pb2.RerankRequest(
+                options=options,
                 task_description=args.task_desc,
-                pairs=pairs
+                query=text,
+                document=text
             )
             stub.Rerank(req)
-        elif args.task_type == 'caption':
+        elif task_type == 'caption':
             req = inference_pb2.ImageCaptionRequest(
+                options=options,
                 prompt=args.prompt,
-                images=image_data
+                image=image
             )
             stub.ImageCaption(req)
         else:
-            raise ValueError(f"Unknown task type: {args.task_type}")
+            raise ValueError(f"Unknown task type: {task_type}")
 
         return (time.perf_counter() - start) * 1000, False
     except Exception as e:
@@ -102,21 +105,22 @@ def worker(args, server_address, tasks_per_worker, pbar=None):
 
     # Pre-generate some data to avoid measuring generation time during loop
     # We generate a pool of data and cycle through it
-    text_pool = [generate_random_text() for _ in range(args.batch_size * 10)]
-    image_pool = [inference_pb2.Image(data=generate_random_image_bytes(), file_format='jpeg') for _ in range(args.batch_size * 10)]
+    pool_size = 100
+    text_pool = [generate_random_text() for _ in range(pool_size)]
+    image_pool = [inference_pb2.Image(data=generate_random_image_bytes(), file_format='jpeg') for _ in range(pool_size)]
 
     tasks_processed = 0
 
+    image_required_types = {'clip-image', 'caption'}
+
     while tasks_processed < tasks_per_worker:
-        remaining = tasks_per_worker - tasks_processed
-        current_batch = min(args.batch_size, remaining)
+        task_type = random.choice(args.task_type)
+        text = random.choice(text_pool)
+        image = random.choice(image_pool) if task_type in image_required_types else None
 
-        batch_text = random.choices(text_pool, k=current_batch)
-        batch_image = random.choices(image_pool, k=current_batch) if args.task_type in ['clip-image', 'caption'] else []
-
-        latency, error = perform_request(stub, args, batch_text, batch_image)
-        stats.record(latency, error, current_batch)
-        tasks_processed += current_batch
+        latency, error = perform_request(stub, args, text, image, task_type)
+        stats.record(latency, error)
+        tasks_processed += 1
         if pbar:
             pbar.update(1)
 
@@ -124,34 +128,26 @@ def worker(args, server_address, tasks_per_worker, pbar=None):
     return stats
 
 def run_benchmark(args):
-    print(f"Benchmarking {args.task_type} on {args.host}")
+    print(f"Benchmarking {', '.join(args.task_type)} on {args.host}")
     print(f'  Total Tasks: {args.total}')
     print(f"  Concurrency: {args.concurrency}")
-    print(f"  Batch Size: {args.batch_size}")
     print()
 
     start_time = time.time()
 
-    base_requests = args.total // args.batch_size
-    extra_tasks = args.total % args.batch_size
-
-    requests_per_worker = base_requests // args.concurrency
-    extra_requests = base_requests % args.concurrency
+    tasks_per_worker = args.total // args.concurrency
+    extra_tasks = args.total % args.concurrency
 
     futures = []
     total_stats = BenchmarkStats()
 
-    total_requests = base_requests + (1 if extra_tasks > 0 else 0)
-    pbar = tqdm(total=total_requests, unit="req")
+    pbar = tqdm(total=args.total, unit="req")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
         for i in range(args.concurrency):
-            num_requests = requests_per_worker + (1 if i < extra_requests else 0)
-            tasks_for_worker = num_requests * args.batch_size
-            if i == 0:
-                tasks_for_worker += extra_tasks
-            if tasks_for_worker > 0:
-                futures.append(executor.submit(worker, args, args.host, tasks_for_worker, pbar))
+            worker_tasks = tasks_per_worker + (1 if i < extra_tasks else 0)
+            if worker_tasks > 0:
+                futures.append(executor.submit(worker, args, args.host, worker_tasks, pbar))
 
         for future in concurrent.futures.as_completed(futures):
             worker_stats = future.result()
@@ -162,11 +158,10 @@ def run_benchmark(args):
     duration = time.time() - start_time
 
     print(f"\nCompleted in {duration:.2f}s")
-    print(f"Requests: {total_stats.successes}/{total_stats.successes + total_stats.errors} succeeded | Tasks: {total_stats.total_tasks}")
+    print(f"Requests: {total_stats.successes}/{total_stats.successes + total_stats.errors} succeeded")
 
     if total_stats.successes > 0:
-        throughput = total_stats.total_tasks / duration
-        qps = total_stats.successes / duration
+        throughput = total_stats.successes / duration
         avg_lat = statistics.mean(total_stats.latencies)
         p50 = statistics.median(total_stats.latencies)
         p90 = statistics.quantiles(total_stats.latencies, n=10)[8] if len(total_stats.latencies) >= 10 else p50
@@ -174,7 +169,7 @@ def run_benchmark(args):
         max_lat = max(total_stats.latencies)
 
         print(f"\nPerformance:")
-        print(f"  Throughput: {throughput:.2f} tasks/s | QPS: {qps:.2f} req/s")
+        print(f"  Throughput: {throughput:.2f} tasks/s")
         print(f"  Latency (ms): avg={avg_lat:.2f}, p50={p50:.2f}, p90={p90:.2f}, p99={p99:.2f}, max={max_lat:.2f}")
     else:
         print("\nNo successful requests.")
@@ -182,10 +177,9 @@ def run_benchmark(args):
 def main():
     parser = argparse.ArgumentParser(description="gRPC Benchmark for Inference Service")
     parser.add_argument("--host", default="localhost:50051", help="Server address (host:port)")
-    parser.add_argument("-t", "--task-type", required=True, choices=['text', 'clip-text', 'clip-image', 'rerank', 'caption'], help="Task type to benchmark")
-    parser.add_argument("-c", "--concurrency", type=int, default=1, help="Number of concurrent workers")
+    parser.add_argument("-t", "--task-type", required=True, action='append', choices=['text', 'clip-text', 'clip-image', 'rerank', 'caption'], help="Task type to benchmark")
+    parser.add_argument("-c", "--concurrency", type=int, default=16, help="Number of concurrent workers")
     parser.add_argument("-n", "--total", type=int, default=100, help="Total number of tasks to process")
-    parser.add_argument("-b", "--batch-size", type=int, default=8, help="Number of items per request")
     parser.add_argument("--task-desc", default="Retrieval", help="Task description for text embedding/rerank")
     parser.add_argument("--prompt", default="Describe this image", help="Prompt for image captioning")
 

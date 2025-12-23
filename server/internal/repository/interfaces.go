@@ -43,6 +43,7 @@ type MemeRepo interface {
 	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error)
 	GetMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error)
 	GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
+	ResetMemeStatus(ctx context.Context, assetID string) error
 }
 
 type TaskRepo interface {

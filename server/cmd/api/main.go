@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,10 +23,17 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "config.yaml", "Path to config file")
+	flag.Parse()
+
 	logger.Setup()
 
 	// 1. Load Config
-	cfg := config.LoadConfig("config.yaml")
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
+	}
 
 	// 2. Connect DB
 	pool, err := db.NewDB(cfg.Database.URL)
@@ -40,7 +48,7 @@ func main() {
 
 	// 4. Setup External Clients
 	// vlmClient := service.NewVLMClient(&cfg.VLM)
-	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr, cfg.Inference.Batch)
+	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr)
 	if err != nil {
 		slog.Error("Failed to create inference client", "error", err)
 		os.Exit(1)
@@ -103,7 +111,10 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	e.GET("/api/search", memeHandler.Search)
+
 	e.GET("/api/memes/:id", memeHandler.GetMeme)
+	e.POST("/api/memes/:id/retry", memeHandler.Retry)
+
 	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
 
 	// Protected Routes

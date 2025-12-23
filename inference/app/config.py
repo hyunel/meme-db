@@ -1,13 +1,29 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Literal, Union, Any
 import yaml
 import os
 import re
+from enum import Enum
+from pydantic import BaseModel, Field
+from typing import Optional, Literal, Any, Dict
 
-class ModelCommon(BaseModel):
+class ModelType(str, Enum):
+    """Enum for different model types."""
+    CLIP = "clip"
+    TEXT_EMBEDDING = "text_embedding"
+    RERANKER = "reranker"
+    VLM = "vlm"
+
+class BaseModelConfig(BaseModel):
+    """Unified configuration for both model parameters and task execution settings."""
+    # Model parameters
+    device: Optional[Any] = None
     dtype: Optional[str] = None
     attn_implementation: str = "sdpa"
-    do_compile: bool = False
+    compile: bool = False
+
+    # Task execution settings
+    batch_size: int = 32
+    max_latency: float = 0.1  # seconds
+    concurrency: int = 8
 
 class OpenAIConfig(BaseModel):
     model: str = "gpt-4o"
@@ -18,30 +34,41 @@ class OpenAIConfig(BaseModel):
 class LocalVLMConfig(BaseModel):
     model: str = "Qwen/Qwen3-VL-2B-Instruct"
 
-class VLMConfig(ModelCommon):
+class VLMConfig(BaseModelConfig):
     provider: Literal["openai", "local"] = "openai"
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     local: LocalVLMConfig = Field(default_factory=LocalVLMConfig)
 
-class CLIPConfig(ModelCommon):
+class CLIPConfig(BaseModelConfig):
     pass
 
-class EmbeddingConfig(ModelCommon):
+class EmbeddingConfig(BaseModelConfig):
     pass
 
-class RerankerConfig(ModelCommon):
+class RerankerConfig(BaseModelConfig):
     pass
 
 class ModelConfig(BaseModel):
-    device: Optional[Any] = None
+    concurrency: int = 16
 
     vlm: VLMConfig = Field(default_factory=VLMConfig)
     clip: CLIPConfig = Field(default_factory=CLIPConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
 
+    def get_model_configs(self) -> Dict[ModelType, BaseModelConfig]:
+        return {
+            ModelType.VLM: self.vlm,
+            ModelType.CLIP: self.clip,
+            ModelType.TEXT_EMBEDDING: self.embedding,
+            ModelType.RERANKER: self.reranker,
+        }
+
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "ModelConfig":
+        if not os.path.exists(yaml_path):
+            return cls()
+
         with open(yaml_path, 'r') as f:
             yaml_content = f.read()
 

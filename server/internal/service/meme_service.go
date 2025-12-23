@@ -59,20 +59,20 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 
 	// 1. Get Embeddings in Parallel
 	g.Go(func() error {
-		vecs, err := s.inferClient.TextEmbedding(gCtx, []string{params.Query}, s.cfg.Prompt.Retrieval)
+		vec, err := s.inferClient.TextEmbedding(gCtx, params.Query, s.cfg.Prompt.Retrieval)
 		if err != nil {
 			return err
 		}
-		metaVec = vecs[0]
+		metaVec = vec
 		return nil
 	})
 
 	g.Go(func() error {
-		vecs, err := s.inferClient.ClipTextEmbedding(gCtx, []string{params.Query})
+		vec, err := s.inferClient.ClipTextEmbedding(gCtx, params.Query)
 		if err != nil {
 			return err
 		}
-		clipVec = vecs[0]
+		clipVec = vec
 		return nil
 	})
 
@@ -112,10 +112,21 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		docs = append(docs, out.GetRerankDoc())
 	}
 
-	// 4. Rerank
-	// The inferClient handles batching internally based on configuration
-	scores, err := s.inferClient.Rerank(ctx, params.Query, docs, s.cfg.Prompt.Retrieval)
-	if err != nil {
+	// 4. Rerank individually
+	scores := make([]float32, len(docs))
+	rerankG, rerankCtx := errgroup.WithContext(ctx)
+	for i, doc := range docs {
+		rerankG.Go(func() error {
+			score, err := s.inferClient.Rerank(rerankCtx, params.Query, doc, s.cfg.Prompt.Retrieval)
+			if err != nil {
+				return err
+			}
+			scores[i] = score
+			return nil
+		})
+	}
+
+	if err := rerankG.Wait(); err != nil {
 		return nil, fmt.Errorf("failed to rerank: %w", err)
 	}
 
@@ -181,4 +192,42 @@ func (s *MemeService) BatchAssembleMemeDTOs(ctx context.Context, assetIDs []stri
 	}
 
 	return dtoMap, nil
+}
+
+func (s *MemeService) RetryProcessing(ctx context.Context, assetID string, ownerID string) error {
+	dto, err := s.AssembleMemeDTO(ctx, assetID, ownerID)
+	if err != nil {
+		return err
+	}
+
+	if dto.ProcessingStatus != model.ProcessingStatusFailed {
+		return apperror.BadRequest("only failed memes can be retried")
+	}
+
+	err = s.repo.Transaction(ctx, func(r *repository.Repositories) error {
+		// Reset analyzed_at to NULL so it can be picked up by worker again
+		meme, err := r.Meme.GetMemeDTOs(ctx, []string{assetID}, ownerID)
+		if err != nil {
+			return err
+		}
+		if _, ok := meme[assetID]; !ok {
+			return apperror.NotFound("meme info not found")
+		}
+
+		if err := r.Meme.ResetMemeStatus(ctx, assetID); err != nil {
+			return fmt.Errorf("failed to reset meme status: %w", err)
+		}
+
+		// Create task with lower priority
+		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
+			"start_id":   assetID,
+			"batch_size": 1,
+		}, &repository.TaskOpts{Priority: model.PriorityLow})
+		if err != nil {
+			return fmt.Errorf("failed to create retry task: %w", err)
+		}
+		return nil
+	})
+
+	return err
 }

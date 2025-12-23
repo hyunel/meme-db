@@ -73,3 +73,18 @@ func (h *MemeHandler) GetMeme(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, meme)
 }
+
+func (h *MemeHandler) Retry(c echo.Context) error {
+	var req GetMemeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	userID, _ := c.Get("user_id").(string)
+
+	if err := h.memeService.RetryProcessing(c.Request().Context(), req.ID, userID); err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}

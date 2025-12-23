@@ -37,6 +37,7 @@ func NewProcessMemesHandler(
 
 type ProcessPayload struct {
 	StartID          string `json:"start_id"`
+	BatchSize        int    `json:"batch_size"`
 	ShouldReschedule bool   `json:"should_reschedule"`
 }
 
@@ -48,15 +49,12 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 		}
 	}
 
-	batchSize := h.cfg.Inference.Batch.ImageCaption
-	if batchSize <= 0 {
-		return fmt.Errorf("invalid batch size: %d", batchSize)
+	if payload.BatchSize <= 0 {
+		return fmt.Errorf("invalid batch size: %d", payload.BatchSize)
 	}
 
-	var shouldReschedule bool
-
-	// 1. Fetch pending memes
-	memes, err := h.repo.Meme.GetPendingMemes(ctx, payload.StartID, batchSize)
+	// 1. Fetch a batch of pending memes (+1 for next StartID)
+	memes, err := h.repo.Meme.GetPendingMemes(ctx, payload.StartID, payload.BatchSize)
 	if err != nil {
 		return fmt.Errorf("failed to get pending memes: %w", err)
 	}
@@ -65,151 +63,95 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 		return nil
 	}
 
-	// 2. Process batch
-	if err := h.processBatch(ctx, memes); err != nil {
-		slog.Error("Batch processing failed", "error", err)
+	// If more than batch size, there will be a next batch to process
+	toProcess := memes
+	var nextStartID string
+	if len(memes) > payload.BatchSize {
+		toProcess = memes[:payload.BatchSize]
+		nextStartID = memes[payload.BatchSize].AssetID
 	}
 
-	// 3. Update payload for next run if full batch
-	if len(memes) == batchSize {
-		lastID := memes[len(memes)-1].AssetID
-		payload.StartID = lastID
+	// 2. Process memes concurrently
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, m := range toProcess {
+		g.Go(func() error {
+			if err := h.processMeme(gCtx, m); err != nil {
+				slog.Error("Meme processing failed", "asset_id", m.AssetID, "error", err)
+			}
+			return nil
+		})
+	}
+
+	_ = g.Wait() // Ignore group error as we handle them individually
+
+	// 3. Update payload for next run
+	if payload.ShouldReschedule && nextStartID != "" {
+		payload.StartID = nextStartID
 		newPayload, _ := json.Marshal(payload)
 		task.Payload = newPayload
-		shouldReschedule = true
-	}
-
-	if shouldReschedule && payload.ShouldReschedule {
 		return ErrRescheduled
 	}
 
 	return nil
 }
 
-type processedItem struct {
-	Meme      *model.MemeInfo
-	FileBytes []byte
-	FileExt   string
-	VlmJson   string
-}
-
-func (h *ProcessMemesHandler) processBatch(ctx context.Context, items []*model.MemeInfo) error {
-	if len(items) == 0 {
-		return nil
-	}
-
-	batchData := make([]*processedItem, 0, len(items))
-	for _, meme := range items {
-		item, err := h.prepareItem(ctx, meme)
-		if err != nil {
-			slog.Error("Failed to prepare meme for processing", "asset_id", meme.AssetID, "error", err)
-			continue
-		}
-		batchData = append(batchData, item)
-	}
-
-	if len(batchData) == 0 {
-		return nil
-	}
-
-	// 1. Get Image Caption for all items concurrently and individually
-
-	// imageInputs := make([]inference.ImageInput, len(batchData))
-	// for i, item := range batchData {
-	// 	imageInputs[i] = inference.ImageInput{
-	// 		Data:   item.FileBytes,
-	// 		Format: item.FileExt,
-	// 	}
-	// }
-
-	// results, err := h.inferClient.ImageCaption(ctx, h.cfg.Prompt.Caption, imageInputs)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get image captions: %w", err)
-	// }
-
-	type result struct {
-		index   int
-		item    *processedItem
-		caption *inference.ImageCaptionResult
-		vlmOut  *inference.VLMOutput
-	}
-
-	g, gCtx := errgroup.WithContext(ctx)
-
-	resultsChan := make(chan result, len(batchData))
-	for i, item := range batchData {
-		g.Go(func() error {
-			res, err := h.inferClient.ImageCaption(gCtx, h.cfg.Prompt.Caption, []inference.ImageInput{
-				{Data: item.FileBytes, Format: item.FileExt},
-			})
-			if err != nil || len(res) == 0 {
-				slog.Warn("Failed to get caption for meme", "asset_id", item.Meme.AssetID, "error", err)
-				return nil // Don't fail the whole group
-			}
-
-			vlmOut, err := inference.ParseVLMOutput(res[0].Caption)
-			if err != nil {
-				slog.Warn("Failed to parse VLM output for meme", "asset_id", item.Meme.AssetID, "error", err)
-				return nil
-			}
-
-			resultsChan <- result{index: i, item: item, caption: res[0], vlmOut: vlmOut}
-			return nil
-		})
-	}
-
-	// Close results channel when all workers are done
-	go func() {
-		g.Wait()
-		close(resultsChan)
-	}()
-
-	// 2. Collect results
-	successfulItems := make([]*processedItem, 0, len(batchData))
-	successfulCaptions := make([]*inference.ImageCaptionResult, 0, len(batchData))
-	ocrTexts := make([]string, 0, len(batchData))
-	metaphorTexts := make([]string, 0, len(batchData))
-	semanticTexts := make([]string, 0, len(batchData))
-
-	for res := range resultsChan {
-		successfulItems = append(successfulItems, res.item)
-		successfulCaptions = append(successfulCaptions, res.caption)
-		ocrTexts = append(ocrTexts, res.vlmOut.OCRText)
-		metaphorTexts = append(metaphorTexts, res.vlmOut.GetMetaphorText())
-		semanticTexts = append(semanticTexts, res.vlmOut.GetSemanticText())
-	}
-
-	if len(successfulItems) == 0 {
-		return nil
-	}
-
-	// 3. Get Metaphor and Semantic embeddings for valid items
-	metaphorEmbs, err := h.inferClient.TextEmbedding(ctx, metaphorTexts, h.cfg.Prompt.Retrieval)
+func (h *ProcessMemesHandler) processMeme(ctx context.Context, meme *model.MemeInfo) error {
+	// 1. Prepare item
+	asset, err := h.repo.Asset.GetAsset(ctx, meme.AssetID)
 	if err != nil {
-		return fmt.Errorf("failed to get metaphor embeddings: %w", err)
+		return fmt.Errorf("failed to get asset: %w", err)
 	}
-	semanticEmbs, err := h.inferClient.TextEmbedding(ctx, semanticTexts, h.cfg.Prompt.Retrieval)
-	if err != nil {
-		return fmt.Errorf("failed to get semantic embeddings: %w", err)
+	if asset == nil {
+		return fmt.Errorf("asset not found: %s", meme.AssetID)
 	}
 
-	// 4. Update and save memes
+	absPath := filepath.Join(h.cfg.Server.StoragePath, asset.StoragePath)
+	fileBytes, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// 2. Get Image Caption
+	res, err := h.inferClient.ImageCaption(ctx, h.cfg.Prompt.Caption, inference.ImageInput{
+		Data:   fileBytes,
+		Format: asset.Extension,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get image caption: %w", err)
+	}
+
+	vlmOut, err := inference.ParseVLMOutput(res.Caption)
+	if err != nil {
+		return fmt.Errorf("failed to parse VLM output: %w", err)
+	}
+
+	// 3. Get Embeddings
+	metaphorText := vlmOut.GetMetaphorText()
+	semanticText := vlmOut.GetSemanticText()
+
+	metaphorEmb, err := h.inferClient.TextEmbedding(ctx, metaphorText, h.cfg.Prompt.Retrieval)
+	if err != nil {
+		return fmt.Errorf("failed to get metaphor embedding: %w", err)
+	}
+
+	semanticEmb, err := h.inferClient.TextEmbedding(ctx, semanticText, h.cfg.Prompt.Retrieval)
+	if err != nil {
+		return fmt.Errorf("failed to get semantic embedding: %w", err)
+	}
+
+	// 4. Update and save meme
 	now := time.Now()
-	for i, item := range successfulItems {
-		res := successfulCaptions[i]
+	meme.MetaphorVector = ptr(pgvector.NewVector(metaphorEmb))
+	meme.SemanticVector = ptr(pgvector.NewVector(semanticEmb))
+	meme.ClipVector = ptr(pgvector.NewVector(res.ClipEmbedding))
+	meme.VLMJSON = json.RawMessage(res.Caption)
+	meme.OCRText = &vlmOut.OCRText
+	meme.Width = res.Width
+	meme.Height = res.Height
+	meme.AnalyzedAt = &now
 
-		item.Meme.MetaphorVector = ptr(pgvector.NewVector(metaphorEmbs[i]))
-		item.Meme.SemanticVector = ptr(pgvector.NewVector(semanticEmbs[i]))
-		item.Meme.ClipVector = ptr(pgvector.NewVector(res.ClipEmbedding))
-		item.Meme.VLMJSON = json.RawMessage(res.Caption)
-		item.Meme.OCRText = &ocrTexts[i]
-		item.Meme.Width = res.Width
-		item.Meme.Height = res.Height
-		item.Meme.AnalyzedAt = &now
-
-		if err := h.repo.Meme.CreateMeme(ctx, item.Meme); err != nil {
-			slog.Error("Failed to update meme", "error", err)
-		}
+	if err := h.repo.Meme.CreateMeme(ctx, meme); err != nil {
+		return fmt.Errorf("failed to update meme in repo: %w", err)
 	}
 
 	return nil
@@ -217,32 +159,4 @@ func (h *ProcessMemesHandler) processBatch(ctx context.Context, items []*model.M
 
 func ptr[T any](v T) *T {
 	return &v
-}
-
-func (h *ProcessMemesHandler) prepareItem(ctx context.Context, meme *model.MemeInfo) (*processedItem, error) {
-	asset, err := h.repo.Asset.GetAsset(ctx, meme.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get asset: %w", err)
-	}
-	if asset == nil {
-		return nil, fmt.Errorf("asset not found: %s", meme.AssetID)
-	}
-
-	absPath := filepath.Join(h.cfg.Server.StoragePath, asset.StoragePath)
-	fileBytes, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	vlmJson := ""
-	if meme.VLMJSON != nil {
-		vlmJson = string(meme.VLMJSON)
-	}
-
-	return &processedItem{
-		Meme:      meme,
-		FileBytes: fileBytes,
-		FileExt:   asset.Extension,
-		VlmJson:   vlmJson,
-	}, nil
 }

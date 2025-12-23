@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List
 import logging
 import torch
 from PIL import Image
@@ -16,17 +16,17 @@ class CLIPModel(BaseModel):
 
     def _load_model(self) -> None:
         model_id = "google/siglip2-base-patch16-224"
-        logger.info(f"Loading CLIP model: {model_id} on {self.config.device}")
+        logger.info(f"Loading CLIP model: {model_id} on {self.config.clip.device}")
 
         self.model = AutoModel.from_pretrained(
             model_id,
             dtype=self.config.clip.dtype,
             attn_implementation=self.config.clip.attn_implementation
-        ).to(self.config.device).eval()
+        ).to(self.config.clip.device).eval()
 
         self.processor = AutoProcessor.from_pretrained(model_id, use_fast=True)
 
-        if self.config.clip.do_compile:
+        if self.config.clip.compile:
             # Note: partial compilation of methods
             self.get_image_features = torch.compile(self.model.get_image_features)
             self.get_text_features = torch.compile(self.model.get_text_features)
@@ -44,7 +44,7 @@ class CLIPModel(BaseModel):
         Returns:
             List of embedding vectors (floats).
         """
-        inputs = self.processor(images=images, return_tensors="pt").to(self.config.device)
+        inputs = self.processor(images=images, return_tensors="pt").to(self.config.clip.device)
 
         with torch.no_grad():
             features = self.get_image_features(**inputs)
@@ -61,7 +61,7 @@ class CLIPModel(BaseModel):
         Returns:
             List of embedding vectors (floats).
         """
-        inputs = self.processor(text=texts, padding="max_length", return_tensors="pt").to(self.config.device)
+        inputs = self.processor(text=texts, padding="max_length", return_tensors="pt").to(self.config.clip.device)
 
         with torch.no_grad():
             features = self.get_text_features(**inputs)

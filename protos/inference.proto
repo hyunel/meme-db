@@ -5,20 +5,24 @@ package inference;
 option go_package = "github.com/hyunel/MemeDB/server/internal/pb";
 
 service InferenceService {
-  // Batch text embedding using Qwen
+  // Single text embedding using Qwen
   rpc TextEmbedding (TextEmbeddingRequest) returns (TextEmbeddingResponse);
 
-  // Batch image embedding using CLIP
+  // Single image embedding using CLIP
   rpc ClipImageEmbedding (ClipImageEmbeddingRequest) returns (ClipImageEmbeddingResponse);
 
-  // Batch text embedding using CLIP
+  // Single text embedding using CLIP
   rpc ClipTextEmbedding (ClipTextEmbeddingRequest) returns (ClipTextEmbeddingResponse);
 
-  // Rerank text pairs using Qwen
+  // Rerank text pair using Qwen
   rpc Rerank (RerankRequest) returns (RerankResponse);
 
   // Caption image using VLM
   rpc ImageCaption (ImageCaptionRequest) returns (ImageCaptionResponse);
+}
+
+message TaskOptions {
+  int32 priority = 1; // 0 = default, higher is better
 }
 
 message Image {
@@ -31,56 +35,53 @@ message Embedding {
 }
 
 message TextEmbeddingRequest {
-  string task_description = 1;
-  repeated string texts = 2;
+  TaskOptions options = 1;
+  string text = 2;
+  string task_description = 3;
 }
 
 message TextEmbeddingResponse {
-  repeated Embedding embeddings = 1;
+  Embedding embedding = 1;
 }
 
 message ClipImageEmbeddingRequest {
-  repeated Image images = 1;
+  TaskOptions options = 1;
+  Image image = 2;
 }
 
 message ClipImageEmbeddingResponse {
-  repeated Embedding embeddings = 1;
+  Embedding embedding = 1;
 }
 
 message ClipTextEmbeddingRequest {
-  repeated string texts = 1;
+  TaskOptions options = 1;
+  string text = 2;
 }
 
 message ClipTextEmbeddingResponse {
-  repeated Embedding embeddings = 1;
-}
-
-message RerankPair {
-  string query = 1;
-  string document = 2;
+  Embedding embedding = 1;
 }
 
 message RerankRequest {
-  string task_description = 1;
-  repeated RerankPair pairs = 2;
+  TaskOptions options = 1;
+  string query = 2;
+  string document = 3;
+  string task_description = 4;
 }
 
 message RerankResponse {
-  repeated float scores = 1;
+  float score = 1;
 }
 
 message ImageCaptionRequest {
-  string prompt = 1;
-  repeated Image images = 2;
+  TaskOptions options = 1;
+  Image image = 2;
+  string prompt = 3;
 }
 
-message ImageCaptionResult {
+message ImageCaptionResponse {
   string caption = 1;
   int32 width = 2;
   int32 height = 3;
   Embedding clip_embedding = 4;
-}
-
-message ImageCaptionResponse {
-  repeated ImageCaptionResult results = 1;
 }

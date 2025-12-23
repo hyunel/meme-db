@@ -24,7 +24,7 @@ class LocalVLM(VLMModel):
 
         model_id = self.config.vlm.local.model
 
-        logger.info(f"Loading local VLM: {model_id} on {self.config.device}")
+        logger.info(f"Loading local VLM: {model_id} on {self.config.vlm.device}")
 
         self.processor = AutoProcessor.from_pretrained(
             model_id,
@@ -36,20 +36,20 @@ class LocalVLM(VLMModel):
             dtype=self.config.vlm.dtype,
             attn_implementation=self.config.vlm.attn_implementation,
             trust_remote_code=True
-        ).to(self.config.device).eval()
+        ).to(self.config.vlm.device).eval()
 
-        if self.config.vlm.do_compile:
+        if self.config.vlm.compile:
             model = torch.compile(model)
 
         self.model = outlines.from_transformers(model, self.processor)
 
-    def generate_caption(self, prompt: str, images: List[Image.Image]) -> List[str]:
-        if not images:
+    def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:
+        if not items:
             return []
 
         # Prepare batch of messages
         messages = []
-        for img in images:
+        for img, prompt in items:
             messages.append([
                 {"role": "user", "content": [
                     { "type": "text", "text": prompt },

@@ -1,6 +1,5 @@
 server:
   port: 8080
-  jwt_secret: "change_me"
   storage_path: "./assets"
 
 database:
@@ -8,11 +7,7 @@ database:
 
 inference:
   grpc_addr: "localhost:50051"
-  batch:
-    text_embedding: 16
-    clip_embedding: 16
-    rerank: 32
-    image_caption: 4
+  batch_size: 32
 
 prompt:
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"

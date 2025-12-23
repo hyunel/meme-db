@@ -141,18 +141,28 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 }
 
 func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
+	// We fetch limit + 1 items to see if there's a "next" item for rescheduling,
+	// but we only mark 'limit' items as processed.
 	query := `
-		UPDATE meme_info
-		SET analyzed_at = NOW()
-		WHERE asset_id IN (
-			SELECT asset_id
+		WITH candidates AS (
+			SELECT asset_id, vlm_json, analyzed_at
 			FROM meme_info
-			WHERE asset_id >= $1::uuid AND analyzed_at IS NULL
+			WHERE ($1 = '' OR asset_id >= $1::uuid) AND analyzed_at IS NULL
 			ORDER BY asset_id ASC
-			LIMIT $2
+			LIMIT $2 + 1
 			FOR UPDATE SKIP LOCKED
+		),
+		to_update AS (
+			UPDATE meme_info
+			SET analyzed_at = NOW()
+			WHERE asset_id IN (SELECT asset_id FROM candidates LIMIT $2)
+			RETURNING asset_id
 		)
-		RETURNING asset_id, vlm_json, analyzed_at
+		SELECT c.asset_id, c.vlm_json, c.analyzed_at,
+		       (CASE WHEN tu.asset_id IS NOT NULL THEN TRUE ELSE FALSE END) as is_marked
+		FROM candidates c
+		LEFT JOIN to_update tu ON c.asset_id = tu.asset_id
+		ORDER BY c.asset_id ASC
 	`
 	rows, err := r.db.Query(ctx, query, startID, limit)
 	if err != nil {
@@ -163,10 +173,13 @@ func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, li
 	memes := make([]*model.MemeInfo, 0)
 	for rows.Next() {
 		var m model.MemeInfo
-		err := rows.Scan(&m.AssetID, &m.VLMJSON, &m.AnalyzedAt)
+		var isMarked bool
+		err := rows.Scan(&m.AssetID, &m.VLMJSON, &m.AnalyzedAt, &isMarked)
 		if err != nil {
 			return nil, err
 		}
+		// If it's not marked, it means it's the "peeked" next item.
+		// We still return it so the caller can use its ID.
 		memes = append(memes, &m)
 	}
 	return memes, nil
@@ -180,6 +193,11 @@ func (r *MemeRepository) GetMemeDTOs(ctx context.Context, assetIDs []string, own
 	query := `
 		SELECT
 			mi.asset_id::text, mi.width, mi.height, mi.analyzed_at,
+			CASE
+				WHEN mi.analyzed_at IS NULL THEN 'pending'
+				WHEN mi.vlm_json IS NULL THEN 'failed'
+				ELSE 'success'
+			END as processing_status,
 			EXISTS(SELECT 1 FROM nodes n WHERE n.asset_id = mi.asset_id AND n.owner_id = $2::uuid) as in_library,
 			COALESCE((
 				SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'created_at', t.created_at))
@@ -205,7 +223,7 @@ func (r *MemeRepository) GetMemeDTOs(ctx context.Context, assetIDs []string, own
 		dto := &model.MemeDTO{}
 		err := rows.Scan(
 			&assetID, &dto.Width, &dto.Height, &dto.AnalyzedAt,
-			&dto.InLibrary, &dto.Tags,
+			&dto.ProcessingStatus, &dto.InLibrary, &dto.Tags,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan meme dto: %w", err)
@@ -215,4 +233,10 @@ func (r *MemeRepository) GetMemeDTOs(ctx context.Context, assetIDs []string, own
 	}
 
 	return dtos, nil
+}
+
+func (r *MemeRepository) ResetMemeStatus(ctx context.Context, assetID string) error {
+	query := `UPDATE meme_info SET analyzed_at = NULL WHERE asset_id = $1::uuid`
+	_, err := r.db.Exec(ctx, query, assetID)
+	return err
 }

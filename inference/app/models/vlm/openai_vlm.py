@@ -15,6 +15,8 @@ class OpenAIVLM(VLMModel):
     OpenAI-compatible API VLM implementation.
     """
 
+    is_gpu: bool = False
+
     def __init__(self, config: ModelConfig):
         self.client = None
         super().__init__(config)
@@ -30,11 +32,11 @@ class OpenAIVLM(VLMModel):
             max_retries=self.config.vlm.openai.max_retries,
         )
 
-    def generate_caption(self, prompt: str, images: List[Image.Image]) -> List[str]:
-        if not images:
+    def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:
+        if not items:
             return []
 
-        async def analyze_single_image(img: Image.Image) -> str:
+        async def analyze_single_image(img: Image.Image, prompt: str) -> str:
             with BytesIO() as buffer:
                 img.save(buffer, format='PNG')
                 img_b64 = b64encode(buffer.getvalue()).decode('utf-8')
@@ -58,7 +60,7 @@ class OpenAIVLM(VLMModel):
             return response.choices[0].message.content
 
         async def analyze_all():
-            tasks = [analyze_single_image(img) for img in images]
+            tasks = [analyze_single_image(img, prompt) for img, prompt in items]
             return await asyncio.gather(*tasks)
 
         loop = asyncio.new_event_loop()

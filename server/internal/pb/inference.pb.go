@@ -21,6 +21,50 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type TaskOptions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Priority      int32                  `protobuf:"varint,1,opt,name=priority,proto3" json:"priority,omitempty"` // 0 = default, higher is better
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskOptions) Reset() {
+	*x = TaskOptions{}
+	mi := &file_inference_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskOptions) ProtoMessage() {}
+
+func (x *TaskOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_inference_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskOptions.ProtoReflect.Descriptor instead.
+func (*TaskOptions) Descriptor() ([]byte, []int) {
+	return file_inference_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *TaskOptions) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
 type Image struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
@@ -31,7 +75,7 @@ type Image struct {
 
 func (x *Image) Reset() {
 	*x = Image{}
-	mi := &file_inference_proto_msgTypes[0]
+	mi := &file_inference_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +87,7 @@ func (x *Image) String() string {
 func (*Image) ProtoMessage() {}
 
 func (x *Image) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[0]
+	mi := &file_inference_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +100,7 @@ func (x *Image) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Image.ProtoReflect.Descriptor instead.
 func (*Image) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{0}
+	return file_inference_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Image) GetData() []byte {
@@ -82,7 +126,7 @@ type Embedding struct {
 
 func (x *Embedding) Reset() {
 	*x = Embedding{}
-	mi := &file_inference_proto_msgTypes[1]
+	mi := &file_inference_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -94,7 +138,7 @@ func (x *Embedding) String() string {
 func (*Embedding) ProtoMessage() {}
 
 func (x *Embedding) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[1]
+	mi := &file_inference_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -107,7 +151,7 @@ func (x *Embedding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Embedding.ProtoReflect.Descriptor instead.
 func (*Embedding) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{1}
+	return file_inference_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Embedding) GetValues() []float32 {
@@ -119,15 +163,16 @@ func (x *Embedding) GetValues() []float32 {
 
 type TextEmbeddingRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	TaskDescription string                 `protobuf:"bytes,1,opt,name=task_description,json=taskDescription,proto3" json:"task_description,omitempty"`
-	Texts           []string               `protobuf:"bytes,2,rep,name=texts,proto3" json:"texts,omitempty"`
+	Options         *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	Text            string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	TaskDescription string                 `protobuf:"bytes,3,opt,name=task_description,json=taskDescription,proto3" json:"task_description,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *TextEmbeddingRequest) Reset() {
 	*x = TextEmbeddingRequest{}
-	mi := &file_inference_proto_msgTypes[2]
+	mi := &file_inference_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -139,7 +184,7 @@ func (x *TextEmbeddingRequest) String() string {
 func (*TextEmbeddingRequest) ProtoMessage() {}
 
 func (x *TextEmbeddingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[2]
+	mi := &file_inference_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -152,7 +197,21 @@ func (x *TextEmbeddingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextEmbeddingRequest.ProtoReflect.Descriptor instead.
 func (*TextEmbeddingRequest) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{2}
+	return file_inference_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TextEmbeddingRequest) GetOptions() *TaskOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *TextEmbeddingRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
 }
 
 func (x *TextEmbeddingRequest) GetTaskDescription() string {
@@ -162,23 +221,16 @@ func (x *TextEmbeddingRequest) GetTaskDescription() string {
 	return ""
 }
 
-func (x *TextEmbeddingRequest) GetTexts() []string {
-	if x != nil {
-		return x.Texts
-	}
-	return nil
-}
-
 type TextEmbeddingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Embeddings    []*Embedding           `protobuf:"bytes,1,rep,name=embeddings,proto3" json:"embeddings,omitempty"`
+	Embedding     *Embedding             `protobuf:"bytes,1,opt,name=embedding,proto3" json:"embedding,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TextEmbeddingResponse) Reset() {
 	*x = TextEmbeddingResponse{}
-	mi := &file_inference_proto_msgTypes[3]
+	mi := &file_inference_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -190,7 +242,7 @@ func (x *TextEmbeddingResponse) String() string {
 func (*TextEmbeddingResponse) ProtoMessage() {}
 
 func (x *TextEmbeddingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[3]
+	mi := &file_inference_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -203,26 +255,27 @@ func (x *TextEmbeddingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextEmbeddingResponse.ProtoReflect.Descriptor instead.
 func (*TextEmbeddingResponse) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{3}
+	return file_inference_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *TextEmbeddingResponse) GetEmbeddings() []*Embedding {
+func (x *TextEmbeddingResponse) GetEmbedding() *Embedding {
 	if x != nil {
-		return x.Embeddings
+		return x.Embedding
 	}
 	return nil
 }
 
 type ClipImageEmbeddingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Images        []*Image               `protobuf:"bytes,1,rep,name=images,proto3" json:"images,omitempty"`
+	Options       *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	Image         *Image                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClipImageEmbeddingRequest) Reset() {
 	*x = ClipImageEmbeddingRequest{}
-	mi := &file_inference_proto_msgTypes[4]
+	mi := &file_inference_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +287,7 @@ func (x *ClipImageEmbeddingRequest) String() string {
 func (*ClipImageEmbeddingRequest) ProtoMessage() {}
 
 func (x *ClipImageEmbeddingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[4]
+	mi := &file_inference_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,26 +300,33 @@ func (x *ClipImageEmbeddingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClipImageEmbeddingRequest.ProtoReflect.Descriptor instead.
 func (*ClipImageEmbeddingRequest) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{4}
+	return file_inference_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ClipImageEmbeddingRequest) GetImages() []*Image {
+func (x *ClipImageEmbeddingRequest) GetOptions() *TaskOptions {
 	if x != nil {
-		return x.Images
+		return x.Options
+	}
+	return nil
+}
+
+func (x *ClipImageEmbeddingRequest) GetImage() *Image {
+	if x != nil {
+		return x.Image
 	}
 	return nil
 }
 
 type ClipImageEmbeddingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Embeddings    []*Embedding           `protobuf:"bytes,1,rep,name=embeddings,proto3" json:"embeddings,omitempty"`
+	Embedding     *Embedding             `protobuf:"bytes,1,opt,name=embedding,proto3" json:"embedding,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClipImageEmbeddingResponse) Reset() {
 	*x = ClipImageEmbeddingResponse{}
-	mi := &file_inference_proto_msgTypes[5]
+	mi := &file_inference_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +338,7 @@ func (x *ClipImageEmbeddingResponse) String() string {
 func (*ClipImageEmbeddingResponse) ProtoMessage() {}
 
 func (x *ClipImageEmbeddingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[5]
+	mi := &file_inference_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,26 +351,27 @@ func (x *ClipImageEmbeddingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClipImageEmbeddingResponse.ProtoReflect.Descriptor instead.
 func (*ClipImageEmbeddingResponse) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{5}
+	return file_inference_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ClipImageEmbeddingResponse) GetEmbeddings() []*Embedding {
+func (x *ClipImageEmbeddingResponse) GetEmbedding() *Embedding {
 	if x != nil {
-		return x.Embeddings
+		return x.Embedding
 	}
 	return nil
 }
 
 type ClipTextEmbeddingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Texts         []string               `protobuf:"bytes,1,rep,name=texts,proto3" json:"texts,omitempty"`
+	Options       *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClipTextEmbeddingRequest) Reset() {
 	*x = ClipTextEmbeddingRequest{}
-	mi := &file_inference_proto_msgTypes[6]
+	mi := &file_inference_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -322,7 +383,7 @@ func (x *ClipTextEmbeddingRequest) String() string {
 func (*ClipTextEmbeddingRequest) ProtoMessage() {}
 
 func (x *ClipTextEmbeddingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[6]
+	mi := &file_inference_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -335,26 +396,33 @@ func (x *ClipTextEmbeddingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClipTextEmbeddingRequest.ProtoReflect.Descriptor instead.
 func (*ClipTextEmbeddingRequest) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{6}
+	return file_inference_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *ClipTextEmbeddingRequest) GetTexts() []string {
+func (x *ClipTextEmbeddingRequest) GetOptions() *TaskOptions {
 	if x != nil {
-		return x.Texts
+		return x.Options
 	}
 	return nil
 }
 
+func (x *ClipTextEmbeddingRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
 type ClipTextEmbeddingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Embeddings    []*Embedding           `protobuf:"bytes,1,rep,name=embeddings,proto3" json:"embeddings,omitempty"`
+	Embedding     *Embedding             `protobuf:"bytes,1,opt,name=embedding,proto3" json:"embedding,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClipTextEmbeddingResponse) Reset() {
 	*x = ClipTextEmbeddingResponse{}
-	mi := &file_inference_proto_msgTypes[7]
+	mi := &file_inference_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +434,7 @@ func (x *ClipTextEmbeddingResponse) String() string {
 func (*ClipTextEmbeddingResponse) ProtoMessage() {}
 
 func (x *ClipTextEmbeddingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[7]
+	mi := &file_inference_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,72 +447,22 @@ func (x *ClipTextEmbeddingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClipTextEmbeddingResponse.ProtoReflect.Descriptor instead.
 func (*ClipTextEmbeddingResponse) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{7}
+	return file_inference_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ClipTextEmbeddingResponse) GetEmbeddings() []*Embedding {
+func (x *ClipTextEmbeddingResponse) GetEmbedding() *Embedding {
 	if x != nil {
-		return x.Embeddings
+		return x.Embedding
 	}
 	return nil
 }
 
-type RerankPair struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
-	Document      string                 `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RerankPair) Reset() {
-	*x = RerankPair{}
-	mi := &file_inference_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RerankPair) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RerankPair) ProtoMessage() {}
-
-func (x *RerankPair) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RerankPair.ProtoReflect.Descriptor instead.
-func (*RerankPair) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *RerankPair) GetQuery() string {
-	if x != nil {
-		return x.Query
-	}
-	return ""
-}
-
-func (x *RerankPair) GetDocument() string {
-	if x != nil {
-		return x.Document
-	}
-	return ""
-}
-
 type RerankRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	TaskDescription string                 `protobuf:"bytes,1,opt,name=task_description,json=taskDescription,proto3" json:"task_description,omitempty"`
-	Pairs           []*RerankPair          `protobuf:"bytes,2,rep,name=pairs,proto3" json:"pairs,omitempty"`
+	Options         *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	Query           string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
+	Document        string                 `protobuf:"bytes,3,opt,name=document,proto3" json:"document,omitempty"`
+	TaskDescription string                 `protobuf:"bytes,4,opt,name=task_description,json=taskDescription,proto3" json:"task_description,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -479,6 +497,27 @@ func (*RerankRequest) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{9}
 }
 
+func (x *RerankRequest) GetOptions() *TaskOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *RerankRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *RerankRequest) GetDocument() string {
+	if x != nil {
+		return x.Document
+	}
+	return ""
+}
+
 func (x *RerankRequest) GetTaskDescription() string {
 	if x != nil {
 		return x.TaskDescription
@@ -486,16 +525,9 @@ func (x *RerankRequest) GetTaskDescription() string {
 	return ""
 }
 
-func (x *RerankRequest) GetPairs() []*RerankPair {
-	if x != nil {
-		return x.Pairs
-	}
-	return nil
-}
-
 type RerankResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scores        []float32              `protobuf:"fixed32,1,rep,packed,name=scores,proto3" json:"scores,omitempty"`
+	Score         float32                `protobuf:"fixed32,1,opt,name=score,proto3" json:"score,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -530,17 +562,18 @@ func (*RerankResponse) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *RerankResponse) GetScores() []float32 {
+func (x *RerankResponse) GetScore() float32 {
 	if x != nil {
-		return x.Scores
+		return x.Score
 	}
-	return nil
+	return 0
 }
 
 type ImageCaptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Prompt        string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Images        []*Image               `protobuf:"bytes,2,rep,name=images,proto3" json:"images,omitempty"`
+	Options       *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	Image         *Image                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	Prompt        string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -575,6 +608,20 @@ func (*ImageCaptionRequest) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{11}
 }
 
+func (x *ImageCaptionRequest) GetOptions() *TaskOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *ImageCaptionRequest) GetImage() *Image {
+	if x != nil {
+		return x.Image
+	}
+	return nil
+}
+
 func (x *ImageCaptionRequest) GetPrompt() string {
 	if x != nil {
 		return x.Prompt
@@ -582,14 +629,7 @@ func (x *ImageCaptionRequest) GetPrompt() string {
 	return ""
 }
 
-func (x *ImageCaptionRequest) GetImages() []*Image {
-	if x != nil {
-		return x.Images
-	}
-	return nil
-}
-
-type ImageCaptionResult struct {
+type ImageCaptionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Caption       string                 `protobuf:"bytes,1,opt,name=caption,proto3" json:"caption,omitempty"`
 	Width         int32                  `protobuf:"varint,2,opt,name=width,proto3" json:"width,omitempty"`
@@ -599,74 +639,9 @@ type ImageCaptionResult struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ImageCaptionResult) Reset() {
-	*x = ImageCaptionResult{}
-	mi := &file_inference_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ImageCaptionResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ImageCaptionResult) ProtoMessage() {}
-
-func (x *ImageCaptionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ImageCaptionResult.ProtoReflect.Descriptor instead.
-func (*ImageCaptionResult) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *ImageCaptionResult) GetCaption() string {
-	if x != nil {
-		return x.Caption
-	}
-	return ""
-}
-
-func (x *ImageCaptionResult) GetWidth() int32 {
-	if x != nil {
-		return x.Width
-	}
-	return 0
-}
-
-func (x *ImageCaptionResult) GetHeight() int32 {
-	if x != nil {
-		return x.Height
-	}
-	return 0
-}
-
-func (x *ImageCaptionResult) GetClipEmbedding() *Embedding {
-	if x != nil {
-		return x.ClipEmbedding
-	}
-	return nil
-}
-
-type ImageCaptionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Results       []*ImageCaptionResult  `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
 func (x *ImageCaptionResponse) Reset() {
 	*x = ImageCaptionResponse{}
-	mi := &file_inference_proto_msgTypes[13]
+	mi := &file_inference_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +653,7 @@ func (x *ImageCaptionResponse) String() string {
 func (*ImageCaptionResponse) ProtoMessage() {}
 
 func (x *ImageCaptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_inference_proto_msgTypes[13]
+	mi := &file_inference_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,12 +666,33 @@ func (x *ImageCaptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageCaptionResponse.ProtoReflect.Descriptor instead.
 func (*ImageCaptionResponse) Descriptor() ([]byte, []int) {
-	return file_inference_proto_rawDescGZIP(), []int{13}
+	return file_inference_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ImageCaptionResponse) GetResults() []*ImageCaptionResult {
+func (x *ImageCaptionResponse) GetCaption() string {
 	if x != nil {
-		return x.Results
+		return x.Caption
+	}
+	return ""
+}
+
+func (x *ImageCaptionResponse) GetWidth() int32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *ImageCaptionResponse) GetHeight() int32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+func (x *ImageCaptionResponse) GetClipEmbedding() *Embedding {
+	if x != nil {
+		return x.ClipEmbedding
 	}
 	return nil
 }
@@ -705,51 +701,47 @@ var File_inference_proto protoreflect.FileDescriptor
 
 const file_inference_proto_rawDesc = "" +
 	"\n" +
-	"\x0finference.proto\x12\tinference\"<\n" +
+	"\x0finference.proto\x12\tinference\")\n" +
+	"\vTaskOptions\x12\x1a\n" +
+	"\bpriority\x18\x01 \x01(\x05R\bpriority\"<\n" +
 	"\x05Image\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
 	"\vfile_format\x18\x02 \x01(\tR\n" +
 	"fileFormat\"#\n" +
 	"\tEmbedding\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\x02R\x06values\"W\n" +
-	"\x14TextEmbeddingRequest\x12)\n" +
-	"\x10task_description\x18\x01 \x01(\tR\x0ftaskDescription\x12\x14\n" +
-	"\x05texts\x18\x02 \x03(\tR\x05texts\"M\n" +
-	"\x15TextEmbeddingResponse\x124\n" +
-	"\n" +
-	"embeddings\x18\x01 \x03(\v2\x14.inference.EmbeddingR\n" +
-	"embeddings\"E\n" +
-	"\x19ClipImageEmbeddingRequest\x12(\n" +
-	"\x06images\x18\x01 \x03(\v2\x10.inference.ImageR\x06images\"R\n" +
-	"\x1aClipImageEmbeddingResponse\x124\n" +
-	"\n" +
-	"embeddings\x18\x01 \x03(\v2\x14.inference.EmbeddingR\n" +
-	"embeddings\"0\n" +
-	"\x18ClipTextEmbeddingRequest\x12\x14\n" +
-	"\x05texts\x18\x01 \x03(\tR\x05texts\"Q\n" +
-	"\x19ClipTextEmbeddingResponse\x124\n" +
-	"\n" +
-	"embeddings\x18\x01 \x03(\v2\x14.inference.EmbeddingR\n" +
-	"embeddings\">\n" +
-	"\n" +
-	"RerankPair\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1a\n" +
-	"\bdocument\x18\x02 \x01(\tR\bdocument\"g\n" +
-	"\rRerankRequest\x12)\n" +
-	"\x10task_description\x18\x01 \x01(\tR\x0ftaskDescription\x12+\n" +
-	"\x05pairs\x18\x02 \x03(\v2\x15.inference.RerankPairR\x05pairs\"(\n" +
-	"\x0eRerankResponse\x12\x16\n" +
-	"\x06scores\x18\x01 \x03(\x02R\x06scores\"W\n" +
-	"\x13ImageCaptionRequest\x12\x16\n" +
-	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12(\n" +
-	"\x06images\x18\x02 \x03(\v2\x10.inference.ImageR\x06images\"\x99\x01\n" +
-	"\x12ImageCaptionResult\x12\x18\n" +
+	"\x06values\x18\x01 \x03(\x02R\x06values\"\x87\x01\n" +
+	"\x14TextEmbeddingRequest\x120\n" +
+	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12)\n" +
+	"\x10task_description\x18\x03 \x01(\tR\x0ftaskDescription\"K\n" +
+	"\x15TextEmbeddingResponse\x122\n" +
+	"\tembedding\x18\x01 \x01(\v2\x14.inference.EmbeddingR\tembedding\"u\n" +
+	"\x19ClipImageEmbeddingRequest\x120\n" +
+	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12&\n" +
+	"\x05image\x18\x02 \x01(\v2\x10.inference.ImageR\x05image\"P\n" +
+	"\x1aClipImageEmbeddingResponse\x122\n" +
+	"\tembedding\x18\x01 \x01(\v2\x14.inference.EmbeddingR\tembedding\"`\n" +
+	"\x18ClipTextEmbeddingRequest\x120\n" +
+	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"O\n" +
+	"\x19ClipTextEmbeddingResponse\x122\n" +
+	"\tembedding\x18\x01 \x01(\v2\x14.inference.EmbeddingR\tembedding\"\x9e\x01\n" +
+	"\rRerankRequest\x120\n" +
+	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12\x14\n" +
+	"\x05query\x18\x02 \x01(\tR\x05query\x12\x1a\n" +
+	"\bdocument\x18\x03 \x01(\tR\bdocument\x12)\n" +
+	"\x10task_description\x18\x04 \x01(\tR\x0ftaskDescription\"&\n" +
+	"\x0eRerankResponse\x12\x14\n" +
+	"\x05score\x18\x01 \x01(\x02R\x05score\"\x87\x01\n" +
+	"\x13ImageCaptionRequest\x120\n" +
+	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12&\n" +
+	"\x05image\x18\x02 \x01(\v2\x10.inference.ImageR\x05image\x12\x16\n" +
+	"\x06prompt\x18\x03 \x01(\tR\x06prompt\"\x9b\x01\n" +
+	"\x14ImageCaptionResponse\x12\x18\n" +
 	"\acaption\x18\x01 \x01(\tR\acaption\x12\x14\n" +
 	"\x05width\x18\x02 \x01(\x05R\x05width\x12\x16\n" +
 	"\x06height\x18\x03 \x01(\x05R\x06height\x12;\n" +
-	"\x0eclip_embedding\x18\x04 \x01(\v2\x14.inference.EmbeddingR\rclipEmbedding\"O\n" +
-	"\x14ImageCaptionResponse\x127\n" +
-	"\aresults\x18\x01 \x03(\v2\x1d.inference.ImageCaptionResultR\aresults2\xb9\x03\n" +
+	"\x0eclip_embedding\x18\x04 \x01(\v2\x14.inference.EmbeddingR\rclipEmbedding2\xb9\x03\n" +
 	"\x10InferenceService\x12R\n" +
 	"\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12a\n" +
 	"\x12ClipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n" +
@@ -769,47 +761,49 @@ func file_inference_proto_rawDescGZIP() []byte {
 	return file_inference_proto_rawDescData
 }
 
-var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_inference_proto_goTypes = []any{
-	(*Image)(nil),                      // 0: inference.Image
-	(*Embedding)(nil),                  // 1: inference.Embedding
-	(*TextEmbeddingRequest)(nil),       // 2: inference.TextEmbeddingRequest
-	(*TextEmbeddingResponse)(nil),      // 3: inference.TextEmbeddingResponse
-	(*ClipImageEmbeddingRequest)(nil),  // 4: inference.ClipImageEmbeddingRequest
-	(*ClipImageEmbeddingResponse)(nil), // 5: inference.ClipImageEmbeddingResponse
-	(*ClipTextEmbeddingRequest)(nil),   // 6: inference.ClipTextEmbeddingRequest
-	(*ClipTextEmbeddingResponse)(nil),  // 7: inference.ClipTextEmbeddingResponse
-	(*RerankPair)(nil),                 // 8: inference.RerankPair
+	(*TaskOptions)(nil),                // 0: inference.TaskOptions
+	(*Image)(nil),                      // 1: inference.Image
+	(*Embedding)(nil),                  // 2: inference.Embedding
+	(*TextEmbeddingRequest)(nil),       // 3: inference.TextEmbeddingRequest
+	(*TextEmbeddingResponse)(nil),      // 4: inference.TextEmbeddingResponse
+	(*ClipImageEmbeddingRequest)(nil),  // 5: inference.ClipImageEmbeddingRequest
+	(*ClipImageEmbeddingResponse)(nil), // 6: inference.ClipImageEmbeddingResponse
+	(*ClipTextEmbeddingRequest)(nil),   // 7: inference.ClipTextEmbeddingRequest
+	(*ClipTextEmbeddingResponse)(nil),  // 8: inference.ClipTextEmbeddingResponse
 	(*RerankRequest)(nil),              // 9: inference.RerankRequest
 	(*RerankResponse)(nil),             // 10: inference.RerankResponse
 	(*ImageCaptionRequest)(nil),        // 11: inference.ImageCaptionRequest
-	(*ImageCaptionResult)(nil),         // 12: inference.ImageCaptionResult
-	(*ImageCaptionResponse)(nil),       // 13: inference.ImageCaptionResponse
+	(*ImageCaptionResponse)(nil),       // 12: inference.ImageCaptionResponse
 }
 var file_inference_proto_depIdxs = []int32{
-	1,  // 0: inference.TextEmbeddingResponse.embeddings:type_name -> inference.Embedding
-	0,  // 1: inference.ClipImageEmbeddingRequest.images:type_name -> inference.Image
-	1,  // 2: inference.ClipImageEmbeddingResponse.embeddings:type_name -> inference.Embedding
-	1,  // 3: inference.ClipTextEmbeddingResponse.embeddings:type_name -> inference.Embedding
-	8,  // 4: inference.RerankRequest.pairs:type_name -> inference.RerankPair
-	0,  // 5: inference.ImageCaptionRequest.images:type_name -> inference.Image
-	1,  // 6: inference.ImageCaptionResult.clip_embedding:type_name -> inference.Embedding
-	12, // 7: inference.ImageCaptionResponse.results:type_name -> inference.ImageCaptionResult
-	2,  // 8: inference.InferenceService.TextEmbedding:input_type -> inference.TextEmbeddingRequest
-	4,  // 9: inference.InferenceService.ClipImageEmbedding:input_type -> inference.ClipImageEmbeddingRequest
-	6,  // 10: inference.InferenceService.ClipTextEmbedding:input_type -> inference.ClipTextEmbeddingRequest
-	9,  // 11: inference.InferenceService.Rerank:input_type -> inference.RerankRequest
-	11, // 12: inference.InferenceService.ImageCaption:input_type -> inference.ImageCaptionRequest
-	3,  // 13: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
-	5,  // 14: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
-	7,  // 15: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
-	10, // 16: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
-	13, // 17: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
-	13, // [13:18] is the sub-list for method output_type
-	8,  // [8:13] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	0,  // 0: inference.TextEmbeddingRequest.options:type_name -> inference.TaskOptions
+	2,  // 1: inference.TextEmbeddingResponse.embedding:type_name -> inference.Embedding
+	0,  // 2: inference.ClipImageEmbeddingRequest.options:type_name -> inference.TaskOptions
+	1,  // 3: inference.ClipImageEmbeddingRequest.image:type_name -> inference.Image
+	2,  // 4: inference.ClipImageEmbeddingResponse.embedding:type_name -> inference.Embedding
+	0,  // 5: inference.ClipTextEmbeddingRequest.options:type_name -> inference.TaskOptions
+	2,  // 6: inference.ClipTextEmbeddingResponse.embedding:type_name -> inference.Embedding
+	0,  // 7: inference.RerankRequest.options:type_name -> inference.TaskOptions
+	0,  // 8: inference.ImageCaptionRequest.options:type_name -> inference.TaskOptions
+	1,  // 9: inference.ImageCaptionRequest.image:type_name -> inference.Image
+	2,  // 10: inference.ImageCaptionResponse.clip_embedding:type_name -> inference.Embedding
+	3,  // 11: inference.InferenceService.TextEmbedding:input_type -> inference.TextEmbeddingRequest
+	5,  // 12: inference.InferenceService.ClipImageEmbedding:input_type -> inference.ClipImageEmbeddingRequest
+	7,  // 13: inference.InferenceService.ClipTextEmbedding:input_type -> inference.ClipTextEmbeddingRequest
+	9,  // 14: inference.InferenceService.Rerank:input_type -> inference.RerankRequest
+	11, // 15: inference.InferenceService.ImageCaption:input_type -> inference.ImageCaptionRequest
+	4,  // 16: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
+	6,  // 17: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
+	8,  // 18: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
+	10, // 19: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
+	12, // 20: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_inference_proto_init() }
@@ -823,7 +817,7 @@ func file_inference_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_inference_proto_rawDesc), len(file_inference_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
