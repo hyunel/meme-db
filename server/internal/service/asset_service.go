@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
@@ -26,7 +29,71 @@ func NewAssetService(cfg *config.Config, repo *repository.Provider) *AssetServic
 	return &AssetService{cfg: cfg, repo: repo}
 }
 
+func (s *AssetService) validateUpload(fileHeader *multipart.FileHeader) (string, error) {
+	// 1. Check File Size
+	maxSizeBytes := int64(s.cfg.Upload.MaxSizeMB * 1024 * 1024)
+	if fileHeader.Size > maxSizeBytes {
+		return "", apperror.BadRequest(fmt.Sprintf("file too large: %d bytes (max %.1f MB)", fileHeader.Size, s.cfg.Upload.MaxSizeMB))
+	}
+
+	// 2. Check File Type
+	file, err := fileHeader.Open()
+	if err != nil {
+		return "", fmt.Errorf("failed to open file for validation: %w", err)
+	}
+	defer file.Close()
+
+	// Detect MIME type from content
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("failed to read file header: %w", err)
+	}
+	detectedMime := http.DetectContentType(buffer[:n])
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+
+	allowed := false
+	for _, pattern := range s.cfg.Upload.AllowedTypes {
+		parts := strings.Split(pattern, ",")
+		if len(parts) == 0 {
+			continue
+		}
+
+		// MIME type check
+		if strings.HasSuffix(parts[0], "/*") {
+			prefix := strings.TrimSuffix(parts[0], "*")
+			if strings.HasPrefix(detectedMime, prefix) {
+				allowed = true
+				break
+			}
+		} else if detectedMime == parts[0] {
+			allowed = true
+			break
+		}
+
+		// Extension check
+		for _, extPattern := range parts[1:] {
+			extPattern = strings.ToLower(strings.TrimSpace(extPattern))
+			if ext != extPattern {
+				allowed = false
+				break
+			}
+		}
+	}
+
+	if !allowed {
+		return "", apperror.BadRequest(fmt.Sprintf("file type not allowed: %s", detectedMime))
+	}
+
+	return detectedMime, nil
+}
+
 func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.FileHeader) (*model.Asset, error) {
+	mimeType, err := s.validateUpload(fileHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	file, err := fileHeader.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -78,7 +145,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 		asset = &model.Asset{
 			FileHash:    hash,
 			FileSize:    fileHeader.Size,
-			MimeType:    fileHeader.Header.Get("Content-Type"),
+			MimeType:    mimeType,
 			Extension:   ext,
 			StoragePath: relPath,
 		}
@@ -98,7 +165,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
 			"start_id":   asset.ID,
 			"batch_size": s.cfg.Inference.BatchSize,
-		}, &repository.TaskOpts{Priority: model.PriorityNormal})
+		}, &repository.TaskOpts{Priority: model.PriorityHigh})
 		if err != nil {
 			return fmt.Errorf("failed to create processing task: %w", err)
 		}

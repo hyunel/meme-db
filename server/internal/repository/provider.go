@@ -9,12 +9,13 @@ import (
 
 // Repositories holds all repository interfaces.
 type Repositories struct {
-	User  UserRepo
-	Meme  MemeRepo
-	Asset AssetRepo
-	Task  TaskRepo
-	Node  NodeRepo
-	Tag   TagRepo
+	User     UserRepo
+	Meme     MemeRepo
+	Asset    AssetRepo
+	Task     TaskRepo
+	Node     NodeRepo
+	Tag      TagRepo
+	Favorite FavoriteRepo
 }
 
 // Provider manages repositories and transactions.
@@ -28,12 +29,13 @@ type Provider struct {
 func NewProvider(pool *pgxpool.Pool) *Provider {
 	return &Provider{
 		Repositories: Repositories{
-			User:  NewUserRepository(pool),
-			Meme:  NewMemeRepository(pool),
-			Asset: NewAssetRepository(pool),
-			Task:  NewTaskRepository(pool),
-			Node:  NewNodeRepository(pool),
-			Tag:   NewTagRepository(pool),
+			User:     NewUserRepository(pool),
+			Meme:     NewMemeRepository(pool),
+			Asset:    NewAssetRepository(pool),
+			Task:     NewTaskRepository(pool),
+			Node:     NewNodeRepository(pool),
+			Tag:      NewTagRepository(pool),
+			Favorite: NewFavoriteRepository(pool),
 		},
 		pool: pool,
 	}
@@ -49,12 +51,13 @@ func (p *Provider) Transaction(ctx context.Context, fn func(*Repositories) error
 
 	// Create a new set of repositories bound to the transaction
 	txRepos := &Repositories{
-		User:  NewUserRepository(tx),
-		Meme:  NewMemeRepository(tx),
-		Asset: NewAssetRepository(tx),
-		Task:  NewTaskRepository(tx),
-		Node:  NewNodeRepository(tx),
-		Tag:   NewTagRepository(tx),
+		User:     NewUserRepository(tx),
+		Meme:     NewMemeRepository(tx),
+		Asset:    NewAssetRepository(tx),
+		Task:     NewTaskRepository(tx),
+		Node:     NewNodeRepository(tx),
+		Tag:      NewTagRepository(tx),
+		Favorite: NewFavoriteRepository(tx),
 	}
 
 	if err := fn(txRepos); err != nil {

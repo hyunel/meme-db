@@ -96,18 +96,11 @@ CREATE TABLE IF NOT EXISTS nodes (
     asset_id UUID REFERENCES assets(id),
 
     -- User Metadata
-    is_favorite BOOLEAN DEFAULT FALSE,
     private_note TEXT,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-
--- Constraint: Unique names within a folder for a user
--- Note: Empty names are allowed to be non-unique (to support unnamed uploads)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_unique_name_per_folder
-ON nodes (owner_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'), name)
-WHERE name <> '';
 
 -- Fast Recursive Queries (Get all descendants)
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes USING GIST (path);
@@ -118,7 +111,37 @@ CREATE INDEX IF NOT EXISTS idx_nodes_asset_owner ON nodes(asset_id, owner_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
 
 -- ==============================================================================
--- 5. TAG MANAGEMENT
+-- 5. USER FAVORITES
+-- ==============================================================================
+-- Unified table for favoriting both Memes (Assets) and Folders (Nodes)
+CREATE TABLE IF NOT EXISTS favorites (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Target: Either an Asset (Meme) or a Node (Folder)
+    asset_id UUID REFERENCES assets(id) ON DELETE CASCADE,
+    node_id UUID REFERENCES nodes(id) ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+
+    -- Constraint: Must target exactly one type
+    CONSTRAINT chk_favorite_target CHECK (
+        (asset_id IS NOT NULL AND node_id IS NULL) OR
+        (asset_id IS NULL AND node_id IS NOT NULL)
+    ),
+
+    -- Constraint: Uniqueness (User cannot favorite same item twice)
+    -- utilizing NULLS NOT DISTINCT capability if available
+    UNIQUE NULLS NOT DISTINCT (user_id, asset_id, node_id)
+);
+
+-- Fast lookups
+CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_asset ON favorites(asset_id) WHERE asset_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_favorites_node ON favorites(node_id) WHERE node_id IS NOT NULL;
+
+-- ==============================================================================
+-- 6. TAG MANAGEMENT
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -142,7 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_asset_tags_asset_user ON asset_tags (asset_id, us
 CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags (tag_id);
 
 -- ==============================================================================
--- 6. REFERENCE COUNTING TRIGGERS
+-- 7. REFERENCE COUNTING TRIGGERS
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION maintain_asset_refs() RETURNS TRIGGER AS $$
@@ -206,7 +229,7 @@ AFTER INSERT OR UPDATE OR DELETE ON nodes
 FOR EACH ROW EXECUTE FUNCTION maintain_asset_refs();
 
 -- ==============================================================================
--- 7. TASK QUEUE
+-- 8. TASK QUEUE
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID DEFAULT uuidv7(),

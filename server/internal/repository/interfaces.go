@@ -12,6 +12,7 @@ type AssetRepo interface {
 	CreateAsset(ctx context.Context, asset *model.Asset) error
 	GetAsset(ctx context.Context, id string) (*model.Asset, error)
 	GetAssetByHash(ctx context.Context, hash string) (*model.Asset, error)
+	HasAssetAccess(ctx context.Context, assetID string, ownerID string) (bool, error)
 }
 
 type RecallConfig[T any] struct {
@@ -32,16 +33,10 @@ type SearchCombinedParams struct {
 	FolderPath *string
 }
 
-type SearchResult struct {
-	model.MemeInfo
-	Similarity float32 `json:"similarity"`
-	RecallType string  `json:"recall_type"`
-}
-
 type MemeRepo interface {
 	CreateMeme(ctx context.Context, meme *model.MemeInfo) error
-	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error)
-	GetMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error)
+	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error)
+	GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error)
 	GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
 	ResetMemeStatus(ctx context.Context, assetID string) error
 }
@@ -78,4 +73,14 @@ type NodeRepo interface {
 type TagRepo interface {
 	GetAssetTags(ctx context.Context, assetID string, userID *string) ([]*model.Tag, error)
 	GetAssetsByTag(ctx context.Context, tagID string) ([]*model.Asset, error)
+}
+
+type FavoriteRepo interface {
+	AddAssetFavorite(ctx context.Context, userID, assetID string) error
+	RemoveAssetFavorite(ctx context.Context, userID, assetID string) error
+	AddNodeFavorite(ctx context.Context, userID, nodeID string) error
+	RemoveNodeFavorite(ctx context.Context, userID, nodeID string) error
+	IsAssetFavorite(ctx context.Context, userID, assetID string) (bool, error)
+	IsNodeFavorite(ctx context.Context, userID, nodeID string) (bool, error)
+	GetFavorites(ctx context.Context, userID string, nodeIDs, assetIDs []string) (nodeFavs map[string]bool, assetFavs map[string]bool, err error)
 }

@@ -7,22 +7,26 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+// ==============================================================================
+// Domain Entities
+// ==============================================================================
+
 type Asset struct {
 	ID             string    `json:"id" db:"id"`
-	FileHash       string    `json:"file_hash" db:"file_hash"`
+	FileHash       string    `json:"-" db:"file_hash"`
 	FileSize       int64     `json:"file_size" db:"file_size"`
 	MimeType       string    `json:"mime_type" db:"mime_type"`
 	Extension      string    `json:"extension" db:"extension"`
-	StoragePath    string    `json:"storage_path" db:"storage_path"`
-	RefCount       int       `json:"ref_count" db:"ref_count"`
-	PublicRefCount int       `json:"public_ref_count" db:"public_ref_count"`
+	StoragePath    string    `json:"-" db:"storage_path"`
+	RefCount       int       `json:"-" db:"ref_count"`
+	PublicRefCount int       `json:"-" db:"public_ref_count"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
 type MemeInfo struct {
-	AssetID        string           `json:"asset_id" db:"asset_id"`
-	VLMJSON        json.RawMessage  `json:"vlm_json" db:"vlm_json"`
-	OCRText        *string          `json:"ocr_text" db:"ocr_text"`
+	AssetID        string           `json:"-" db:"asset_id"`
+	VLMJSON        json.RawMessage  `json:"-" db:"vlm_json"`
+	OCRText        *string          `json:"-" db:"ocr_text"`
 	MetaphorVector *pgvector.Vector `json:"-" db:"metaphor_vector"`
 	SemanticVector *pgvector.Vector `json:"-" db:"semantic_vector"`
 	ClipVector     *pgvector.Vector `json:"-" db:"clip_vector"`
@@ -48,20 +52,20 @@ const (
 	NodeTypeFile   NodeType   = "FILE"
 	VisibilityPriv Visibility = "PRIVATE"
 	VisibilityPub  Visibility = "PUBLIC"
+	VisibilityLink Visibility = "LINK"
 )
 
 type Node struct {
 	ID          string     `json:"id" db:"id"`
 	OwnerID     string     `json:"owner_id" db:"owner_id"`
 	ParentID    *string    `json:"parent_id" db:"parent_id"`
-	Path        string     `json:"path" db:"path"` // ltree text representation
+	Path        string     `json:"-" db:"path"` // ltree text representation
 	Name        string     `json:"name" db:"name"`
 	Type        NodeType   `json:"type" db:"type"`
 	Visibility  Visibility `json:"visibility" db:"visibility"`
-	AssetID     *string    `json:"asset_id" db:"asset_id"`
-	URL         string     `json:"url"`
-	IsFavorite  bool       `json:"is_favorite" db:"is_favorite"`
-	PrivateNote *string    `json:"private_note" db:"private_note"`
+	AssetID     *string    `json:"-" db:"asset_id"`
+	IsFavorite  bool       `json:"is_favorite" db:"is_favorite"` // Computed field
+	PrivateNote *string    `json:"-" db:"private_note"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
@@ -70,24 +74,6 @@ type Tag struct {
 	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
-type MemeDTO struct {
-	AssetID          string     `json:"asset_id"`
-	Width            int        `json:"width"`
-	Height           int        `json:"height"`
-	Tags             []*Tag     `json:"tags"`
-	URL              *string    `json:"url"`
-	InLibrary        bool       `json:"in_library"`
-	AnalyzedAt       *time.Time `json:"analyzed_at"`
-	ProcessingStatus string     `json:"processing_status"`
-}
-
-type SearchResult struct {
-	Meme       *MemeDTO `json:"meme"`
-	RecallType string   `json:"recall_type"`
-	Score      float32  `json:"score"`
-	Similarity float32  `json:"similarity"`
 }
 
 type Task struct {
@@ -118,3 +104,46 @@ const (
 const (
 	JobProcessMemes = "process_memes"
 )
+
+// ==============================================================================
+// Aggregated Views (DTOs)
+// ==============================================================================
+
+// NodeView combines Node + MemeView
+type NodeView struct {
+	*Node
+	Meme *MemeView `json:"meme"`
+}
+
+// MemeView flattened view of Asset and MemeInfo
+type MemeView struct {
+	AssetID   string `json:"asset_id"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	FileSize  int64  `json:"file_size"`
+	MimeType  string `json:"mime_type"`
+	Extension string `json:"extension"`
+
+	ProcessingStatus string `json:"processing_status"`
+	InLibrary        bool   `json:"in_library"`
+	IsFavorite       bool   `json:"is_favorite"`
+	Tags             []*Tag `json:"tags"`
+	URL              string `json:"url"`
+
+	CreatedAt  time.Time  `json:"created_at"`
+	AnalyzedAt *time.Time `json:"analyzed_at"`
+}
+
+type SearchResult struct {
+	Meme       *MemeView `json:"meme"`
+	RecallType string    `json:"recall_type"`
+	Score      float32   `json:"score"`
+	Similarity float32   `json:"similarity"`
+}
+
+// SearchCandidate is the intermediate result from DB search
+type SearchCandidate struct {
+	MemeInfo
+	Similarity float32 `db:"similarity"`
+	RecallType string  `db:"recall_type"`
+}

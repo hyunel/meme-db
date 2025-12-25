@@ -98,7 +98,7 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		return []model.SearchResult{}, nil
 	}
 
-	candidates := make([]repository.SearchResult, 0, len(results))
+	candidates := make([]*model.SearchCandidate, 0, len(results))
 
 	docs := make([]string, 0, len(results))
 	for _, r := range results {
@@ -130,25 +130,24 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		return nil, fmt.Errorf("failed to rerank: %w", err)
 	}
 
-	// 5. Assemble DTOs in batch
+	// 5. Assemble results in batch
 	assetIDs := make([]string, len(candidates))
 	for i, c := range candidates {
 		assetIDs[i] = c.AssetID
 	}
-	dtoMap, err := s.BatchAssembleMemeDTOs(ctx, assetIDs, params.OwnerID)
+	memeMap, err := s.GetMemeViews(ctx, assetIDs, params.OwnerID)
 	if err != nil {
 		return nil, err
 	}
 
 	finalRes := make([]model.SearchResult, len(candidates))
 	for i, c := range candidates {
-		dto, ok := dtoMap[c.AssetID]
+		meme, ok := memeMap[c.AssetID]
 		if !ok {
-			return nil, fmt.Errorf("missing meme dto for asset %s", c.AssetID)
+			return nil, fmt.Errorf("missing meme aggregate for asset %s", c.AssetID)
 		}
-
 		finalRes[i] = model.SearchResult{
-			Meme:       dto,
+			Meme:       meme,
 			RecallType: c.RecallType,
 			Score:      scores[i],
 			Similarity: c.Similarity,
@@ -168,52 +167,48 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	return finalRes, nil
 }
 
-func (s *MemeService) AssembleMemeDTO(ctx context.Context, assetID string, ownerID string) (*model.MemeDTO, error) {
-	dtos, err := s.BatchAssembleMemeDTOs(ctx, []string{assetID}, ownerID)
+func (s *MemeService) GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error) {
+	memes, err := s.repo.Meme.GetMemeViews(ctx, assetIDs, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	dto, ok := dtos[assetID]
+
+	// Fetch Favorites
+	_, assetFavs, err := s.repo.Favorite.GetFavorites(ctx, ownerID, nil, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for id, meme := range memes {
+		meme.URL = s.assetService.GetAssetURL(meme.AssetID)
+		meme.IsFavorite = assetFavs[id]
+	}
+	return memes, nil
+}
+
+func (s *MemeService) GetMemeView(ctx context.Context, assetID string, ownerID string) (*model.MemeView, error) {
+	memes, err := s.GetMemeViews(ctx, []string{assetID}, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	meme, ok := memes[assetID]
 	if !ok {
 		return nil, apperror.NotFound(fmt.Sprintf("meme not found: %s", assetID))
 	}
-	return dto, nil
-}
-
-func (s *MemeService) BatchAssembleMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error) {
-	dtoMap, err := s.repo.Meme.GetMemeDTOs(ctx, assetIDs, ownerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to assemble meme dtos: %w", err)
-	}
-
-	for assetID, dto := range dtoMap {
-		u := s.assetService.GetAssetURL(assetID)
-		dto.URL = &u
-	}
-
-	return dtoMap, nil
+	return meme, nil
 }
 
 func (s *MemeService) RetryProcessing(ctx context.Context, assetID string, ownerID string) error {
-	dto, err := s.AssembleMemeDTO(ctx, assetID, ownerID)
+	meme, err := s.GetMemeView(ctx, assetID, ownerID)
 	if err != nil {
 		return err
 	}
 
-	if dto.ProcessingStatus != model.ProcessingStatusFailed {
+	if meme.ProcessingStatus != model.ProcessingStatusFailed {
 		return apperror.BadRequest("only failed memes can be retried")
 	}
 
 	err = s.repo.Transaction(ctx, func(r *repository.Repositories) error {
-		// Reset analyzed_at to NULL so it can be picked up by worker again
-		meme, err := r.Meme.GetMemeDTOs(ctx, []string{assetID}, ownerID)
-		if err != nil {
-			return err
-		}
-		if _, ok := meme[assetID]; !ok {
-			return apperror.NotFound("meme info not found")
-		}
-
 		if err := r.Meme.ResetMemeStatus(ctx, assetID); err != nil {
 			return fmt.Errorf("failed to reset meme status: %w", err)
 		}
@@ -222,7 +217,7 @@ func (s *MemeService) RetryProcessing(ctx context.Context, assetID string, owner
 		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
 			"start_id":   assetID,
 			"batch_size": 1,
-		}, &repository.TaskOpts{Priority: model.PriorityLow})
+		}, &repository.TaskOpts{Priority: model.PriorityNormal})
 		if err != nil {
 			return fmt.Errorf("failed to create retry task: %w", err)
 		}

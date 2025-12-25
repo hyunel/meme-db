@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/jackc/pgx/v5"
 )
 
 type MemeRepository struct {
@@ -16,7 +19,35 @@ func NewMemeRepository(db db.DBTX) *MemeRepository {
 	return &MemeRepository{db: db}
 }
 
-func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]SearchResult, error) {
+// ==============================================================================
+// Search
+// ==============================================================================
+
+type searchCandidateRow struct {
+	AssetID    string     `db:"asset_id"`
+	VLMJSON    []byte     `db:"vlm_json"`
+	Width      int        `db:"width"`
+	Height     int        `db:"height"`
+	AnalyzedAt *time.Time `db:"analyzed_at"`
+	Similarity float32    `db:"similarity"`
+	RecallType string     `db:"recall_type"`
+}
+
+func (row *searchCandidateRow) ToModel() *model.SearchCandidate {
+	return &model.SearchCandidate{
+		MemeInfo: model.MemeInfo{
+			AssetID:    row.AssetID,
+			VLMJSON:    row.VLMJSON,
+			Width:      row.Width,
+			Height:     row.Height,
+			AnalyzedAt: row.AnalyzedAt,
+		},
+		Similarity: row.Similarity,
+		RecallType: row.RecallType,
+	}
+}
+
+func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error) {
 	var args []interface{}
 	commonWhere := "WHERE 1=1"
 
@@ -97,22 +128,22 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	results := make([]SearchResult, 0)
-	for rows.Next() {
-		var sr SearchResult
-		err := rows.Scan(
-			&sr.AssetID, &sr.VLMJSON, &sr.Width, &sr.Height, &sr.AnalyzedAt,
-			&sr.Similarity, &sr.RecallType,
-		)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, sr)
+	candidates, err := pgx.CollectRows(rows, pgx.RowToStructByName[searchCandidateRow])
+	if err != nil {
+		return nil, err
 	}
-	return results, nil
+
+	result := make([]*model.SearchCandidate, len(candidates))
+	for i, c := range candidates {
+		result[i] = c.ToModel()
+	}
+	return result, nil
 }
+
+// ==============================================================================
+// CRUD
+// ==============================================================================
 
 func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) error {
 	query := `
@@ -141,8 +172,6 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 }
 
 func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
-	// We fetch limit + 1 items to see if there's a "next" item for rescheduling,
-	// but we only mark 'limit' items as processed.
 	query := `
 		WITH candidates AS (
 			SELECT asset_id, vlm_json, analyzed_at
@@ -158,8 +187,7 @@ func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, li
 			WHERE asset_id IN (SELECT asset_id FROM candidates LIMIT $2)
 			RETURNING asset_id
 		)
-		SELECT c.asset_id, c.vlm_json, c.analyzed_at,
-		       (CASE WHEN tu.asset_id IS NOT NULL THEN TRUE ELSE FALSE END) as is_marked
+		SELECT c.asset_id, c.vlm_json, c.analyzed_at
 		FROM candidates c
 		LEFT JOIN to_update tu ON c.asset_id = tu.asset_id
 		ORDER BY c.asset_id ASC
@@ -168,71 +196,103 @@ func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, li
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	memes := make([]*model.MemeInfo, 0)
-	for rows.Next() {
-		var m model.MemeInfo
-		var isMarked bool
-		err := rows.Scan(&m.AssetID, &m.VLMJSON, &m.AnalyzedAt, &isMarked)
-		if err != nil {
-			return nil, err
-		}
-		// If it's not marked, it means it's the "peeked" next item.
-		// We still return it so the caller can use its ID.
-		memes = append(memes, &m)
-	}
-	return memes, nil
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByNameLax[model.MemeInfo])
 }
 
-func (r *MemeRepository) GetMemeDTOs(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeDTO, error) {
+// ==============================================================================
+// Views
+// ==============================================================================
+
+type memeViewRow struct {
+	AssetID          string     `db:"asset_id"`
+	Width            int        `db:"width"`
+	Height           int        `db:"height"`
+	AnalyzedAt       *time.Time `db:"analyzed_at"`
+	FileSize         int64      `db:"file_size"`
+	MimeType         string     `db:"mime_type"`
+	Extension        string     `db:"extension"`
+	CreatedAt        time.Time  `db:"created_at"`
+	ProcessingStatus string     `db:"processing_status"`
+	InLibrary        bool       `db:"in_library"`
+	IsFavorite       bool       `db:"is_favorite"`
+	TagsJSON         []byte     `db:"tags"`
+}
+
+func (row *memeViewRow) ToModel() *model.MemeView {
+	var tags []*model.Tag
+	if len(row.TagsJSON) > 0 {
+		_ = json.Unmarshal(row.TagsJSON, &tags)
+	}
+	if tags == nil {
+		tags = make([]*model.Tag, 0)
+	}
+
+	return &model.MemeView{
+		AssetID:          row.AssetID,
+		Width:            row.Width,
+		Height:           row.Height,
+		AnalyzedAt:       row.AnalyzedAt,
+		FileSize:         row.FileSize,
+		MimeType:         row.MimeType,
+		Extension:        row.Extension,
+		CreatedAt:        row.CreatedAt,
+		ProcessingStatus: row.ProcessingStatus,
+		InLibrary:        row.InLibrary,
+		IsFavorite:       row.IsFavorite,
+		Tags:             tags,
+	}
+}
+
+func (r *MemeRepository) GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error) {
 	if len(assetIDs) == 0 {
-		return make(map[string]*model.MemeDTO), nil
+		return make(map[string]*model.MemeView), nil
 	}
 
 	query := `
+		WITH user_library AS (
+			SELECT DISTINCT asset_id
+			FROM nodes
+			WHERE owner_id = $2::uuid AND asset_id = ANY($1::uuid[])
+		)
 		SELECT
-			mi.asset_id::text, mi.width, mi.height, mi.analyzed_at,
+			a.id as asset_id, COALESCE(mi.width, 0) as width, COALESCE(mi.height, 0) as height, mi.analyzed_at,
+			a.file_size, a.mime_type, a.extension, a.created_at,
 			CASE
 				WHEN mi.analyzed_at IS NULL THEN 'pending'
 				WHEN mi.vlm_json IS NULL THEN 'failed'
 				ELSE 'success'
 			END as processing_status,
-			EXISTS(SELECT 1 FROM nodes n WHERE n.asset_id = mi.asset_id AND n.owner_id = $2::uuid) as in_library,
+			(ul.asset_id IS NOT NULL) as in_library,
 			COALESCE((
 				SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'created_at', t.created_at))
 				FROM asset_tags at
 				JOIN tags t ON at.tag_id = t.id
-				WHERE at.asset_id = mi.asset_id
+				WHERE at.asset_id = a.id
 				  AND (at.user_id IS NULL OR at.user_id = $2::uuid)
 			), '[]'::json) as tags
-		FROM meme_info mi
-		JOIN assets a ON mi.asset_id = a.id
-		WHERE mi.asset_id = ANY($1::uuid[])
-		  AND (a.public_ref_count > 0 OR EXISTS(SELECT 1 FROM nodes n WHERE n.asset_id = mi.asset_id AND n.owner_id = $2::uuid))
+		FROM assets a
+		LEFT JOIN meme_info mi ON a.id = mi.asset_id
+		LEFT JOIN user_library ul ON a.id = ul.asset_id
+		WHERE a.id = ANY($1::uuid[])
+		  AND (a.public_ref_count > 0 OR ul.asset_id IS NOT NULL)
 	`
 	rows, err := r.db.Query(ctx, query, assetIDs, ownerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch meme dtos: %w", err)
-	}
-	defer rows.Close()
-
-	dtos := make(map[string]*model.MemeDTO)
-	for rows.Next() {
-		var assetID string
-		dto := &model.MemeDTO{}
-		err := rows.Scan(
-			&assetID, &dto.Width, &dto.Height, &dto.AnalyzedAt,
-			&dto.ProcessingStatus, &dto.InLibrary, &dto.Tags,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan meme dto: %w", err)
-		}
-		dto.AssetID = assetID
-		dtos[assetID] = dto
+		return nil, fmt.Errorf("failed to fetch memes: %w", err)
 	}
 
-	return dtos, nil
+	viewRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[memeViewRow])
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan meme rows: %w", err)
+	}
+
+	memes := make(map[string]*model.MemeView)
+	for _, row := range viewRows {
+		view := row.ToModel()
+		memes[view.AssetID] = view
+	}
+
+	return memes, nil
 }
 
 func (r *MemeRepository) ResetMemeStatus(ctx context.Context, assetID string) error {

@@ -10,12 +10,14 @@ import (
 type MemeHandler struct {
 	memeService  *service.MemeService
 	assetService *service.AssetService
+	fsService    *service.FileSystemService
 }
 
-func NewMemeHandler(memeService *service.MemeService, assetService *service.AssetService) *MemeHandler {
+func NewMemeHandler(memeService *service.MemeService, assetService *service.AssetService, fsService *service.FileSystemService) *MemeHandler {
 	return &MemeHandler{
 		memeService:  memeService,
 		assetService: assetService,
+		fsService:    fsService,
 	}
 }
 
@@ -66,7 +68,7 @@ func (h *MemeHandler) GetMeme(c echo.Context) error {
 
 	userID, _ := c.Get("user_id").(string)
 
-	meme, err := h.memeService.AssembleMemeDTO(c.Request().Context(), req.ID, userID)
+	meme, err := h.memeService.GetMemeView(c.Request().Context(), req.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -87,4 +89,20 @@ func (h *MemeHandler) Retry(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func (h *MemeHandler) Add(c echo.Context) error {
+	var req GetMemeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	userID, _ := c.Get("user_id").(string)
+
+	node, err := h.fsService.AddAssetToRoot(c.Request().Context(), userID, req.ID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusCreated, node)
 }

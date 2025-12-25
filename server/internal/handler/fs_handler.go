@@ -42,11 +42,18 @@ func (h *FileSystemHandler) CreateNode(c echo.Context) error {
 	return c.JSON(http.StatusCreated, node)
 }
 
+type GetNodeRequest struct {
+	ID string `param:"id" validate:"omitempty"` // Optional: if empty, gets root
+}
+
 func (h *FileSystemHandler) GetNode(c echo.Context) error {
 	ownerID := c.Get("user_id").(string)
-	id := c.Param("id")
+	var req GetNodeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
 
-	res, err := h.fsService.GetNode(c.Request().Context(), id, ownerID)
+	res, err := h.fsService.GetNode(c.Request().Context(), req.ID, ownerID)
 	if err != nil {
 		return err
 	}

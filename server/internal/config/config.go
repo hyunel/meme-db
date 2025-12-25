@@ -19,6 +19,12 @@ type Config struct {
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
 	VLM       VLMConfig       `yaml:"vlm"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
+	Upload    UploadConfig    `yaml:"upload" validate:"required"`
+}
+
+type UploadConfig struct {
+	MaxSizeMB    float64  `yaml:"max_size_mb" validate:"required,gt=0"`
+	AllowedTypes []string `yaml:"allowed_types" validate:"required,min=1"`
 }
 
 type PromptConfig struct {

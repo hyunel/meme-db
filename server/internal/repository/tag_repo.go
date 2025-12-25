@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/jackc/pgx/v5"
 )
 
 type TagRepository struct {
@@ -38,17 +39,7 @@ func (r *TagRepository) GetAssetTags(ctx context.Context, assetID string, userID
 	if err != nil {
 		return nil, fmt.Errorf("failed to get asset tags: %w", err)
 	}
-	defer rows.Close()
-
-	tags := make([]*model.Tag, 0)
-	for rows.Next() {
-		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.Name, &tag.CreatedAt); err != nil {
-			return nil, err
-		}
-		tags = append(tags, &tag)
-	}
-	return tags, nil
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Tag])
 }
 
 func (r *TagRepository) GetAssetsByTag(ctx context.Context, tagID string) ([]*model.Asset, error) {
@@ -63,20 +54,5 @@ func (r *TagRepository) GetAssetsByTag(ctx context.Context, tagID string) ([]*mo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assets by tag: %w", err)
 	}
-	defer rows.Close()
-
-	assets := make([]*model.Asset, 0)
-	for rows.Next() {
-		var asset model.Asset
-		err := rows.Scan(
-			&asset.ID, &asset.FileHash, &asset.FileSize, &asset.MimeType,
-			&asset.Extension, &asset.StoragePath, &asset.RefCount,
-			&asset.PublicRefCount, &asset.CreatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		assets = append(assets, &asset)
-	}
-	return assets, nil
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Asset])
 }

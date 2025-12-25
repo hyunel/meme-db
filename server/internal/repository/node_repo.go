@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/jackc/pgx/v5"
 )
+
+const nodeSelectColumns = `id, owner_id, parent_id, path::text as path, name, type, visibility, asset_id, private_note, created_at, updated_at`
 
 type NodeRepository struct {
 	db db.DBTX
@@ -17,59 +19,71 @@ func NewNodeRepository(db db.DBTX) *NodeRepository {
 	return &NodeRepository{db: db}
 }
 
-func (r *NodeRepository) GetNode(ctx context.Context, id string, ownerID string) (*model.Node, error) {
-	query := `
-		SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-			   asset_id, is_favorite, private_note, created_at, updated_at
-		FROM nodes
-		WHERE id = $1::uuid AND (owner_id = $2::uuid OR visibility = 'PUBLIC')
-	`
-	node := &model.Node{}
-	err := r.db.QueryRow(ctx, query, id, ownerID).Scan(
-		&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-		&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return node, nil
-}
+// ==============================================================================
+// CRUD Operations
+// ==============================================================================
 
 func (r *NodeRepository) CreateNode(ctx context.Context, node *model.Node) error {
-	if node.ID == "" {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return fmt.Errorf("failed to generate uuid: %w", err)
-		}
-		node.ID = id.String()
+	// Handle empty string ID by converting it to NULL for the database
+	var nodeID *string
+	if node.ID != "" {
+		nodeID = &node.ID
 	}
 
-	query := `
+	query := fmt.Sprintf(`
+		WITH new_node AS (
+			SELECT
+				CASE WHEN $1::uuid IS NULL THEN uuidv7() ELSE $1::uuid END as id
+		)
 		INSERT INTO nodes (
 			id, owner_id, parent_id, path, name, type, visibility,
-			asset_id, is_favorite, private_note, created_at, updated_at
+			asset_id, private_note, created_at, updated_at
 		)
 		SELECT
-			$1::uuid, $2::uuid, $3::uuid,
+			n.id, $2::uuid, $3::uuid,
 			CASE
-				WHEN $3::uuid IS NULL THEN replace($1::text, '-', '')::ltree
-				ELSE (SELECT path FROM nodes WHERE id = $3::uuid) || replace($1::text, '-', '')::ltree
+				WHEN $3::uuid IS NULL THEN replace(n.id::text, '-', '')::ltree
+				ELSE (SELECT path FROM nodes WHERE id = $3::uuid) || replace(n.id::text, '-', '')::ltree
 			END,
 			$4, $5, $6,
-			$7::uuid, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-		RETURNING path::text, created_at, updated_at
-	`
+			$7::uuid, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		FROM new_node n
+		RETURNING %s
+	`, nodeSelectColumns)
 
-	err := r.db.QueryRow(ctx, query,
-		node.ID, node.OwnerID, node.ParentID,
+	rows, err := r.db.Query(ctx, query,
+		nodeID, node.OwnerID, node.ParentID,
 		node.Name, node.Type, node.Visibility,
-		node.AssetID, node.IsFavorite, node.PrivateNote,
-	).Scan(&node.Path, &node.CreatedAt, &node.UpdatedAt)
-
+		node.AssetID, node.PrivateNote,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create node: %w", err)
 	}
+
+	newNode, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
+	if err != nil {
+		return fmt.Errorf("failed to scan created node: %w", err)
+	}
+	*node = newNode
 	return nil
+}
+
+func (r *NodeRepository) GetNode(ctx context.Context, id string, ownerID string) (*model.Node, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM nodes
+		WHERE id = $1::uuid AND (owner_id = $2::uuid OR visibility = 'PUBLIC')
+	`, nodeSelectColumns)
+
+	rows, err := r.db.Query(ctx, query, id, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	node, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
+	if err != nil {
+		return nil, err
+	}
+	return &node, nil
 }
 
 func (r *NodeRepository) GetNodes(ctx context.Context, ids []string, ownerID string) ([]*model.Node, error) {
@@ -77,31 +91,40 @@ func (r *NodeRepository) GetNodes(ctx context.Context, ids []string, ownerID str
 		return []*model.Node{}, nil
 	}
 
-	query := `
-		SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-			   asset_id, is_favorite, private_note, created_at, updated_at
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM nodes
 		WHERE id = ANY($1::uuid[]) AND (owner_id = $2::uuid OR visibility = 'PUBLIC')
-	`
+	`, nodeSelectColumns)
+
 	rows, err := r.db.Query(ctx, query, ids, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nodes: %w", err)
 	}
-	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
+}
 
-	nodes := make([]*model.Node, 0)
-	for rows.Next() {
-		node := &model.Node{}
-		err := rows.Scan(
-			&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-			&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan node: %w", err)
-		}
-		nodes = append(nodes, node)
+func (r *NodeRepository) UpdateNode(ctx context.Context, node *model.Node) error {
+	query := `
+		UPDATE nodes
+		SET name = $1, visibility = $2, private_note = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $4::uuid AND owner_id = $5::uuid
+	`
+	_, err := r.db.Exec(ctx, query, node.Name, node.Visibility, node.PrivateNote, node.ID, node.OwnerID)
+	return err
+}
+
+func (r *NodeRepository) DeleteNode(ctx context.Context, id string, ownerID string) error {
+	query := `
+		DELETE FROM nodes
+		WHERE path <@ (SELECT path FROM nodes WHERE id = $1::uuid AND owner_id = $2::uuid)
+		AND owner_id = $2::uuid
+	`
+	_, err := r.db.Exec(ctx, query, id, ownerID)
+	if err != nil {
+		return fmt.Errorf("failed to delete node %s and its children: %w", id, err)
 	}
-	return nodes, nil
+	return nil
 }
 
 func (r *NodeRepository) ListNodes(ctx context.Context, parentID *string, ownerID string) ([]*model.Node, error) {
@@ -109,22 +132,20 @@ func (r *NodeRepository) ListNodes(ctx context.Context, parentID *string, ownerI
 	var args []interface{}
 
 	if parentID == nil {
-		query = `
-			SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-				   asset_id, is_favorite, private_note, created_at, updated_at
+		query = fmt.Sprintf(`
+			SELECT %s
 			FROM nodes
 			WHERE parent_id IS NULL AND owner_id = $1::uuid
 			ORDER BY type DESC, name ASC
-		`
+		`, nodeSelectColumns)
 		args = []interface{}{ownerID}
 	} else {
-		query = `
-			SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-				   asset_id, is_favorite, private_note, created_at, updated_at
+		query = fmt.Sprintf(`
+			SELECT %s
 			FROM nodes
 			WHERE parent_id = $1::uuid AND owner_id = $2::uuid
 			ORDER BY type DESC, name ASC
-		`
+		`, nodeSelectColumns)
 		args = []interface{}{parentID, ownerID}
 	}
 
@@ -132,32 +153,12 @@ func (r *NodeRepository) ListNodes(ctx context.Context, parentID *string, ownerI
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
-	defer rows.Close()
-
-	nodes := make([]*model.Node, 0)
-	for rows.Next() {
-		node := &model.Node{}
-		err := rows.Scan(
-			&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-			&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan node: %w", err)
-		}
-		nodes = append(nodes, node)
-	}
-	return nodes, nil
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
 }
 
-func (r *NodeRepository) UpdateNode(ctx context.Context, node *model.Node) error {
-	query := `
-		UPDATE nodes
-		SET name = $1, visibility = $2, is_favorite = $3, private_note = $4, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $5::uuid AND owner_id = $6::uuid
-	`
-	_, err := r.db.Exec(ctx, query, node.Name, node.Visibility, node.IsFavorite, node.PrivateNote, node.ID, node.OwnerID)
-	return err
-}
+// ==============================================================================
+// Hierarchy Operations (Path/Tree)
+// ==============================================================================
 
 func (r *NodeRepository) MoveNode(ctx context.Context, id string, newParentID *string, newPath string, ownerID string) error {
 	query := `
@@ -179,90 +180,46 @@ func (r *NodeRepository) MoveNode(ctx context.Context, id string, newParentID *s
 	return nil
 }
 
-func (r *NodeRepository) DeleteNode(ctx context.Context, id string, ownerID string) error {
-	query := `
-		DELETE FROM nodes
-		WHERE path <@ (SELECT path FROM nodes WHERE id = $1::uuid AND owner_id = $2::uuid)
-		AND owner_id = $2::uuid
-	`
-	_, err := r.db.Exec(ctx, query, id, ownerID)
-	if err != nil {
-		return fmt.Errorf("failed to delete node %s and its children: %w", id, err)
-	}
-	return nil
-}
-
 func (r *NodeRepository) GetNodeByPath(ctx context.Context, path string) (*model.Node, error) {
-	query := `
-		SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-			   asset_id, is_favorite, private_note, created_at, updated_at
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM nodes WHERE path = $1::ltree
-	`
-	node := &model.Node{}
-	err := r.db.QueryRow(ctx, query, path).Scan(
-		&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-		&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-func (r *NodeRepository) GetSubtree(ctx context.Context, path string) ([]*model.Node, error) {
-	query := `
-		SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-			   asset_id, is_favorite, private_note, created_at, updated_at
-		FROM nodes
-		WHERE path <@ $1::ltree
-		ORDER BY nlevel(path) ASC
-	`
+	`, nodeSelectColumns)
 	rows, err := r.db.Query(ctx, query, path)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	nodes := make([]*model.Node, 0)
-	for rows.Next() {
-		node := &model.Node{}
-		err := rows.Scan(
-			&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-			&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, node)
+	node, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
+	if err != nil {
+		return nil, err
 	}
-	return nodes, nil
+	return &node, nil
+}
+
+func (r *NodeRepository) GetSubtree(ctx context.Context, path string) ([]*model.Node, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM nodes
+		WHERE path <@ $1::ltree
+		ORDER BY nlevel(path) ASC
+	`, nodeSelectColumns)
+	rows, err := r.db.Query(ctx, query, path)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
 }
 
 func (r *NodeRepository) GetAncestors(ctx context.Context, path string) ([]*model.Node, error) {
-	query := `
-		SELECT id, owner_id, parent_id, path::text, name, type, visibility,
-			   asset_id, is_favorite, private_note, created_at, updated_at
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM nodes
 		WHERE path @> $1::ltree
 		ORDER BY nlevel(path) ASC
-	`
+	`, nodeSelectColumns)
 	rows, err := r.db.Query(ctx, query, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ancestors: %w", err)
 	}
-	defer rows.Close()
-
-	nodes := make([]*model.Node, 0)
-	for rows.Next() {
-		node := &model.Node{}
-		err := rows.Scan(
-			&node.ID, &node.OwnerID, &node.ParentID, &node.Path, &node.Name, &node.Type, &node.Visibility,
-			&node.AssetID, &node.IsFavorite, &node.PrivateNote, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan ancestor node: %w", err)
-		}
-		nodes = append(nodes, node)
-	}
-	return nodes, nil
+	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
 }

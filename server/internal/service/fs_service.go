@@ -24,13 +24,64 @@ func NewFileSystemService(repo *repository.Provider, memeService *MemeService, a
 	}
 }
 
-func (s *FileSystemService) populateNodeURL(node *model.Node) {
-	if node.Type == model.NodeTypeFile && node.AssetID != nil {
-		node.URL = s.assetService.GetAssetURL(*node.AssetID)
+func (s *FileSystemService) assembleNodeViews(ctx context.Context, nodes []*model.Node, ownerID string) ([]*model.NodeView, error) {
+	if len(nodes) == 0 {
+		return []*model.NodeView{}, nil
 	}
+
+	var assetIDs []string
+	var nodeIDs []string
+	for _, n := range nodes {
+		nodeIDs = append(nodeIDs, n.ID)
+		if n.AssetID != nil {
+			assetIDs = append(assetIDs, *n.AssetID)
+		}
+	}
+
+	// Fetch Meme Views
+	var memeMap map[string]*model.MemeView
+	if len(assetIDs) > 0 {
+		var err error
+		memeMap, err = s.memeService.GetMemeViews(ctx, assetIDs, ownerID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Fetch Favorites
+	nodeFavs, assetFavs, err := s.repo.Favorite.GetFavorites(ctx, ownerID, nodeIDs, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	views := make([]*model.NodeView, len(nodes))
+	for i, n := range nodes {
+		view := &model.NodeView{
+			Node: n,
+		}
+
+		// Set Favorite Status
+		if n.Type == model.NodeTypeFolder {
+			view.IsFavorite = nodeFavs[n.ID]
+		} else if n.AssetID != nil {
+			view.IsFavorite = assetFavs[*n.AssetID]
+		}
+
+		// Attach Meme Info
+		if n.AssetID != nil && memeMap != nil {
+			if meme, ok := memeMap[*n.AssetID]; ok {
+				// Also update meme view favorite status for consistency
+				meme.IsFavorite = assetFavs[*n.AssetID]
+				view.Meme = meme
+			}
+		}
+		views[i] = view
+	}
+
+	return views, nil
 }
 
-func (s *FileSystemService) CreateNode(ctx context.Context, ownerID string, parentID *string, name string, nodeType model.NodeType) (*model.Node, error) {
+func (s *FileSystemService) CreateNode(ctx context.Context, ownerID string, parentID *string, name string, nodeType model.NodeType) (*model.NodeView, error) {
 	node := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   parentID,
@@ -42,57 +93,86 @@ func (s *FileSystemService) CreateNode(ctx context.Context, ownerID string, pare
 	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
 		return nil, err
 	}
-	s.populateNodeURL(node)
-	return node, nil
+
+	// Fetch fresh node to be sure
+	freshNode, err := s.repo.Node.GetNode(ctx, node.ID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	views, err := s.assembleNodeViews(ctx, []*model.Node{freshNode}, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return views[0], nil
 }
 
 type GetNodeResponse struct {
-	Node        *model.Node   `json:"node"`
-	Children    []*model.Node `json:"children"`
-	Breadcrumbs []*model.Node `json:"breadcrumbs"`
+	Node        *model.NodeView   `json:"node"`
+	Children    []*model.NodeView `json:"children"`
+	Breadcrumbs []*model.NodeView `json:"breadcrumbs"`
 }
 
 func (s *FileSystemService) GetNode(ctx context.Context, id string, ownerID string) (*GetNodeResponse, error) {
-	var node *model.Node
-	var breadcrumbs []*model.Node
-	var children []*model.Node
+	var nodeView *model.NodeView
+	var breadcrumbs []*model.NodeView
+	var children []*model.NodeView
 
 	if id != "" {
-		var err error
-		node, err = s.repo.Node.GetNode(ctx, id, ownerID)
+		node, err := s.repo.Node.GetNode(ctx, id, ownerID)
 		if err != nil {
 			return nil, apperror.NotFound("node not found")
 		}
 
+		views, err := s.assembleNodeViews(ctx, []*model.Node{node}, ownerID)
+		if err != nil {
+			return nil, err
+		}
+		nodeView = views[0]
+
 		// Breadcrumbs
-		breadcrumbs, _ = s.repo.Node.GetAncestors(ctx, node.Path)
-		for _, n := range breadcrumbs {
-			s.populateNodeURL(n)
+		ancestors, err := s.repo.Node.GetAncestors(ctx, node.Path)
+		if err != nil {
+			return nil, err
+		}
+		breadcrumbs, err = s.assembleNodeViews(ctx, ancestors, ownerID)
+		if err != nil {
+			return nil, err
 		}
 
 		// Children
 		if node.Type == model.NodeTypeFolder {
-			children, _ = s.repo.Node.ListNodes(ctx, &node.ID, ownerID)
+			childNodes, err := s.repo.Node.ListNodes(ctx, &node.ID, ownerID)
+			if err != nil {
+				return nil, err
+			}
+			children, err = s.assembleNodeViews(ctx, childNodes, ownerID)
+			if err != nil {
+				return nil, err
+			}
 		}
-		s.populateNodeURL(node)
 	} else {
 		// Root
-		children, _ = s.repo.Node.ListNodes(ctx, nil, ownerID)
-	}
-
-	for _, n := range children {
-		s.populateNodeURL(n)
+		childNodes, err := s.repo.Node.ListNodes(ctx, nil, ownerID)
+		if err != nil {
+			return nil, err
+		}
+		var err2 error
+		children, err2 = s.assembleNodeViews(ctx, childNodes, ownerID)
+		if err2 != nil {
+			return nil, err2
+		}
 	}
 
 	if breadcrumbs == nil {
-		breadcrumbs = []*model.Node{}
+		breadcrumbs = []*model.NodeView{}
 	}
 	if children == nil {
-		children = []*model.Node{}
+		children = []*model.NodeView{}
 	}
 
 	return &GetNodeResponse{
-		Node:        node,
+		Node:        nodeView,
 		Children:    children,
 		Breadcrumbs: breadcrumbs,
 	}, nil
@@ -104,7 +184,7 @@ type UpdateNodeInput struct {
 	IsFavorite *bool
 }
 
-func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID string, input UpdateNodeInput) (*model.Node, error) {
+func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID string, input UpdateNodeInput) (*model.NodeView, error) {
 	node, err := s.repo.Node.GetNode(ctx, id, ownerID)
 	if err != nil {
 		return nil, apperror.NotFound("node not found")
@@ -116,15 +196,28 @@ func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID s
 	if input.Visibility != nil {
 		node.Visibility = *input.Visibility
 	}
-	if input.IsFavorite != nil {
-		node.IsFavorite = *input.IsFavorite
-	}
 
 	if err := s.repo.Node.UpdateNode(ctx, node); err != nil {
 		return nil, err
 	}
-	s.populateNodeURL(node)
-	return node, nil
+
+	if input.IsFavorite != nil {
+		if err := s.ToggleFavorite(ctx, ownerID, id, *input.IsFavorite); err != nil {
+			return nil, err
+		}
+	}
+
+	// Fetch fresh to reflect updates
+	freshNode, err := s.repo.Node.GetNode(ctx, id, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	views, err := s.assembleNodeViews(ctx, []*model.Node{freshNode}, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return views[0], nil
 }
 
 func (s *FileSystemService) BulkDeleteNodes(ctx context.Context, ownerID string, ids []string) error {
@@ -215,7 +308,6 @@ func (s *FileSystemService) recursiveCopy(ctx context.Context, txRepo *repositor
 		Type:       sourceNode.Type,
 		Visibility: sourceNode.Visibility,
 		AssetID:    sourceNode.AssetID,
-		IsFavorite: sourceNode.IsFavorite,
 	}
 	if err := txRepo.Node.CreateNode(ctx, newNode); err != nil {
 		return nil, err
@@ -251,7 +343,7 @@ func (s *FileSystemService) checkForCycles(nodes []*model.Node, destNode *model.
 	return nil
 }
 
-func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, parentID *string, fileHeader *multipart.FileHeader) (*model.Node, error) {
+func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, parentID *string, fileHeader *multipart.FileHeader) (*model.NodeView, error) {
 	asset, err := s.assetService.CreateAsset(ctx, fileHeader)
 	if err != nil {
 		return nil, err
@@ -260,7 +352,7 @@ func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, pare
 	node := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   parentID,
-		Name:       "", // Intentionally left blank
+		Name:       fileHeader.Filename,
 		Type:       model.NodeTypeFile,
 		Visibility: model.VisibilityPriv,
 		AssetID:    &asset.ID,
@@ -269,8 +361,77 @@ func (s *FileSystemService) UploadMeme(ctx context.Context, ownerID string, pare
 	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
 		return nil, err
 	}
-	s.populateNodeURL(node)
-	return node, nil
+
+	// Fetch fresh node
+	freshNode, err := s.repo.Node.GetNode(ctx, node.ID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	views, err := s.assembleNodeViews(ctx, []*model.Node{freshNode}, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return views[0], nil
+}
+
+func (s *FileSystemService) AddAssetToRoot(ctx context.Context, ownerID string, assetID string) (*model.NodeView, error) {
+	exists, err := s.repo.Asset.HasAssetAccess(ctx, assetID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, apperror.Forbidden("you do not have permission to access this asset")
+	}
+
+	node := &model.Node{
+		OwnerID:    ownerID,
+		ParentID:   nil,
+		Name:       "",
+		Type:       model.NodeTypeFile,
+		Visibility: model.VisibilityPriv,
+		AssetID:    &assetID,
+	}
+
+	if err := s.repo.Node.CreateNode(ctx, node); err != nil {
+		return nil, err
+	}
+
+	// Fetch fresh node
+	freshNode, err := s.repo.Node.GetNode(ctx, node.ID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	views, err := s.assembleNodeViews(ctx, []*model.Node{freshNode}, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return views[0], nil
+}
+
+func (s *FileSystemService) ToggleFavorite(ctx context.Context, userID, nodeID string, isFavorite bool) error {
+	node, err := s.repo.Node.GetNode(ctx, nodeID, userID)
+	if err != nil {
+		return apperror.NotFound("node not found")
+	}
+
+	if node.Type == model.NodeTypeFolder {
+		if isFavorite {
+			return s.repo.Favorite.AddNodeFavorite(ctx, userID, nodeID)
+		}
+		return s.repo.Favorite.RemoveNodeFavorite(ctx, userID, nodeID)
+	}
+
+	// For Files, we favorite the Asset
+	if node.AssetID == nil {
+		return apperror.BadRequest("node has no asset")
+	}
+
+	if isFavorite {
+		return s.repo.Favorite.AddAssetFavorite(ctx, userID, *node.AssetID)
+	}
+	return s.repo.Favorite.RemoveAssetFavorite(ctx, userID, *node.AssetID)
 }
 
 func (s *FileSystemService) GetAssetForContent(ctx context.Context, assetID string, token string) (*model.Asset, error) {

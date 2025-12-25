@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, run_at, started_at, finished_at, created_at, updated_at`
+
 type taskRepo struct {
 	db db.DBTX
 }
@@ -53,18 +55,20 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 		}
 	}
 
-	query := `
+	query := fmt.Sprintf(`
 		INSERT INTO tasks (owner_id, job_type, payload, status, priority, run_at, cron)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, owner_id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, created_at, updated_at
-	`
+		RETURNING %s
+	`, taskSelectColumns)
 
-	var task model.Task
-	err = r.db.QueryRow(ctx, query, ownerID, jobType, payloadBytes, model.TaskStatusPending, priority, runAt, cron).Scan(
-		&task.ID, &task.OwnerID, &task.ParentTaskID, &task.JobType, &task.Payload, &task.Status, &task.Priority, &task.Cron, &task.RunAt, &task.StartedAt, &task.FinishedAt, &task.CreatedAt, &task.UpdatedAt,
-	)
+	rows, err := r.db.Query(ctx, query, ownerID, jobType, payloadBytes, model.TaskStatusPending, priority, runAt, cron)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
+	}
+
+	task, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Task])
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan created task: %w", err)
 	}
 
 	return &task, nil
@@ -72,7 +76,7 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 
 func (r *taskRepo) GetNextPendingTask(ctx context.Context) (*model.Task, error) {
 	// Fetch and lock the next pending task using FOR UPDATE SKIP LOCKED
-	query := `
+	query := fmt.Sprintf(`
 		UPDATE tasks
 		SET started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE id = (
@@ -83,14 +87,15 @@ func (r *taskRepo) GetNextPendingTask(ctx context.Context) (*model.Task, error) 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, created_at, updated_at
-	`
+		RETURNING %s
+	`, taskSelectColumns)
 
-	var task model.Task
-	err := r.db.QueryRow(ctx, query, model.TaskStatusPending, time.Now()).Scan(
-		&task.ID, &task.ParentTaskID, &task.JobType, &task.Payload, &task.Status, &task.Priority, &task.Cron, &task.RunAt, &task.StartedAt, &task.FinishedAt, &task.CreatedAt, &task.UpdatedAt,
-	)
+	rows, err := r.db.Query(ctx, query, model.TaskStatusPending, time.Now())
+	if err != nil {
+		return nil, err
+	}
 
+	task, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Task])
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil // No pending tasks

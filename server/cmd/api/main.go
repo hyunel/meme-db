@@ -75,7 +75,7 @@ func main() {
 
 	// 7. Setup Handlers
 	authHandler := handler.NewAuthHandler(authService)
-	memeHandler := handler.NewMemeHandler(memeService, assetService)
+	memeHandler := handler.NewMemeHandler(memeService, assetService, fsService)
 	fsHandler := handler.NewFileSystemHandler(fsService)
 	assetHandler := handler.NewAssetHandler(cfg, fsService)
 
@@ -104,24 +104,27 @@ func main() {
 	e.Use(middleware.CORS())
 	e.Use(authHandler.IdentifyMiddleware)
 
-	// Public Routes
-	e.POST("/api/auth/register", authHandler.Register)
-	e.POST("/api/auth/login", authHandler.Login)
+	api := e.Group("/api")
+	api.Use(authHandler.AuthMiddleware)
+
+	// 9. Setup Routes
 	e.GET("/api/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	e.GET("/api/search", memeHandler.Search)
 
-	e.GET("/api/memes/:id", memeHandler.GetMeme)
-	e.POST("/api/memes/:id/retry", memeHandler.Retry)
-
-	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
-
-	// Protected Routes
-	api := e.Group("/api")
-	api.Use(authHandler.AuthMiddleware)
-
+	// Auth
+	e.POST("/api/auth/register", authHandler.Register)
+	e.POST("/api/auth/login", authHandler.Login)
 	api.GET("/auth/me", authHandler.GetMe)
+
+	// Meme
+	e.GET("/api/memes/:id", memeHandler.GetMeme)
+	api.POST("/memes/:id/retry", memeHandler.Retry)
+	api.POST("/memes/:id/add", memeHandler.Add)
+
+	// Asset
+	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
 
 	// FileSystem
 	api.POST("/fs/nodes", fsHandler.CreateNode)

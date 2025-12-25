@@ -7,7 +7,7 @@ database:
 
 inference:
   grpc_addr: "localhost:50051"
-  batch_size: 32
+  batch_size: 8
 
 prompt:
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"
@@ -47,3 +47,11 @@ prompt:
       "implied_meaning": ["Keyword1", "Keyword2", ...],
       "synthetic_queries": ["Query1", "Query2", ...]
     }
+
+upload:
+  max_size_mb: 1.0
+  allowed_types:
+    - "image/*"
+    - "video/*,.webm,.mp4"
+    - "application/x-gzip,.tgs"
+    - "application/json,.json,.lottie"
