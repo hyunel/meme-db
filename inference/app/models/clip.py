@@ -1,10 +1,11 @@
-from typing import List
+from typing import List, Dict, Callable
 import logging
 import torch
 from PIL import Image
 import torch.nn.functional as F
 from transformers import AutoModel, AutoProcessor
 from .base import BaseModel
+from ..config import ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -67,3 +68,10 @@ class CLIPModel(BaseModel):
             features = self.get_text_features(**inputs)
             features = F.normalize(features, p=2, dim=1)
             return features.float().cpu().numpy().tolist()
+
+    @property
+    def inference_methods(self) -> Dict[ModelType, Callable]:
+        return {
+            ModelType.CLIP_IMAGE: self.get_image_embedding,
+            ModelType.CLIP_TEXT: self.get_text_embedding,
+        }

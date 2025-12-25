@@ -1,8 +1,9 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Callable
 import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from .base import BaseModel
+from ..config import ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -77,3 +78,7 @@ class RerankerModel(BaseModel):
             log_scores = torch.nn.functional.log_softmax(scores, dim=1)
             # Return probability of 'yes' class (index 1)
             return log_scores[:, 1].exp().cpu().tolist()
+
+    @property
+    def inference_methods(self) -> Dict[ModelType, Callable]:
+        return {ModelType.RERANKER: self.predict}

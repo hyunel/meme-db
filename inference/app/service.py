@@ -1,8 +1,9 @@
 import grpc
+import torch
 import logging
 import asyncio
 from .manager import ModelManager
-from .config import ModelType
+from .config import ModelType, ModelConfig
 from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
 from .schedulers import BatchScheduler, SimpleScheduler, ResourceManager
@@ -11,54 +12,37 @@ logger = logging.getLogger(__name__)
 
 
 class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
-    def __init__(self, model_manager: ModelManager):
+    def __init__(self, model_manager: ModelManager, config: ModelConfig):
         self.model_manager = model_manager
+        self.config = config
         self.schedulers = {}
+
         # Dual resource managers
-        self.gpu_res = ResourceManager(concurrency=1)
-        self.cpu_res = ResourceManager(concurrency=self.model_manager.config.concurrency)
+        self.gpu_res = ResourceManager(concurrency=1, post_execution_callback=self._clear_cuda_cache)
+        self.cpu_res = ResourceManager(concurrency=self.config.concurrency)
         self._init_schedulers()
 
+    def _clear_cuda_cache(self):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _init_schedulers(self):
-        configs = self.model_manager.config.get_model_configs()
-
-        # Define scheduler mapping
-        scheduler_map = {
-            ModelType.TEXT_EMBEDDING: [
-                ("text_embedding", self.model_manager[ModelType.TEXT_EMBEDDING].get_embedding)
-            ],
-            ModelType.RERANKER: [
-                ("reranker", self.model_manager[ModelType.RERANKER].predict)
-            ],
-            ModelType.CLIP: [
-                ("clip_image", self.model_manager[ModelType.CLIP].get_image_embedding),
-                ("clip_text", self.model_manager[ModelType.CLIP].get_text_embedding),
-            ],
-            ModelType.VLM: [
-                ("vlm", self.model_manager[ModelType.VLM].generate_caption)
-            ],
-        }
-
-        for model_type, entries in scheduler_map.items():
-            if model_type not in self.model_manager.models:
-                continue
-
-            model = self.model_manager[model_type]
-            cfg = configs[model_type]
-
-            for name, func in entries:
+        configs = self.config.get_model_configs()
+        for model_type, model in self.model_manager:
+            config = configs[model_type]
+            for task_type, func in model.inference_methods.items():
                 if model.is_gpu:
-                    self.schedulers[name] = BatchScheduler(
+                    self.schedulers[task_type] = BatchScheduler(
                         resource_manager=self.gpu_res,
                         process_func=func,
-                        batch_size=cfg.batch_size,
-                        max_latency=cfg.max_latency,
+                        batch_size=config.batch_size,
+                        max_latency=config.max_latency,
                     )
                 else:
-                    self.schedulers[name] = SimpleScheduler(
+                    self.schedulers[task_type] = SimpleScheduler(
                         resource_manager=self.cpu_res,
                         process_func=func,
-                        concurrency=cfg.concurrency,
+                        concurrency=config.concurrency,
                     )
 
     async def start(self):
@@ -77,7 +61,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
     async def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
         priority = request.options.priority
-        embedding = await self.schedulers['text_embedding'].submit(
+        embedding = await self.schedulers[ModelType.TEXT_EMBEDDING].submit(
             (request.text, request.task_description),
             priority=priority,
             context=context
@@ -95,7 +79,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         image = frames[len(frames) // 2]
 
         priority = request.options.priority
-        embedding = await self.schedulers['clip_image'].submit(
+        embedding = await self.schedulers[ModelType.CLIP_IMAGE].submit(
             image,
             priority=priority,
             context=context
@@ -106,7 +90,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
     async def ClipTextEmbedding(self, request: inference_pb2.ClipTextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipTextEmbeddingResponse:
         priority = request.options.priority
-        embedding = await self.schedulers['clip_text'].submit(
+        embedding = await self.schedulers[ModelType.CLIP_TEXT].submit(
             request.text,
             priority=priority,
             context=context
@@ -117,7 +101,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
     async def Rerank(self, request: inference_pb2.RerankRequest, context: grpc.ServicerContext) -> inference_pb2.RerankResponse:
         priority = request.options.priority
-        score = await self.schedulers['reranker'].submit(
+        score = await self.schedulers[ModelType.RERANKER].submit(
             ((request.query, request.document), request.task_description),
             priority=priority,
             context=context
@@ -125,7 +109,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         return inference_pb2.RerankResponse(score=score)
 
     async def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
-        if 'vlm' not in self.schedulers:
+        if ModelType.VLM not in self.schedulers:
             context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
         loop = asyncio.get_running_loop()
@@ -141,12 +125,12 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         priority = request.options.priority
 
         # Submit to both schedulers
-        clip_future = self.schedulers['clip_image'].submit(
+        clip_future = self.schedulers[ModelType.CLIP_IMAGE].submit(
             clip_image,
             priority=priority,
             context=context
         )
-        vlm_future = self.schedulers['vlm'].submit(
+        vlm_future = self.schedulers[ModelType.VLM].submit(
             (vlm_image, request.prompt),
             priority=priority,
             context=context

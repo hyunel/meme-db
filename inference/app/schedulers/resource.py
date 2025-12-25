@@ -29,11 +29,12 @@ class ResourceManager:
     """
     Global resource manager that executes batches based on priority.
     """
-    def __init__(self, concurrency: int = 1):
+    def __init__(self, concurrency: int = 1, post_execution_callback: Optional[Callable[[], None]] = None):
         self.queue: PriorityQueue[BatchRequest] = PriorityQueue()
         self.worker_task: Optional[asyncio.Task] = None
         self.semaphore = asyncio.Semaphore(concurrency)
         self.running_tasks: set[asyncio.Task] = set()
+        self.post_execution_callback = post_execution_callback
 
     async def start(self):
         self.worker_task = asyncio.create_task(self._worker_loop())
@@ -100,6 +101,8 @@ class ResourceManager:
                 if not request.future.done():
                     request.future.set_exception(e)
             finally:
+                if self.post_execution_callback:
+                    self.post_execution_callback()
                 self.queue.task_done()
         finally:
             self.semaphore.release()

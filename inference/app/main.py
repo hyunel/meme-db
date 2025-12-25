@@ -3,6 +3,7 @@ import logging
 import sys
 import asyncio
 import grpc
+from .config import ModelConfig
 from .manager import ModelManager
 from .service import InferenceService
 from .pb import inference_pb2_grpc
@@ -25,16 +26,16 @@ def parse_args() -> argparse.Namespace:
 
 async def serve() -> None:
     args = parse_args()
-
+    config = ModelConfig.from_yaml(args.model_config)
     try:
-        model_manager = ModelManager(config_path=args.model_config)
+        model_manager = ModelManager(config=config)
         model_manager.load_models()
     except Exception as e:
         logger.critical(f"Failed to load models: {e}", exc_info=True)
         sys.exit(1)
 
     server = grpc.aio.server()
-    service = InferenceService(model_manager)
+    service = InferenceService(model_manager, config)
     inference_pb2_grpc.add_InferenceServiceServicer_to_server(
         service, server
     )

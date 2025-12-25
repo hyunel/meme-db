@@ -8,6 +8,8 @@ from typing import Optional, Literal, Any, Dict
 class ModelType(str, Enum):
     """Enum for different model types."""
     CLIP = "clip"
+    CLIP_IMAGE = "clip_image"
+    CLIP_TEXT = "clip_text"
     TEXT_EMBEDDING = "text_embedding"
     RERANKER = "reranker"
     VLM = "vlm"

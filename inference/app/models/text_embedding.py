@@ -1,9 +1,10 @@
-from typing import List
+from typing import List, Dict, Callable
 import logging
 import torch
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
 from .base import BaseModel
+from ..config import ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -73,3 +74,7 @@ class TextEmbeddingModel(BaseModel):
             embeddings = self._last_token_pool(outputs.last_hidden_state, inputs['attention_mask'])
             embeddings = F.normalize(embeddings, p=2, dim=1)
             return embeddings.float().cpu().numpy().tolist()
+
+    @property
+    def inference_methods(self) -> Dict[ModelType, Callable]:
+        return {ModelType.TEXT_EMBEDDING: self.get_embedding}

@@ -115,9 +115,9 @@ def load_image_from_bytes(bytes_data: bytes, file_format: str) -> List[Image.Ima
     file_format = file_format.lstrip('.').lower()
     frames = []
     with BytesIO(bytes_data) as f:
-        if file_format == 'tgs':
+        if file_format in ['tgs', 'lottie', 'json']:
             frames = generate_tgs_frames(f)
-        elif file_format == 'webm':
+        elif file_format in ['webm', 'mp4']:
             frames = generate_webm_frames(f)
         else:
             frames = [Image.open(f).copy()]

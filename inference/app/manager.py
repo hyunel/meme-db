@@ -23,12 +23,10 @@ class ModelManager:
         ModelType.VLM: VLMModel,  # Placeholder, will be handled specially
     }
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config: ModelConfig):
         self.accelerator = Accelerator()
         self.models: Dict[ModelType, BaseModel] = {}
-
-        # Load config from YAML if provided, otherwise use defaults
-        self.config = ModelConfig.from_yaml(config_path) if config_path else ModelConfig()
+        self.config = config
 
         # Set default device if not specified for each model
         device = self.accelerator.device
@@ -58,3 +56,7 @@ class ModelManager:
         if model_type not in self.models:
             raise RuntimeError(f"{model_type.value} model not loaded")
         return self.models[model_type]
+    
+    def __iter__(self):
+        """Iterator over loaded models."""
+        return iter(self.models.items())

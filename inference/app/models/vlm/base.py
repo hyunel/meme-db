@@ -1,7 +1,8 @@
-from typing import List
+from typing import List, Dict, Callable
 from abc import abstractmethod
 from PIL import Image
 from ..base import BaseModel
+from ...config import ModelType
 
 class VLMModel(BaseModel):
     """
@@ -22,3 +23,7 @@ class VLMModel(BaseModel):
             items: List of (image, prompt) tuples.
         """
         pass
+
+    @property
+    def inference_methods(self) -> Dict[ModelType, Callable]:
+        return {ModelType.VLM: self.generate_caption}
