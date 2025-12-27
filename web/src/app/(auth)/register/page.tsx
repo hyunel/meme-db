@@ -1,14 +1,13 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { register } from "@/lib/auth"
+import { useAuthStore } from "@/store/auth"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -16,33 +15,22 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
   const redirectPath = searchParams.get("redirect") || "/search"
+  const register = useAuthStore((state) => state.register)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
     setError("")
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      return
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters")
-      return
-    }
-
-    setLoading(true)
-
     try {
-      await register(email, username.toLowerCase(), password)
+      await register(email, username, password)
       router.push(redirectPath)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed")
+    } catch (err: any) {
+      setError(err.message || "Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -51,8 +39,8 @@ export default function RegisterPage() {
   return (
     <>
       <div className="text-center">
-        <h1 className="text-3xl font-bold mt-6">Create your account</h1>
-        <p className="text-muted-foreground mt-2">Start organizing your memes today</p>
+        <h1 className="text-3xl font-bold mt-6">Create an account</h1>
+        <p className="text-muted-foreground mt-2">Join the MemeDB community</p>
       </div>
 
       {/* Register Form */}
@@ -69,12 +57,10 @@ export default function RegisterPage() {
             <Input
               id="username"
               type="text"
-              placeholder="meme_master"
+              placeholder="meme_lord"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              pattern="^[a-zA-Z0-9_]{3,50}$"
-              title="3-50 characters, letters, numbers, and underscores only"
             />
           </div>
 
@@ -98,18 +84,6 @@ export default function RegisterPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              placeholder="••••••••"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
               required
             />
           </div>

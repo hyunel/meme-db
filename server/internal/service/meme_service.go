@@ -168,7 +168,12 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 }
 
 func (s *MemeService) GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error) {
-	memes, err := s.repo.Meme.GetMemeViews(ctx, assetIDs, ownerID)
+	var uid *string
+	if ownerID != "" {
+		uid = &ownerID
+	}
+
+	memes, err := s.repo.Meme.GetMemeViews(ctx, assetIDs, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -179,9 +184,21 @@ func (s *MemeService) GetMemeViews(ctx context.Context, assetIDs []string, owner
 		return nil, err
 	}
 
+	// Fetch Tags (Decoupled)
+	tagsMap, err := s.repo.Tag.GetTagsByAssets(ctx, assetIDs, uid)
+	if err != nil {
+		slog.Error("failed to fetch tags for memes", "error", err)
+		// Non-fatal error for tags? Maybe better to return empty tags than failing everything
+	}
+
 	for id, meme := range memes {
 		meme.URL = s.assetService.GetAssetURL(meme.AssetID)
 		meme.IsFavorite = assetFavs[id]
+		if tags, ok := tagsMap[id]; ok {
+			meme.Tags = tags
+		} else {
+			meme.Tags = make([]*model.Tag, 0)
+		}
 	}
 	return memes, nil
 }
@@ -198,28 +215,46 @@ func (s *MemeService) GetMemeView(ctx context.Context, assetID string, ownerID s
 	return meme, nil
 }
 
-func (s *MemeService) RetryProcessing(ctx context.Context, assetID string, ownerID string) error {
-	meme, err := s.GetMemeView(ctx, assetID, ownerID)
+func (s *MemeService) RetryProcessing(ctx context.Context, assetIDs []string, ownerID string) error {
+	if len(assetIDs) == 0 {
+		return nil
+	}
+
+	memes, err := s.GetMemeViews(ctx, assetIDs, ownerID)
 	if err != nil {
 		return err
 	}
 
-	if meme.ProcessingStatus != model.ProcessingStatusFailed {
-		return apperror.BadRequest("only failed memes can be retried")
+	var validIDs []string
+	for _, id := range assetIDs {
+		meme, ok := memes[id]
+		if !ok {
+			return apperror.NotFound(fmt.Sprintf("meme not found: %s", id))
+		}
+		if meme.ProcessingStatus != model.ProcessingStatusFailed {
+			continue // Skip non-failed memes for batch retry
+		}
+		validIDs = append(validIDs, id)
+	}
+
+	if len(validIDs) == 0 {
+		return nil
 	}
 
 	err = s.repo.Transaction(ctx, func(r *repository.Repositories) error {
-		if err := r.Meme.ResetMemeStatus(ctx, assetID); err != nil {
+		if err := r.Meme.ResetMemeStatus(ctx, validIDs); err != nil {
 			return fmt.Errorf("failed to reset meme status: %w", err)
 		}
 
-		// Create task with lower priority
-		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
-			"start_id":   assetID,
-			"batch_size": 1,
-		}, &repository.TaskOpts{Priority: model.PriorityNormal})
-		if err != nil {
-			return fmt.Errorf("failed to create retry task: %w", err)
+		// Create individual tasks for each retry to ensure background processing
+		for _, id := range validIDs {
+			_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
+				"start_id":   id,
+				"batch_size": s.cfg.Inference.BatchSize,
+			}, &repository.TaskOpts{Priority: model.PriorityNormal})
+			if err != nil {
+				return fmt.Errorf("failed to create retry task for %s: %w", id, err)
+			}
 		}
 		return nil
 	})

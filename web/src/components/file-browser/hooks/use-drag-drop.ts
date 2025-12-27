@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react"
-import type { BrowseItem } from "../types"
+import type { BrowseItem } from "../utils/types"
 import { createDragPreview } from "../utils/drag-preview"
 
 export function useDragDrop(

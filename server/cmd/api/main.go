@@ -47,7 +47,6 @@ func main() {
 	repo := repository.NewProvider(pool)
 
 	// 4. Setup External Clients
-	// vlmClient := service.NewVLMClient(&cfg.VLM)
 	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr)
 	if err != nil {
 		slog.Error("Failed to create inference client", "error", err)
@@ -60,6 +59,8 @@ func main() {
 	assetService := service.NewAssetService(cfg, repo)
 	memeService := service.NewMemeService(cfg, repo, assetService, inferClient)
 	fsService := service.NewFileSystemService(repo, memeService, assetService)
+	favService := service.NewFavoriteService(repo, memeService, assetService)
+	tagService := service.NewTagService(repo, memeService)
 
 	// 6. Setup Task Worker
 	taskWorker, err := worker.NewWorker(cfg, repo)
@@ -78,6 +79,8 @@ func main() {
 	memeHandler := handler.NewMemeHandler(memeService, assetService, fsService)
 	fsHandler := handler.NewFileSystemHandler(fsService)
 	assetHandler := handler.NewAssetHandler(cfg, fsService)
+	favHandler := handler.NewFavoriteHandler(favService)
+	tagHandler := handler.NewTagHandler(tagService)
 
 	// 8. Setup Echo
 	e := echo.New()
@@ -120,7 +123,7 @@ func main() {
 
 	// Meme
 	e.GET("/api/memes/:id", memeHandler.GetMeme)
-	api.POST("/memes/:id/retry", memeHandler.Retry)
+	api.POST("/memes/retry", memeHandler.BatchRetry)
 	api.POST("/memes/:id/add", memeHandler.Add)
 
 	// Asset
@@ -135,6 +138,17 @@ func main() {
 	api.POST("/fs/nodes/move", fsHandler.BulkMove)
 	api.POST("/fs/nodes/copy", fsHandler.BulkCopy)
 	api.POST("/fs/upload", fsHandler.UploadMeme)
+
+	// Favorites
+	api.GET("/favorites", favHandler.List)
+	api.POST("/favorites", favHandler.Toggle)
+
+	// Tags
+	e.GET("/api/tags/search", tagHandler.SearchTags)
+	e.GET("/api/tags/:id", tagHandler.GetTagMemes)
+	e.GET("/api/memes/:id/tags", tagHandler.GetMemeTags)
+	api.POST("/memes/:id/tags", tagHandler.AddTag)
+	api.DELETE("/memes/:id/tags/:tag_id", tagHandler.RemoveTag)
 
 	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

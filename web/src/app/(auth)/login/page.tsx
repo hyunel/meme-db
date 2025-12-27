@@ -1,14 +1,13 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { login } from "@/lib/auth"
+import { useAuthStore } from "@/store/auth"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -19,17 +18,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const redirectPath = searchParams.get("redirect") || "/search"
+  const login = useAuthStore((state) => state.login)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
     setLoading(true)
+    setError("")
 
     try {
       await login(email, password)
       router.push(redirectPath)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed")
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password")
     } finally {
       setLoading(false)
     }
@@ -81,7 +81,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-6 text-center text-sm">
-          <span className="text-muted-foreground">Don&apos;t have an account? </span>
+          <span className="text-muted-foreground">Don't have an account? </span>
           <Link href="/register" className="text-primary hover:underline font-medium">
             Sign up
           </Link>

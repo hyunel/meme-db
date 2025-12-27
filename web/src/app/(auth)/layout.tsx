@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useContext, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import { useUser } from "@/hooks/use-user"
-import { getAuthToken } from "@/lib/auth"
+import { getAuthToken } from "@/store/auth"
 import { motion, AnimatePresence } from "framer-motion"
 import { LayoutRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime"
 

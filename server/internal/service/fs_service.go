@@ -201,12 +201,6 @@ func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID s
 		return nil, err
 	}
 
-	if input.IsFavorite != nil {
-		if err := s.ToggleFavorite(ctx, ownerID, id, *input.IsFavorite); err != nil {
-			return nil, err
-		}
-	}
-
 	// Fetch fresh to reflect updates
 	freshNode, err := s.repo.Node.GetNode(ctx, id, ownerID)
 	if err != nil {
@@ -270,10 +264,14 @@ func (s *FileSystemService) BulkMoveNodes(ctx context.Context, ownerID string, i
 	})
 }
 
-func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, ids []string, destParentID string) error {
-	destNode, err := s.repo.Node.GetNode(ctx, destParentID, ownerID)
-	if err != nil {
-		return apperror.NotFound("destination parent not found")
+func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, ids []string, destParentID *string) error {
+	var destNode *model.Node
+	if destParentID != nil {
+		var err error
+		destNode, err = s.repo.Node.GetNode(ctx, *destParentID, ownerID)
+		if err != nil {
+			return apperror.NotFound("destination parent not found")
+		}
 	}
 
 	nodes, err := s.repo.Node.GetNodes(ctx, ids, ownerID)
@@ -287,7 +285,7 @@ func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, i
 
 	return s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
 		for _, node := range nodes {
-			if _, err := s.recursiveCopy(ctx, txRepo, node, &destParentID, ownerID); err != nil {
+			if _, err := s.recursiveCopy(ctx, txRepo, node, destParentID, ownerID); err != nil {
 				return err
 			}
 		}
@@ -296,15 +294,10 @@ func (s *FileSystemService) BulkCopyNodes(ctx context.Context, ownerID string, i
 }
 
 func (s *FileSystemService) recursiveCopy(ctx context.Context, txRepo *repository.Repositories, sourceNode *model.Node, newParentID *string, ownerID string) (*model.Node, error) {
-	newName := ""
-	if sourceNode.Name != "" {
-		newName = sourceNode.Name + " (Copy)"
-	}
-
 	newNode := &model.Node{
 		OwnerID:    ownerID,
 		ParentID:   newParentID,
-		Name:       newName,
+		Name:       sourceNode.Name,
 		Type:       sourceNode.Type,
 		Visibility: sourceNode.Visibility,
 		AssetID:    sourceNode.AssetID,
@@ -408,30 +401,6 @@ func (s *FileSystemService) AddAssetToRoot(ctx context.Context, ownerID string, 
 		return nil, err
 	}
 	return views[0], nil
-}
-
-func (s *FileSystemService) ToggleFavorite(ctx context.Context, userID, nodeID string, isFavorite bool) error {
-	node, err := s.repo.Node.GetNode(ctx, nodeID, userID)
-	if err != nil {
-		return apperror.NotFound("node not found")
-	}
-
-	if node.Type == model.NodeTypeFolder {
-		if isFavorite {
-			return s.repo.Favorite.AddNodeFavorite(ctx, userID, nodeID)
-		}
-		return s.repo.Favorite.RemoveNodeFavorite(ctx, userID, nodeID)
-	}
-
-	// For Files, we favorite the Asset
-	if node.AssetID == nil {
-		return apperror.BadRequest("node has no asset")
-	}
-
-	if isFavorite {
-		return s.repo.Favorite.AddAssetFavorite(ctx, userID, *node.AssetID)
-	}
-	return s.repo.Favorite.RemoveAssetFavorite(ctx, userID, *node.AssetID)
 }
 
 func (s *FileSystemService) GetAssetForContent(ctx context.Context, assetID string, token string) (*model.Asset, error) {

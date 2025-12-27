@@ -1,35 +1,49 @@
 "use client"
 
 import { useState } from "react"
-import { mockFolders, type Folder } from "@/lib/mock-data"
+import useSWR from "swr"
+import { exploreList } from "@/lib/api"
 import { useUser } from "@/hooks/use-user"
 import { Input } from "@/components/ui/input"
 import { FolderOpen, TrendingUp, Users, Search } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FolderCard } from "@/components/folder-card"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ExplorePage() {
   const { user } = useUser()
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Get all public folders
-  const publicFolders = mockFolders.filter((f) => f.isPublic)
+  const { data, isLoading } = useSWR("/api/explore/folders", exploreList)
 
-  // Filter folders by search query
+  const featuredFolders = data?.featured || []
+  const popularFolders = data?.popular || []
+  const allFolders = data?.all || []
+
+  // Filter folders by search query (client-side for now, matching previous behavior)
   const filteredFolders = searchQuery
-    ? publicFolders.filter(
+    ? allFolders.filter(
         (f) =>
-          f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          f.username.toLowerCase().includes(searchQuery.toLowerCase()),
+          f.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : publicFolders
+    : allFolders
 
-  // Featured folders (highest meme count)
-  const featuredFolders = [...publicFolders].sort((a, b) => b.memeCount - a.memeCount).slice(0, 6)
+  const renderGrid = (folders: typeof allFolders) => (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {folders.map((folder) => (
+        <FolderCard key={folder.id} folder={folder} />
+      ))}
+    </div>
+  )
 
-  // Popular folders (mock - in real app would be based on views/likes)
-  const popularFolders = [...publicFolders].slice(0, 8)
+  const renderSkeletons = () => (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {[...Array(8)].map((_, i) => (
+        <Skeleton key={i} className="aspect-square rounded-xl" />
+      ))}
+    </div>
+  )
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -45,7 +59,7 @@ export default function ExplorePage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search folders and users..."
+            placeholder="Search folders..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -53,7 +67,9 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {!searchQuery ? (
+      {isLoading ? (
+        renderSkeletons()
+      ) : !searchQuery ? (
         <Tabs defaultValue="featured" className="space-y-6">
           <TabsList>
             <TabsTrigger value="featured" className="gap-2">
@@ -72,29 +88,17 @@ export default function ExplorePage() {
 
           {/* Featured Folders */}
           <TabsContent value="featured" className="space-y-6">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {featuredFolders.map((folder) => (
-                <FolderCard key={folder.id} folder={folder} />
-              ))}
-            </div>
+            {renderGrid(featuredFolders)}
           </TabsContent>
 
           {/* Popular Folders */}
           <TabsContent value="popular" className="space-y-6">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {popularFolders.map((folder) => (
-                <FolderCard key={folder.id} folder={folder} />
-              ))}
-            </div>
+            {renderGrid(popularFolders)}
           </TabsContent>
 
           {/* All Folders */}
           <TabsContent value="all" className="space-y-6">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {publicFolders.map((folder) => (
-                <FolderCard key={folder.id} folder={folder} />
-              ))}
-            </div>
+            {renderGrid(allFolders)}
           </TabsContent>
         </Tabs>
       ) : (
@@ -104,11 +108,7 @@ export default function ExplorePage() {
             {filteredFolders.length} {filteredFolders.length === 1 ? "result" : "results"} for &ldquo;{searchQuery}&rdquo;
           </h2>
           {filteredFolders.length > 0 ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredFolders.map((folder) => (
-                <FolderCard key={folder.id} folder={folder} />
-              ))}
-            </div>
+            renderGrid(filteredFolders)
           ) : (
             <EmptyState
               icon={<FolderOpen className="w-16 h-16" />}

@@ -155,7 +155,8 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 
 		// b. Create MemeInfo Stub
 		memeInfo := &model.MemeInfo{
-			AssetID: asset.ID,
+			AssetID:          asset.ID,
+			ProcessingStatus: model.ProcessingStatusPending,
 		}
 		if err := r.Meme.CreateMeme(ctx, memeInfo); err != nil {
 			return fmt.Errorf("failed to create meme info stub: %w", err)

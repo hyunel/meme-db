@@ -1,21 +1,21 @@
 "use client"
 
-import React, { useState, useRef } from "react"
+import { useState, useRef } from "react"
 import { BreadcrumbNav } from "./breadcrumb-nav"
 import { BrowserHeader } from "./browser-header"
-import { UploadProgress } from "./upload-progress"
 import { FileGrid } from "./file-grid"
 import { SelectionBar } from "./selection-bar"
 import { useFileBrowser } from "./file-browser-context"
+import { downloadMeme } from "@/lib/meme"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { ACCEPTED_FILE_TYPES } from "./utils/constants"
 
 export function FileBrowserView() {
   const {
     currentFolder,
-    uploadingFiles,
     selectedItems,
     clearSelection,
     items,
@@ -42,15 +42,13 @@ export function FileBrowserView() {
   }
 
   const handleBulkDownload = () => {
-    Array.from(selectedItems).forEach((id) => {
-      const item = items.find((m) => m.id === id)
-      if (item && item.type === "meme" && item.url) {
-        const link = document.createElement("a")
-        link.href = item.url
-        link.download = `${item.name}.png`
-        link.click()
+    const itemsToDownload = items.filter((i) => selectedItems.has(i.id))
+    itemsToDownload.forEach((item) => {
+      if (item.type === "meme" && item.meme) {
+        downloadMeme(item.meme)
       }
     })
+    clearSelection()
   }
 
   return (
@@ -68,7 +66,7 @@ export function FileBrowserView() {
         ref={fileInputRef}
         className="hidden"
         multiple
-        accept="image/*,image/gif"
+        accept={ACCEPTED_FILE_TYPES.join(",")}
         onChange={(e) => {
           if (e.target.files) {
             upload(Array.from(e.target.files), currentFolder?.id)
@@ -85,12 +83,11 @@ export function FileBrowserView() {
 
       <SelectionBar
         selectedCount={selectedItems.size}
+        showDownload={!items.some((i) => selectedItems.has(i.id) && i.type === "folder")}
         onClearSelection={clearSelection}
         onBulkDownload={handleBulkDownload}
         onBulkDelete={handleBulkDelete}
       />
-
-      <UploadProgress uploadingFiles={uploadingFiles} />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

@@ -14,41 +14,41 @@ func NewFavoriteRepository(db db.DBTX) *FavoriteRepository {
 	return &FavoriteRepository{db: db}
 }
 
-func (r *FavoriteRepository) AddAssetFavorite(ctx context.Context, userID, assetID string) error {
+func (r *FavoriteRepository) AddAssetFavorite(ctx context.Context, userID string, assetIDs []string) error {
 	query := `
 		INSERT INTO favorites (user_id, asset_id)
-		VALUES ($1::uuid, $2::uuid)
+		SELECT $1::uuid, unnest($2::uuid[])
 		ON CONFLICT (user_id, asset_id, node_id) DO NOTHING
 	`
-	_, err := r.db.Exec(ctx, query, userID, assetID)
+	_, err := r.db.Exec(ctx, query, userID, assetIDs)
 	return err
 }
 
-func (r *FavoriteRepository) RemoveAssetFavorite(ctx context.Context, userID, assetID string) error {
+func (r *FavoriteRepository) RemoveAssetFavorite(ctx context.Context, userID string, assetIDs []string) error {
 	query := `
 		DELETE FROM favorites
-		WHERE user_id = $1::uuid AND asset_id = $2::uuid
+		WHERE user_id = $1::uuid AND asset_id = ANY($2::uuid[])
 	`
-	_, err := r.db.Exec(ctx, query, userID, assetID)
+	_, err := r.db.Exec(ctx, query, userID, assetIDs)
 	return err
 }
 
-func (r *FavoriteRepository) AddNodeFavorite(ctx context.Context, userID, nodeID string) error {
+func (r *FavoriteRepository) AddNodeFavorite(ctx context.Context, userID string, nodeIDs []string) error {
 	query := `
 		INSERT INTO favorites (user_id, node_id)
-		VALUES ($1::uuid, $2::uuid)
+		SELECT $1::uuid, unnest($2::uuid[])
 		ON CONFLICT (user_id, asset_id, node_id) DO NOTHING
 	`
-	_, err := r.db.Exec(ctx, query, userID, nodeID)
+	_, err := r.db.Exec(ctx, query, userID, nodeIDs)
 	return err
 }
 
-func (r *FavoriteRepository) RemoveNodeFavorite(ctx context.Context, userID, nodeID string) error {
+func (r *FavoriteRepository) RemoveNodeFavorite(ctx context.Context, userID string, nodeIDs []string) error {
 	query := `
 		DELETE FROM favorites
-		WHERE user_id = $1::uuid AND node_id = $2::uuid
+		WHERE user_id = $1::uuid AND node_id = ANY($2::uuid[])
 	`
-	_, err := r.db.Exec(ctx, query, userID, nodeID)
+	_, err := r.db.Exec(ctx, query, userID, nodeIDs)
 	return err
 }
 
@@ -87,7 +87,7 @@ func (r *FavoriteRepository) GetFavorites(ctx context.Context, userID string, no
 	query := `
 		SELECT node_id, asset_id
 		FROM favorites
-		WHERE user_id = $1::uuid
+		WHERE user_id = NULLIF($1, '')::uuid
 		AND (
 			(node_id = ANY($2::uuid[])) OR
 			(asset_id = ANY($3::uuid[]))
@@ -114,4 +114,34 @@ func (r *FavoriteRepository) GetFavorites(ctx context.Context, userID string, no
 	}
 
 	return nodeFavs, assetFavs, nil
+}
+
+func (r *FavoriteRepository) ListFavorites(ctx context.Context, userID string) ([]string, []string, error) {
+	query := `
+		SELECT asset_id, node_id
+		FROM favorites
+		WHERE user_id = $1::uuid
+	`
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var assetIDs []string
+	var nodeIDs []string
+	for rows.Next() {
+		var assetID, nodeID *string
+		if err := rows.Scan(&assetID, &nodeID); err != nil {
+			return nil, nil, err
+		}
+		if assetID != nil {
+			assetIDs = append(assetIDs, *assetID)
+		}
+		if nodeID != nil {
+			nodeIDs = append(nodeIDs, *nodeID)
+		}
+	}
+
+	return assetIDs, nodeIDs, nil
 }

@@ -167,6 +167,16 @@
     background-size: 40px 40px;
   }
 
+  .bg-checkered {
+    background-image: conic-gradient(
+      var(--muted) 90deg,
+      transparent 90deg 180deg,
+      var(--muted) 180deg 270deg,
+      transparent 270deg
+    );
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+  }
 }
 
 @keyframes float {

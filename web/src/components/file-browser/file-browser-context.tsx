@@ -6,7 +6,8 @@ import { useBrowserData } from "./hooks/use-browser-data"
 import { useSelection } from "./hooks/use-selection"
 import { useDragDrop } from "./hooks/use-drag-drop"
 import { useUpload } from "./hooks/use-upload"
-import type { BrowseItem, SortOption, UploadingFile } from "./types"
+import type { SortOption } from "./utils/constants"
+import type { BrowseItem, UploadingFile } from "./utils/types"
 import type { Node } from "@/lib/api"
 
 interface FileBrowserContextType {
@@ -27,6 +28,7 @@ interface FileBrowserContextType {
   createFolder: (name: string) => void
   deleteItems: (ids: string[]) => void
   moveItems: (ids: string[], targetFolderId?: string) => void
+  copyItems: (ids: string[], targetFolderId?: string) => void
   refresh: () => void
 
   // Selection

@@ -2,8 +2,15 @@ package inference
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 )
+
+var ocrNoiseRegex = regexp.MustCompile(`(?i)(?:key\s+)?frame\s+\d+/\d+\n?`)
+
+func CleanOCRText(text string) string {
+	return strings.TrimSpace(ocrNoiseRegex.ReplaceAllString(text, ""))
+}
 
 type VLMOutput struct {
 	OCRText          string
@@ -46,7 +53,9 @@ func ParseVLMOutput(caption string) (*VLMOutput, error) {
 	}
 
 	out := &VLMOutput{}
-	out.OCRText, _ = raw["ocr_text"].(string)
+	if ocr, ok := raw["ocr_text"].(string); ok {
+		out.OCRText = CleanOCRText(ocr)
+	}
 	out.VisualSubject = toStringSlice(raw["visual_subject"])
 	out.SpecificEntities = toStringSlice(raw["specific_entities"])
 	out.VisualStyle = toStringSlice(raw["visual_style"])

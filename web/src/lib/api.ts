@@ -1,4 +1,4 @@
-import { User, getAuthToken, clearAuth } from "./auth";
+import { User, getAuthToken, clearAuth } from "@/store/auth";
 
 interface RequestOptions extends RequestInit {
     params?: Record<string, string | number | boolean>;
@@ -41,7 +41,8 @@ export async function request(path: string, options: RequestOptions = {}): Promi
     const response = await fetch(url, { ...options, headers });
     if (!response.ok) {
         if (response.status === 401) clearAuth();
-        throw new ApiError(response.status, await response.text());
+        const errorMessage = await response.text();
+        throw new ApiError(response.status, errorMessage || `Request failed with status ${response.status}`);
     }
 
     if (response.status === 204) {
@@ -96,13 +97,10 @@ export interface Node {
     type: 'FOLDER' | 'FILE';
     visibility: 'PRIVATE' | 'PUBLIC' | 'LINK';
     parent_id?: string;
-    asset_id?: string;
-    url?: string;
-    username?: string;
-    tags?: string[];
     is_favorite: boolean;
     created_at: string;
     updated_at: string;
+    meme?: Meme;
 }
 
 export interface GetNodeResponse {
@@ -111,39 +109,46 @@ export interface GetNodeResponse {
     breadcrumbs: Node[];
 }
 
-export function fetchNodes(id: string = ''): Promise<GetNodeResponse> {
+export function nodeList(id: string = ''): Promise<GetNodeResponse> {
     return request(`/api/fs/nodes/${id}`);
 }
 
-export function createNode(data: { name: string; type: 'FOLDER' | 'FILE'; parent_id: string }): Promise<Node> {
+export function nodeCreate(data: { name: string; type: 'FOLDER' | 'FILE'; parent_id: string }): Promise<Node> {
     return request('/api/fs/nodes', {
         method: 'POST',
         json: data,
     });
 }
 
-export function updateNode(id: string, data: Partial<Node>): Promise<Node> {
+export function nodeUpdate(id: string, data: Partial<Node>): Promise<Node> {
     return request(`/api/fs/nodes/${id}`, {
         method: 'PATCH',
         json: data,
     });
 }
 
-export function bulkDeleteNodes(ids: string[]): Promise<void> {
+export function nodeBulkDelete(ids: string[]): Promise<void> {
     return request('/api/fs/nodes', {
         method: 'DELETE',
         json: { ids },
     });
 }
 
-export function bulkMoveNodes(ids: string[], destParentId: string): Promise<void> {
+export function nodeBulkMove(ids: string[], destParentId: string): Promise<void> {
     return request('/api/fs/nodes/move', {
         method: 'POST',
         json: { ids, dest_parent_id: destParentId },
     });
 }
 
-export function uploadMeme(
+export function nodeBulkCopy(ids: string[], destParentId: string): Promise<void> {
+    return request('/api/fs/nodes/copy', {
+        method: 'POST',
+        json: { ids, dest_parent_id: destParentId },
+    });
+}
+
+export function nodeUpload(
     file: File,
     parentId: string,
     onProgress?: (progress: number) => void
@@ -198,17 +203,23 @@ export function uploadMeme(
 export interface Tag {
     id: string;
     name: string;
+    type?: 'SYSTEM' | 'USER' | 'GLOBAL';
     created_at: string;
 }
 
 export interface Meme {
     asset_id: string;
-    title: string; // added for UI display
     width: number;
     height: number;
+    file_size: number;
+    mime_type: string;
+    extension: string;
+    processing_status: 'pending' | 'processing' | 'success' | 'failed';
+    in_library: boolean;
+    is_favorite: boolean;
     tags: Tag[];
-    url: string | null;
-    is_favorite: boolean; // added for UI heart icon
+    url: string;
+    created_at: string;
     analyzed_at: string | null;
 }
 
@@ -226,9 +237,96 @@ export interface SearchResult {
     similarity: number;
 }
 
-export function searchMemes(params: SearchRequest): Promise<SearchResult[]> {
+export function memeSearch(params: SearchRequest): Promise<SearchResult[]> {
     return request('/api/search', {
         method: 'GET',
         params: params as any,
     });
+}
+
+export function memeGet(id: string): Promise<Meme> {
+    return request(`/api/memes/${id}`);
+}
+
+export function memeRetry(ids: string[]): Promise<void> {
+    return request('/api/memes/retry', {
+        method: 'POST',
+        json: { ids },
+    });
+}
+
+export function memeAdd(id: string): Promise<Node> {
+    return request(`/api/memes/${id}/add`, {
+        method: 'POST',
+    });
+}
+
+/* Tag APIs */
+export function tagListByMeme(id: string): Promise<Tag[]> {
+    return request(`/api/memes/${id}/tags`);
+}
+
+export function tagAddToMeme(id: string, name: string): Promise<Tag> {
+    return request(`/api/memes/${id}/tags`, {
+        method: 'POST',
+        json: { name },
+    });
+}
+
+export function tagRemoveFromMeme(memeId: string, tagId: string): Promise<void> {
+    return request(`/api/memes/${memeId}/tags/${tagId}`, {
+        method: 'DELETE',
+    });
+}
+
+export function tagSearch(query: string): Promise<Tag[]> {
+    return request('/api/tags/search', {
+        method: 'GET',
+        params: { q: query },
+    });
+}
+
+export interface GetTagMemesResponse {
+    tag: Tag;
+    memes: Meme[];
+}
+
+export function tagGetMemes(id: string): Promise<GetTagMemesResponse> {
+    return request(`/api/tags/${id}`);
+}
+
+/* Favorite APIs */
+export interface ListFavoritesResponse {
+    memes: Meme[];
+    folders: Node[];
+}
+
+export function favoriteList(): Promise<ListFavoritesResponse> {
+    return request('/api/favorites');
+}
+
+export interface ToggleFavoriteItem {
+    id: string;
+    type: 'MEME' | 'FOLDER';
+    favorite: boolean;
+}
+
+export function favoriteToggle(
+    items: ToggleFavoriteItem[]
+): Promise<void> {
+    return request('/api/favorites', {
+        method: 'POST',
+        json: items,
+    });
+}
+
+/* Explore APIs */
+export interface ListExploreFoldersResponse {
+    featured: Node[];
+    popular: Node[];
+    all: Node[];
+}
+
+export function exploreList(): Promise<ListExploreFoldersResponse> {
+    return request('/api/explore');
 }

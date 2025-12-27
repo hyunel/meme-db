@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { SWRProvider } from "@/context/swr-provider"
+import { ErrorHandler } from "@/context/error-handler"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
@@ -45,8 +46,10 @@ export default function RootLayout({
         />
       </head> */}
       <body className={`font-sans antialiased`}>
-        <SWRProvider>{children}</SWRProvider>
-        <Toaster />
+        <ErrorHandler>
+          <SWRProvider>{children}</SWRProvider>
+        </ErrorHandler>
+        <Toaster richColors />
       </body>
     </html>
   )

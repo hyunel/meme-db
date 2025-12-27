@@ -4,12 +4,12 @@ import type React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
-import { Masonry } from "@/components/masonry"
+import { MemeGrid } from "@/components/meme-grid"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Sparkles, TrendingUp, Clock, Zap } from "lucide-react"
 import { useUser } from "@/hooks/use-user"
-import { searchMemes } from "@/lib/api"
+import { memeSearch } from "@/lib/api"
 import type { Meme } from "@/lib/api"
 import { MemeCard } from "@/components/meme-card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -39,14 +39,11 @@ export default function SearchPage() {
     setHasSearched(true)
 
     try {
-      const searchResults = await searchMemes({
+      const searchResults = await memeSearch({
         q: finalQuery,
         scope: scope,
       })
       setResults(searchResults.map((r) => r.meme))
-    } catch (error) {
-      console.error("Search failed:", error)
-      setResults([])
     } finally {
       setIsSearching(false)
     }
@@ -170,21 +167,7 @@ export default function SearchPage() {
                   New Search
                 </Button>
               </div>
-              <Masonry
-                breakpoints={[
-                  [1536, 6],
-                  [1280, 5],
-                  [1024, 4],
-                  [768, 3],
-                  [640, 2],
-                ]}
-                className="flex -ml-3 w-auto"
-                columnClassName="pl-3 bg-clip-padding"
-                items={results}
-                renderItem={(meme, index) => (
-                  <MemeCard key={meme.asset_id} meme={meme} fixedHeight={false} index={index} className="mb-3" />
-                )}
-              />
+              <MemeGrid items={results} />
             </>
           ) : (
             <EmptyState

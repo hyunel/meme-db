@@ -24,15 +24,16 @@ type Asset struct {
 }
 
 type MemeInfo struct {
-	AssetID        string           `json:"-" db:"asset_id"`
-	VLMJSON        json.RawMessage  `json:"-" db:"vlm_json"`
-	OCRText        *string          `json:"-" db:"ocr_text"`
-	MetaphorVector *pgvector.Vector `json:"-" db:"metaphor_vector"`
-	SemanticVector *pgvector.Vector `json:"-" db:"semantic_vector"`
-	ClipVector     *pgvector.Vector `json:"-" db:"clip_vector"`
-	Width          int              `json:"width" db:"width"`
-	Height         int              `json:"height" db:"height"`
-	AnalyzedAt     *time.Time       `json:"analyzed_at" db:"analyzed_at"`
+	AssetID          string           `json:"-" db:"asset_id"`
+	VLMJSON          json.RawMessage  `json:"-" db:"vlm_json"`
+	OCRText          *string          `json:"-" db:"ocr_text"`
+	MetaphorVector   *pgvector.Vector `json:"-" db:"metaphor_vector"`
+	SemanticVector   *pgvector.Vector `json:"-" db:"semantic_vector"`
+	ClipVector       *pgvector.Vector `json:"-" db:"clip_vector"`
+	Width            int              `json:"width" db:"width"`
+	Height           int              `json:"height" db:"height"`
+	ProcessingStatus string           `json:"processing_status" db:"processing_status"`
+	AnalyzedAt       *time.Time       `json:"analyzed_at" db:"analyzed_at"`
 }
 
 type User struct {
@@ -64,7 +65,6 @@ type Node struct {
 	Type        NodeType   `json:"type" db:"type"`
 	Visibility  Visibility `json:"visibility" db:"visibility"`
 	AssetID     *string    `json:"-" db:"asset_id"`
-	IsFavorite  bool       `json:"is_favorite" db:"is_favorite"` // Computed field
 	PrivateNote *string    `json:"-" db:"private_note"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
@@ -73,6 +73,7 @@ type Node struct {
 type Tag struct {
 	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
+	Type      string    `json:"type" db:"type"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -112,7 +113,8 @@ const (
 // NodeView combines Node + MemeView
 type NodeView struct {
 	*Node
-	Meme *MemeView `json:"meme"`
+	Meme       *MemeView `json:"meme"`
+	IsFavorite bool      `json:"is_favorite" db:"is_favorite"` // Computed field
 }
 
 // MemeView flattened view of Asset and MemeInfo

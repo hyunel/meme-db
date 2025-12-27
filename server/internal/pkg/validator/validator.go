@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"reflect"
 	"regexp"
 
 	"github.com/go-playground/validator/v10"
@@ -23,5 +24,14 @@ func New() *CustomValidator {
 }
 
 func (cv *CustomValidator) Validate(i interface{}) error {
+	v := reflect.ValueOf(i)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	if v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+		return cv.validator.Var(i, "dive")
+	}
+
 	return cv.validator.Struct(i)
 }

@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -147,8 +146,8 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 
 func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) error {
 	query := `
-		INSERT INTO meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height, analyzed_at)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height, processing_status, analyzed_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (asset_id) DO UPDATE SET
 			vlm_json = EXCLUDED.vlm_json,
 			ocr_text = EXCLUDED.ocr_text,
@@ -157,12 +156,14 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 			clip_vector = EXCLUDED.clip_vector,
 			width = EXCLUDED.width,
 			height = EXCLUDED.height,
+			processing_status = EXCLUDED.processing_status,
 			analyzed_at = EXCLUDED.analyzed_at
 	`
 	_, err := r.db.Exec(ctx, query,
 		meme.AssetID, meme.VLMJSON, meme.OCRText,
 		meme.MetaphorVector, meme.SemanticVector, meme.ClipVector,
 		meme.Width, meme.Height,
+		meme.ProcessingStatus,
 		meme.AnalyzedAt,
 	)
 	if err != nil {
@@ -171,19 +172,25 @@ func (r *MemeRepository) CreateMeme(ctx context.Context, meme *model.MemeInfo) e
 	return nil
 }
 
+func (r *MemeRepository) UpdateMemeStatus(ctx context.Context, assetID string, status string) error {
+	query := `UPDATE meme_info SET processing_status = $2 WHERE asset_id = $1::uuid`
+	_, err := r.db.Exec(ctx, query, assetID, status)
+	return err
+}
+
 func (r *MemeRepository) GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
 	query := `
 		WITH candidates AS (
 			SELECT asset_id, vlm_json, analyzed_at
 			FROM meme_info
-			WHERE ($1 = '' OR asset_id >= $1::uuid) AND analyzed_at IS NULL
+			WHERE ($1 = '' OR asset_id >= $1::uuid) AND processing_status = 'pending'
 			ORDER BY asset_id ASC
 			LIMIT $2 + 1
 			FOR UPDATE SKIP LOCKED
 		),
 		to_update AS (
 			UPDATE meme_info
-			SET analyzed_at = NOW()
+			SET processing_status = 'processing', analyzed_at = NOW()
 			WHERE asset_id IN (SELECT asset_id FROM candidates LIMIT $2)
 			RETURNING asset_id
 		)
@@ -214,19 +221,9 @@ type memeViewRow struct {
 	CreatedAt        time.Time  `db:"created_at"`
 	ProcessingStatus string     `db:"processing_status"`
 	InLibrary        bool       `db:"in_library"`
-	IsFavorite       bool       `db:"is_favorite"`
-	TagsJSON         []byte     `db:"tags"`
 }
 
 func (row *memeViewRow) ToModel() *model.MemeView {
-	var tags []*model.Tag
-	if len(row.TagsJSON) > 0 {
-		_ = json.Unmarshal(row.TagsJSON, &tags)
-	}
-	if tags == nil {
-		tags = make([]*model.Tag, 0)
-	}
-
 	return &model.MemeView{
 		AssetID:          row.AssetID,
 		Width:            row.Width,
@@ -238,17 +235,16 @@ func (row *memeViewRow) ToModel() *model.MemeView {
 		CreatedAt:        row.CreatedAt,
 		ProcessingStatus: row.ProcessingStatus,
 		InLibrary:        row.InLibrary,
-		IsFavorite:       row.IsFavorite,
-		Tags:             tags,
+		Tags:             make([]*model.Tag, 0),
 	}
 }
 
-func (r *MemeRepository) GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error) {
+func (r *MemeRepository) GetMemeViews(ctx context.Context, assetIDs []string, ownerID *string) (map[string]*model.MemeView, error) {
 	if len(assetIDs) == 0 {
 		return make(map[string]*model.MemeView), nil
 	}
 
-	query := `
+	query := fmt.Sprintf(`
 		WITH user_library AS (
 			SELECT DISTINCT asset_id
 			FROM nodes
@@ -258,24 +254,16 @@ func (r *MemeRepository) GetMemeViews(ctx context.Context, assetIDs []string, ow
 			a.id as asset_id, COALESCE(mi.width, 0) as width, COALESCE(mi.height, 0) as height, mi.analyzed_at,
 			a.file_size, a.mime_type, a.extension, a.created_at,
 			CASE
-				WHEN mi.analyzed_at IS NULL THEN 'pending'
-				WHEN mi.vlm_json IS NULL THEN 'failed'
-				ELSE 'success'
+				WHEN mi.processing_status = 'processing' AND mi.analyzed_at < NOW() - INTERVAL '%d minutes' THEN 'failed'
+				ELSE COALESCE(mi.processing_status, 'pending')
 			END as processing_status,
-			(ul.asset_id IS NOT NULL) as in_library,
-			COALESCE((
-				SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'created_at', t.created_at))
-				FROM asset_tags at
-				JOIN tags t ON at.tag_id = t.id
-				WHERE at.asset_id = a.id
-				  AND (at.user_id IS NULL OR at.user_id = $2::uuid)
-			), '[]'::json) as tags
+			(ul.asset_id IS NOT NULL) as in_library
 		FROM assets a
 		LEFT JOIN meme_info mi ON a.id = mi.asset_id
 		LEFT JOIN user_library ul ON a.id = ul.asset_id
 		WHERE a.id = ANY($1::uuid[])
 		  AND (a.public_ref_count > 0 OR ul.asset_id IS NOT NULL)
-	`
+	`, model.MemeProcessingTimeout)
 	rows, err := r.db.Query(ctx, query, assetIDs, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch memes: %w", err)
@@ -295,8 +283,8 @@ func (r *MemeRepository) GetMemeViews(ctx context.Context, assetIDs []string, ow
 	return memes, nil
 }
 
-func (r *MemeRepository) ResetMemeStatus(ctx context.Context, assetID string) error {
-	query := `UPDATE meme_info SET analyzed_at = NULL WHERE asset_id = $1::uuid`
-	_, err := r.db.Exec(ctx, query, assetID)
+func (r *MemeRepository) ResetMemeStatus(ctx context.Context, assetIDs []string) error {
+	query := `UPDATE meme_info SET processing_status = 'pending', analyzed_at = NULL WHERE asset_id = ANY($1::uuid[])`
+	_, err := r.db.Exec(ctx, query, assetIDs)
 	return err
 }

@@ -2,20 +2,13 @@
 
 import type React from "react"
 import { useRef, useState } from "react"
-import { FolderIcon, FolderPlus, Upload, Download, Heart, Move, Trash2 } from "lucide-react"
+import { FolderIcon } from "lucide-react"
 import { FileGridItem } from "./file-grid-item"
 import { useFileBrowser } from "./file-browser-context"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBoxSelection } from "./hooks/use-box-selection"
-import { DestinationDialog } from "./destination-dialog"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
-import type { BrowseItem } from "./types"
+import type { BrowseItem } from "./utils/types"
+import { FileContextMenu } from "./file-context-menu"
 
 interface FileGridProps {
   onNewFolder?: () => void
@@ -29,9 +22,6 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
     currentFolder,
     selectedItems,
     setSelectedItems,
-    deleteItems,
-    moveItems,
-    clearSelection,
     isDragging,
     dragTargetFolder,
     dragTargetBreadcrumb,
@@ -42,23 +32,11 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
 
   const [activeItem, setActiveItem] = useState<BrowseItem | null>(null)
   const [menuItems, setMenuItems] = useState<BrowseItem[]>([])
-  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { isBoxSelecting, selectionBox, handleMouseDown, handleMouseMove } = useBoxSelection(
     containerRef,
     setSelectedItems,
   )
-
-  const handleDownload = (itemsToDownload: BrowseItem[]) => {
-    itemsToDownload.forEach((item) => {
-      if (item.type === "meme" && item.url) {
-        const link = document.createElement("a")
-        link.href = item.url
-        link.download = `${item.name}.png`
-        link.click()
-      }
-    })
-  }
 
   const handleContextMenu = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement
@@ -84,130 +62,71 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
   }
 
   return (
-    <ContextMenu onOpenChange={(open) => !open && setActiveItem(null)}>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={containerRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={isBoxSelecting ? handleMouseMove : undefined}
-          onDragOver={(e) => handleDragOver(e, currentFolder?.id)}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, currentFolder?.id)}
-          onContextMenu={handleContextMenu}
-          className={`flex-1 flex flex-col min-h-[400px] rounded-xl border-2 border-dashed transition-all relative select-none group/grid ${
-            isDragging && !dragTargetFolder && dragTargetBreadcrumb === null
-              ? "border-primary bg-primary/5 scale-[0.99]"
-              : "border-border"
-          }`}
-        >
-          {isBoxSelecting && selectionBox && (
-            <div
-              className="absolute bg-primary/20 border-2 border-primary rounded pointer-events-none z-10"
-              style={{
-                left: selectionBox.x,
-                top: selectionBox.y,
-                width: selectionBox.width,
-                height: selectionBox.height,
-              }}
-            />
-          )}
-
-          {isLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-2">
-                  <Skeleton className="aspect-square w-full rounded-lg" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-              ))}
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center flex-1 min-h-[400px] text-muted-foreground">
-              <FolderIcon className="w-16 h-16 mb-4 opacity-20" />
-              <p className="text-lg font-medium">No items yet</p>
-              <p className="text-sm">Upload some memes to get started</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
-              {items.map((item) => {
-                const isSelected = selectedItems.has(item.id)
-                return (
-                  <FileGridItem
-                    key={item.id}
-                    item={item}
-                    isSelected={isSelected}
-                    isActiveContext={activeItem?.id === item.id}
-                    onContextMenu={setActiveItem}
-                  />
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="data-[state=closed]:animate-none!">
-        {activeItem && menuItems.length > 0 ? (
-          <>
-            {(() => {
-              const isMultiple = menuItems.length > 1
-              const hasFolder = menuItems.some((i) => i.type === "folder")
-              const suffix = isMultiple ? " all" : ""
-
-              return (
-                <>
-                  {!hasFolder && (
-                    <ContextMenuItem onClick={() => handleDownload(menuItems)}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Download{suffix}
-                    </ContextMenuItem>
-                  )}
-                  {!isMultiple && activeItem.type === "meme" && (
-                    <ContextMenuItem>
-                      <Heart className="mr-2 h-4 w-4" />
-                      Favorite
-                    </ContextMenuItem>
-                  )}
-                  <ContextMenuItem onClick={() => setIsMoveDialogOpen(true)}>
-                    <Move className="mr-2 h-4 w-4" />
-                    Move{suffix} to...
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem variant="destructive" onClick={() => deleteItems(menuItems.map((i) => i.id))}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete{suffix}
-                  </ContextMenuItem>
-                </>
-              )
-            })()}
-          </>
-        ) : (
-          <>
-            <ContextMenuItem onClick={onNewFolder}>
-              <FolderPlus className="mr-2 h-4 w-4" />
-              New Folder
-            </ContextMenuItem>
-            <ContextMenuItem onClick={onUpload}>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload
-            </ContextMenuItem>
-          </>
+    <FileContextMenu
+      activeItem={activeItem}
+      menuItems={menuItems}
+      onOpenChange={(open) => !open && setActiveItem(null)}
+      onNewFolder={onNewFolder}
+      onUpload={onUpload}
+    >
+      <div
+        ref={containerRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={isBoxSelecting ? handleMouseMove : undefined}
+        onDragOver={(e) => handleDragOver(e, currentFolder?.id)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, currentFolder?.id)}
+        onContextMenu={handleContextMenu}
+        className={`flex-1 flex flex-col min-h-[400px] rounded-xl border-2 border-dashed transition-all relative select-none group/grid ${
+          isDragging && !dragTargetFolder && dragTargetBreadcrumb === null
+            ? "border-primary bg-primary/5 scale-[0.99]"
+            : "border-border"
+        }`}
+      >
+        {isBoxSelecting && selectionBox && (
+          <div
+            className="absolute bg-accent/50 border border-primary rounded pointer-events-none z-10"
+            style={{
+              left: selectionBox.x,
+              top: selectionBox.y,
+              width: selectionBox.width,
+              height: selectionBox.height,
+            }}
+          />
         )}
-      </ContextMenuContent>
 
-      <DestinationDialog
-        open={isMoveDialogOpen}
-        onOpenChange={setIsMoveDialogOpen}
-        title={`Move ${menuItems.length} item${menuItems.length > 1 ? "s" : ""} to...`}
-        actionLabel="Move Here"
-        excludeIds={menuItems.map((i) => i.id)}
-        onConfirm={(targetFolderId) => {
-          moveItems(
-            menuItems.map((i) => i.id),
-            targetFolderId,
-          )
-          clearSelection()
-        }}
-      />
-    </ContextMenu>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-2">
+                <Skeleton className="aspect-square w-full rounded-lg" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center flex-1 min-h-[400px] text-muted-foreground">
+            <FolderIcon className="w-16 h-16 mb-4 opacity-20" />
+            <p className="text-lg font-medium">No items yet</p>
+            <p className="text-sm">Upload some memes to get started</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
+            {items.map((item) => {
+              const isSelected = selectedItems.has(item.id)
+              return (
+                <FileGridItem
+                  key={item.id}
+                  item={item}
+                  isSelected={isSelected}
+                  isActiveContext={activeItem?.id === item.id}
+                  onContextMenu={setActiveItem}
+                />
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </FileContextMenu>
   )
 }

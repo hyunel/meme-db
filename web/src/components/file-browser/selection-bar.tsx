@@ -5,12 +5,19 @@ import { Button } from "@/components/ui/button"
 
 interface SelectionBarProps {
   selectedCount: number
+  showDownload: boolean
   onClearSelection: () => void
   onBulkDownload: () => void
   onBulkDelete: () => void
 }
 
-export function SelectionBar({ selectedCount, onClearSelection, onBulkDownload, onBulkDelete }: SelectionBarProps) {
+export function SelectionBar({
+  selectedCount,
+  showDownload,
+  onClearSelection,
+  onBulkDownload,
+  onBulkDelete,
+}: SelectionBarProps) {
   if (selectedCount === 0) return null
 
   return (
@@ -23,10 +30,12 @@ export function SelectionBar({ selectedCount, onClearSelection, onBulkDownload, 
         <span className="text-sm font-medium whitespace-nowrap px-1">{selectedCount} selected</span>
         <div className="h-6 w-px bg-border shrink-0" />
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={onBulkDownload} className="h-8 px-2 sm:px-3">
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline ml-1.5">Download</span>
-          </Button>
+          {showDownload && (
+            <Button variant="ghost" size="sm" onClick={onBulkDownload} className="h-8 px-2 sm:px-3">
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1.5">Download</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

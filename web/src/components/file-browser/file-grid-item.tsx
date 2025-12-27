@@ -2,13 +2,14 @@
 
 import type React from "react"
 import { useRef, useCallback } from "react"
-import { FolderOpen, ImageIcon, CheckSquare } from "lucide-react"
+import { CheckSquare, Loader2, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { MemeRenderer } from "../meme-renderer"
+import { MemeOverlay } from "../meme-overlay"
+import { FolderPreview, useFolderPreview } from "../folder-preview"
 import type { Node } from "@/lib/api"
-import type { BrowseItem } from "./types"
+import type { BrowseItem } from "./utils/types"
 import { useFileBrowser } from "./file-browser-context"
-import useSWR from "swr"
-import { fetchNodes } from "@/lib/api"
 
 interface FileGridItemProps {
   item: BrowseItem
@@ -37,13 +38,10 @@ export function FileGridItem({
   } = useFileBrowser()
 
   const isFolderType = item.type === "folder"
+  const isSelectionMode = selectedItems.size > 0
 
   // For folder previews, we need to fetch the folder's children
-  const { data: folderData } = useSWR(
-    isFolderType ? [`/api/fs/nodes`, item.id] : null,
-    () => fetchNodes(item.id)
-  )
-  const folderPreviewNodes = folderData?.children?.filter(n => n.type === 'FILE').slice(0, 4) || []
+  const { totalItems } = useFolderPreview(item.id, isFolderType)
 
   const longPressTimer = useRef<NodeJS.Timeout | null>(null)
   const longPressTriggered = useRef(false)
@@ -79,8 +77,8 @@ export function FileGridItem({
       toggleSelection(item.id)
     } else if (isFolderType) {
       navigateToFolder(item as unknown as Node)
-    } else {
-      router.push(`/meme/${item.id}`)
+    } else if (item.meme) {
+      router.push(`/meme/${item.meme.asset_id}`)
     }
   }
 
@@ -109,7 +107,7 @@ export function FileGridItem({
       onDragOver={(e) => isFolderType && handleDragOver(e, item.id)}
       onDragLeave={handleDragLeave}
       onDrop={(e) => isFolderType && handleDrop(e, item.id)}
-      className={`group/item relative bg-card border rounded-xl overflow-hidden transition-all cursor-pointer
+      className={`group group/item relative bg-card border rounded-xl overflow-hidden transition-all cursor-pointer
         hover:shadow-lg hover:border-primary/50
         ${isActiveContext ? "ring-2 ring-primary border-primary shadow-xl scale-[1.02] z-10" : "z-0"}
         ${isSelected ? "ring-2 ring-primary border-primary" : "border-border"}
@@ -118,41 +116,53 @@ export function FileGridItem({
     >
       {isFolderType ? (
         <div className="aspect-square relative">
-          {folderPreviewNodes.length > 0 ? (
-            <div className="grid grid-cols-2 gap-0.5 h-full w-full bg-muted">
-              {folderPreviewNodes.map((previewNode, idx) => (
-                <div key={idx} className="relative overflow-hidden">
-                  <img src={previewNode.url || "/placeholder.svg"} alt="" className="w-full h-full object-cover" />
-                </div>
-              ))}
-              {Array.from({ length: 4 - folderPreviewNodes.length }).map((_, idx) => (
-                <div key={`empty-${idx}`} className="bg-muted flex items-center justify-center">
-                  <ImageIcon className="w-6 h-6 text-muted-foreground/30" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full bg-muted">
-              <FolderOpen className="w-12 h-12 text-primary mb-2 group-hover:scale-110 transition-transform" />
-            </div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-2">
-            <h3 className="font-medium text-sm truncate text-white">{item.name}</h3>
-            <p className="text-xs text-white/70">{folderData?.children.length || 0} items</p>
-          </div>
+          <FolderPreview folderId={item.id} />
+          <MemeOverlay
+            targetId={item.id}
+            targetType="FOLDER"
+            isFavorite={item.is_favorite}
+            showTags={false}
+            showMore={false}
+            persistent={true}
+            actionSectionClassName={`${isSelectionMode ? "hidden" : ""}`}
+            bottomContent={
+              <div className="space-y-0.5">
+                <h3 className="font-medium text-sm truncate text-white">{item.name}</h3>
+                <p className="text-xs text-white/70">{totalItems} items</p>
+              </div>
+            }
+          />
         </div>
       ) : (
         <div className="aspect-square relative">
-          <img src={item.url || "/placeholder.svg"} alt={item.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-             <div className="flex flex-wrap gap-1">
-              {item.tags?.slice(0, 2).map((tag) => (
-                <span key={tag} className="text-xs px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded-full text-white">
-                  {tag}
-                </span>
-              ))}
+          <MemeRenderer
+            meme={item.meme}
+            className={`w-full h-full ${item.meme?.processing_status !== "success" ? "opacity-40 grayscale-[0.5]" : ""}`}
+          />
+          {item.meme && item.meme.processing_status !== "success" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/20 backdrop-blur-[2px]">
+              {item.meme.processing_status === "pending" || item.meme.processing_status === "processing" ? (
+                <>
+                  <Loader2 className="w-8 h-8 text-primary animate-spin mb-2" />
+                  <span className="text-xs font-medium text-foreground/80">
+                    {item.meme.processing_status === "pending" ? "Queued..." : "Processing..."}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-8 h-8 text-destructive mb-2" />
+                  <span className="text-xs font-medium text-destructive">Failed</span>
+                </>
+              )}
             </div>
-          </div>
+          )}
+          {item.meme && !isSelectionMode && item.meme.processing_status === "success" && (
+            <MemeOverlay
+              meme={item.meme}
+              isFavorite={item.is_favorite}
+              actionSectionClassName={isSelected ? "right-10" : "right-2"}
+            />
+          )}
         </div>
       )}
 

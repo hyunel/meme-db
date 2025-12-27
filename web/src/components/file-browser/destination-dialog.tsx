@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { Node } from "@/lib/api"
-import { fetchNodes } from "@/lib/api"
+import { nodeList } from "@/lib/api"
 import useSWR from "swr"
 
 interface DestinationDialogProps {
@@ -39,7 +39,7 @@ export function DestinationDialog({
   // Use SWR to fetch nodes for the current location
   const { data: response, isLoading } = useSWR(
     open ? [`/api/fs/nodes`, currentFolderId] : null,
-    () => fetchNodes(currentFolderId)
+    () => nodeList(currentFolderId)
   )
 
   const currentPath = response?.breadcrumbs || []

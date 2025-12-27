@@ -1,4 +1,4 @@
-import type { BrowseItem } from "../types"
+import type { BrowseItem } from "./types"
 
 /**
  * Creates a custom drag preview element with thumbnails and a count badge.
@@ -36,9 +36,9 @@ export function createDragPreview(items: BrowseItem[]): HTMLElement {
     imgContainer.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)"
     imgContainer.style.zIndex = `${3 - index}`
 
-    if (item.type === "meme" && item.url) {
+    if (item.type === "meme" && item.meme?.url) {
       const img = document.createElement("img")
-      img.src = item.url
+      img.src = item.meme.url
       img.style.width = "100%"
       img.style.height = "100%"
       img.style.objectFit = "cover"

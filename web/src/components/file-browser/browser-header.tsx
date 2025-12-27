@@ -4,7 +4,7 @@ import { ArrowUpDown, FolderPlus, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useFileBrowser } from "./file-browser-context"
-import type { SortOption } from "./types"
+import { SortOption } from "./utils/constants"
 
 interface BrowserHeaderProps {
   title: string
@@ -15,6 +15,10 @@ interface BrowserHeaderProps {
 export function BrowserHeader({ title, onNewFolder, onUploadClick }: BrowserHeaderProps) {
   const { sortBy, setSortBy } = useFileBrowser()
 
+  const formatSortedBy = (sort: SortOption) => {
+    return sort.charAt(0).toUpperCase() + sort.slice(1)
+  }
+
   return (
     <div className="flex items-center justify-between mb-6 gap-4">
       <h1 className="text-2xl md:text-3xl font-bold truncate">{title}</h1>
@@ -24,14 +28,18 @@ export function BrowserHeader({ title, onNewFolder, onUploadClick }: BrowserHead
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="h-8 gap-1">
               <ArrowUpDown className="w-3.5 h-3.5" />
-              <span className="text-xs">{sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}</span>
+              <span className="text-xs">{formatSortedBy(sortBy)}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-              <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="date">Date</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
+              {
+                Object.values(SortOption).map((option) => (
+                  <DropdownMenuRadioItem key={option} value={option}>
+                    {formatSortedBy(option)}
+                  </DropdownMenuRadioItem>
+                ))
+              }
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>

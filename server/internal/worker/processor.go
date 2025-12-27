@@ -77,6 +77,8 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 		g.Go(func() error {
 			if err := h.processMeme(gCtx, m); err != nil {
 				slog.Error("Meme processing failed", "asset_id", m.AssetID, "error", err)
+				// Explicitly mark as failed
+				_ = h.repo.Meme.UpdateMemeStatus(ctx, m.AssetID, model.ProcessingStatusFailed)
 			}
 			return nil
 		})
@@ -148,6 +150,7 @@ func (h *ProcessMemesHandler) processMeme(ctx context.Context, meme *model.MemeI
 	meme.OCRText = &vlmOut.OCRText
 	meme.Width = res.Width
 	meme.Height = res.Height
+	meme.ProcessingStatus = model.ProcessingStatusSuccess
 	meme.AnalyzedAt = &now
 
 	if err := h.repo.Meme.CreateMeme(ctx, meme); err != nil {

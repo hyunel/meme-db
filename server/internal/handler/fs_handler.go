@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/hyunel/MemeDB/internal/model"
-	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -134,11 +133,7 @@ func (h *FileSystemHandler) BulkCopy(c echo.Context) error {
 		req.DestParentID = nil
 	}
 
-	if req.DestParentID == nil {
-		return apperror.BadRequest("dest_parent_id is required for copy")
-	}
-
-	if err := h.fsService.BulkCopyNodes(c.Request().Context(), ownerID, req.IDs, *req.DestParentID); err != nil {
+	if err := h.fsService.BulkCopyNodes(c.Request().Context(), ownerID, req.IDs, req.DestParentID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusCreated)

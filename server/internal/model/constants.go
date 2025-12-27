@@ -7,7 +7,12 @@ const (
 )
 
 const (
-	ProcessingStatusPending = "pending"
-	ProcessingStatusSuccess = "success"
-	ProcessingStatusFailed  = "failed"
+	ProcessingStatusPending    = "pending"
+	ProcessingStatusProcessing = "processing"
+	ProcessingStatusSuccess    = "success"
+	ProcessingStatusFailed     = "failed"
+)
+
+const (
+	MemeProcessingTimeout = 30 // minutes
 )

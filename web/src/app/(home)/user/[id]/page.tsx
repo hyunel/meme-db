@@ -94,11 +94,7 @@ export default function UserPage() {
           </h2>
           {userMemes.length > 0 ? (
             <>
-              <MemeGrid>
-                {displayedMemes.map((meme, index) => (
-                  <MemeCard key={meme.id} meme={meme} fixedHeight={true} index={index} />
-                ))}
-              </MemeGrid>
+              <MemeGrid items={displayedMemes as any} fixedHeight={true} />
               {userMemes.length > ITEMS_PER_PREVIEW && !showAllMemes && (
                 <div className="mt-6 text-center">
                   <Button variant="outline" onClick={() => setShowAllMemes(true)}>

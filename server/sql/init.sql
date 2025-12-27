@@ -46,11 +46,12 @@ CREATE TABLE IF NOT EXISTS meme_info (
     width INT,
     height INT,
 
+    processing_status VARCHAR(20) DEFAULT 'pending',
     analyzed_at TIMESTAMPTZ
 );
 
 -- Partial index for pending analysis
-CREATE INDEX IF NOT EXISTS idx_meme_pending_analysis ON meme_info (asset_id) WHERE analyzed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_meme_pending_analysis ON meme_info (asset_id) WHERE processing_status = 'pending';
 
 -- Vector Indexes (HNSW)
 CREATE INDEX IF NOT EXISTS idx_meme_sem ON meme_info USING hnsw (semantic_vector vector_cosine_ops);

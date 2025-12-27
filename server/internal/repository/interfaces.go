@@ -35,10 +35,11 @@ type SearchCombinedParams struct {
 
 type MemeRepo interface {
 	CreateMeme(ctx context.Context, meme *model.MemeInfo) error
+	UpdateMemeStatus(ctx context.Context, assetID string, status string) error
 	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error)
-	GetMemeViews(ctx context.Context, assetIDs []string, ownerID string) (map[string]*model.MemeView, error)
+	GetMemeViews(ctx context.Context, assetIDs []string, ownerID *string) (map[string]*model.MemeView, error)
 	GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
-	ResetMemeStatus(ctx context.Context, assetID string) error
+	ResetMemeStatus(ctx context.Context, assetIDs []string) error
 }
 
 type TaskRepo interface {
@@ -72,15 +73,22 @@ type NodeRepo interface {
 
 type TagRepo interface {
 	GetAssetTags(ctx context.Context, assetID string, userID *string) ([]*model.Tag, error)
+	GetTagsByAssets(ctx context.Context, assetIDs []string, userID *string) (map[string][]*model.Tag, error)
 	GetAssetsByTag(ctx context.Context, tagID string) ([]*model.Asset, error)
+	GetTag(ctx context.Context, tagID string) (*model.Tag, error)
+	SearchTags(ctx context.Context, query string) ([]*model.Tag, error)
+	CreateTag(ctx context.Context, name string) (*model.Tag, error)
+	AddAssetTag(ctx context.Context, assetID, tagID string, userID *string) error
+	RemoveAssetTag(ctx context.Context, assetID, tagID string, userID *string) error
 }
 
 type FavoriteRepo interface {
-	AddAssetFavorite(ctx context.Context, userID, assetID string) error
-	RemoveAssetFavorite(ctx context.Context, userID, assetID string) error
-	AddNodeFavorite(ctx context.Context, userID, nodeID string) error
-	RemoveNodeFavorite(ctx context.Context, userID, nodeID string) error
+	AddAssetFavorite(ctx context.Context, userID string, assetIDs []string) error
+	RemoveAssetFavorite(ctx context.Context, userID string, assetIDs []string) error
+	AddNodeFavorite(ctx context.Context, userID string, nodeIDs []string) error
+	RemoveNodeFavorite(ctx context.Context, userID string, nodeIDs []string) error
 	IsAssetFavorite(ctx context.Context, userID, assetID string) (bool, error)
 	IsNodeFavorite(ctx context.Context, userID, nodeID string) (bool, error)
-	GetFavorites(ctx context.Context, userID string, nodeIDs, assetIDs []string) (nodeFavs map[string]bool, assetFavs map[string]bool, err error)
+	GetFavorites(ctx context.Context, userID string, nodeIDs, assetIDs []string) (map[string]bool, map[string]bool, error)
+	ListFavorites(ctx context.Context, userID string) (assetIDs []string, nodeIDs []string, err error)
 }

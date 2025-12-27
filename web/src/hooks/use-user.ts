@@ -1,44 +1,42 @@
 "use client"
 
+import { useEffect } from "react"
+import { useAuthStore } from "@/store/auth"
 import { ApiError } from "@/lib/api"
-import { logout as authLogout, hasAuthToken, type User } from "@/lib/auth"
-import useSWR, { useSWRConfig } from "swr"
+import useSWR from "swr"
+import { type User } from "@/store/auth"
 
 export type AuthState = "loading" | "authenticated" | "unauthenticated" | "error"
 
 export function useUser() {
-  const { data: user, mutate, isLoading, error } = useSWR<User | null>("/api/auth/me")
-  const { cache } = useSWRConfig()
+  const { user, setUser, isAuthenticated, isLoading: storeLoading, logout: storeLogout } = useAuthStore()
 
-  let authState: AuthState = "loading"
-  if (isLoading) {
-    authState = "loading"
-  } else if (user) {
-    authState = "authenticated"
-  } else if (error) {
-    if ((error as ApiError).status === 401) {
-      authState = "unauthenticated"
-    } else {
-      authState = "error"
-    }
-  } else {
-    // No user and no error, check if we have a token
-    authState = hasAuthToken() ? "loading" : "unauthenticated"
-  }
+  // Use SWR to fetch user data if authenticated but user object is missing
+  const { data: fetchedUser, error, isLoading: swrLoading, mutate } = useSWR<User | null>(
+    isAuthenticated && !user ? "/api/auth/me" : null
+  )
 
-  const logout = () => {
-    authLogout()
-    mutate(null, false)
-    // Clear SWR cache on logout
-    if (cache instanceof Map) {
-      cache.clear()
+  useEffect(() => {
+    if (fetchedUser) {
+      setUser(fetchedUser)
     }
-  }
+  }, [fetchedUser, setUser])
+
+  useEffect(() => {
+    if (error && (error as ApiError).status === 401) {
+      storeLogout()
+    }
+  }, [error, storeLogout])
+
+  const authState: AuthState = (storeLoading || swrLoading) && isAuthenticated ? "loading" :
+                             isAuthenticated && (user || fetchedUser) ? "authenticated" :
+                             !isAuthenticated ? "unauthenticated" :
+                             error && (error as ApiError).status !== 401 ? "error" : "loading"
 
   return {
-    user: user || null,
+    user: user || fetchedUser || null,
     mutate,
-    logout,
+    logout: storeLogout,
     error,
     authState,
   }

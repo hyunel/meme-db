@@ -37,6 +37,7 @@ MemeDB/
 ## Development Standards
 
 ### Go Server
+- **Surgical Changes**: Do NOT make any changes outside the explicit scope of the task. ALWAYS clean up obsolete code (e.g., unused functions, structs) resulting from the refactoring required by the task.
 - **Architecture**: Follow Clean Architecture (Handlers -> Services -> Repositories).
   - **Handlers**:
     - Place handler-specific request/response models directly in the handler file, near the methods that use them.

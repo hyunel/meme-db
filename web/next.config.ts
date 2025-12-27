@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
         destination: `${process.env.BACKEND_BASE}/api/:path*`,
       },
     ];
+  },
+  turbopack: {
+    rules: {
+      '*.worker.js': {
+        loaders: ['url-loader']
+      }
+    }
   }
 };
 
