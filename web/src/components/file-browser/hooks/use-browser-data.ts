@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { nodeList, nodeCreate, nodeBulkDelete, nodeBulkMove, nodeBulkCopy, type Node } from "@/lib/api"
+import { nodeList, nodeCreate, nodeBulkDelete, nodeBulkMove, nodeBulkCopy, nodeBulkUpdate, type Node } from "@/lib/api"
 import { SortOption } from "../utils/constants"
 import type { BrowseItem } from "../utils/types"
 import type { User } from "@/store/auth"
@@ -122,6 +122,11 @@ export function useBrowserData(user: User | null) {
     }
   }
 
+  const updateItems = async (items: (Partial<Node> & { id: string })[]) => {
+    await nodeBulkUpdate(items)
+    mutate([`/api/fs/nodes`, currentFolderId])
+  }
+
   const refresh = useCallback(() => {
     mutate([`/api/fs/nodes`, currentFolderId])
   }, [mutate, currentFolderId])
@@ -140,6 +145,7 @@ export function useBrowserData(user: User | null) {
     deleteItems,
     moveItems,
     copyItems,
+    updateItems,
     refresh,
   }
 }

@@ -1,8 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { nodeUpload } from "@/lib/api"
+import { nodeUpload, nodeCreate } from "@/lib/api"
 import { UploadProgress } from "../upload-progress"
-import type { UploadingFile } from "../utils/types"
+import type { UploadingFile, FileWithTarget } from "../utils/types"
+import { ACCEPTED_FILE_TYPES } from "../utils/constants"
+
+function isFileAccepted(file: File): boolean {
+  return ACCEPTED_FILE_TYPES.some((type) => {
+    if (type.endsWith("/*")) return file.type.startsWith(type.replace("*", ""))
+    if (type.startsWith(".")) return file.name.toLowerCase().endsWith(type.toLowerCase())
+    return file.type === type
+  })
+}
 
 export function useUpload(onUploadComplete: () => void) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
@@ -55,42 +64,62 @@ export function useUpload(onUploadComplete: () => void) {
   }, [uploadingFiles, isExpanded])
 
   const performUpload = useCallback(
-    async (files: File[], targetFolderId?: string) => {
-      const newUploads = files.map((file) => ({
-        name: file.name,
-        progress: 0,
-        preview: URL.createObjectURL(file),
-      }))
+    async (items: FileWithTarget[], targetFolderId?: string) => {
+      const acceptedItems = items.filter(({ file }) => isFileAccepted(file))
+      if (!acceptedItems.length) return
 
-      setUploadingFiles((prev) => [...prev, ...newUploads])
+      setUploadingFiles((prev) => [
+        ...prev,
+        ...acceptedItems.map(({ file, path }) => ({
+          name: file.name,
+          progress: 0,
+          preview: URL.createObjectURL(file),
+          path,
+        })),
+      ])
 
-      // Track all files in this batch to keep them in state until finished
-      const results = await Promise.allSettled(
-        files.map(async (file) => {
-          try {
-            await nodeUpload(file, targetFolderId || "", (progress) => {
-              setUploadingFiles((prev) =>
-                prev.map((u) => (u.name === file.name ? { ...u, progress } : u)),
-              )
-            })
-            // Mark as 100% explicitly to ensure state is consistent
-            setUploadingFiles((prev) =>
-              prev.map((u) => (u.name === file.name ? { ...u, progress: 100 } : u)),
-            )
-            onUploadComplete()
-          } catch (error) {
-            console.error(`Upload failed for ${file.name}:`, error)
-            setUploadingFiles((prev) =>
-              prev.map((u) =>
-                u.name === file.name
-                  ? { ...u, error: error instanceof Error ? error.message : "Upload failed" }
-                  : u,
-              ),
-            )
+      const folderCache = new Map<string, string>()
+
+      for (const { file, path } of acceptedItems) {
+        try {
+          // Resolve or create folder structure
+          let currentParentId = targetFolderId || ""
+          if (path) {
+            const parts = path.split("/")
+            let currentPath = ""
+            for (const part of parts) {
+              currentPath = currentPath ? `${currentPath}/${part}` : part
+              if (folderCache.has(currentPath)) {
+                currentParentId = folderCache.get(currentPath)!
+              } else {
+                const node = await nodeCreate({ name: part, type: "FOLDER", parent_id: currentParentId })
+                currentParentId = node.id
+                folderCache.set(currentPath, currentParentId)
+              }
+            }
           }
-        }),
-      )
 
+          // Upload file
+          await nodeUpload(file, currentParentId, (progress) => {
+            setUploadingFiles((prev) =>
+              prev.map((u) => (u.name === file.name && u.path === path ? { ...u, progress } : u)),
+            )
+          })
+          setUploadingFiles((prev) =>
+            prev.map((u) => (u.name === file.name && u.path === path ? { ...u, progress: 100 } : u)),
+          )
+          onUploadComplete()
+        } catch (error) {
+          console.error(`Failed to upload ${file.name}:`, error)
+          setUploadingFiles((prev) =>
+            prev.map((u) =>
+              u.name === file.name && u.path === path
+                ? { ...u, error: error instanceof Error ? error.message : "Upload failed" }
+                : u,
+            ),
+          )
+        }
+      }
     },
     [onUploadComplete],
   )

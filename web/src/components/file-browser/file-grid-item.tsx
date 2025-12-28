@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useRef, useCallback } from "react"
-import { CheckSquare, Loader2, AlertCircle } from "lucide-react"
+import { CheckSquare, Loader2, AlertCircle, Globe, Lock } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { MemeRenderer } from "../meme-renderer"
 import { MemeOverlay } from "../meme-overlay"
@@ -114,6 +114,25 @@ export function FileGridItem({
         ${dragTargetFolder === item.id ? "ring-2 ring-primary bg-primary/5 scale-95" : ""}
       `}
     >
+      {/* Visibility Notch */}
+      <div
+        className={`absolute top-0 left-0 z-20 w-10 h-10 transition-transform duration-300
+          ${item.visibility === "PUBLIC" ? "text-primary" : "text-destructive"}
+        `}
+        style={{
+          clipPath: "polygon(0 0, 100% 0, 0 100%)",
+        }}
+      >
+        <div className="absolute inset-0 bg-primary-foreground/75 backdrop-blur-md" />
+        <div className="absolute top-1.5 left-1.5">
+          {item.visibility === "PUBLIC" ? (
+            <Globe className="w-3 h-3 drop-shadow-sm" />
+          ) : (
+            <Lock className="w-3 h-3 drop-shadow-sm" />
+          )}
+        </div>
+      </div>
+
       {isFolderType ? (
         <div className="aspect-square relative">
           <FolderPreview folderId={item.id} />

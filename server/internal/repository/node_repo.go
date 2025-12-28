@@ -117,8 +117,7 @@ func (r *NodeRepository) UpdateNode(ctx context.Context, node *model.Node) error
 func (r *NodeRepository) DeleteNode(ctx context.Context, id string, ownerID string) error {
 	query := `
 		DELETE FROM nodes
-		WHERE path <@ (SELECT path FROM nodes WHERE id = $1::uuid AND owner_id = $2::uuid)
-		AND owner_id = $2::uuid
+		WHERE id = $1::uuid AND owner_id = $2::uuid
 	`
 	_, err := r.db.Exec(ctx, query, id, ownerID)
 	if err != nil {

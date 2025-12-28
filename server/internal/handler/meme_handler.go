@@ -2,7 +2,9 @@ package handler
 
 import (
 	"net/http"
+	"path/filepath"
 
+	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -22,10 +24,10 @@ func NewMemeHandler(memeService *service.MemeService, assetService *service.Asse
 }
 
 type SearchRequest struct {
-	Query    string `query:"q" validate:"required"`
-	Scope    string `query:"scope" validate:"omitempty,oneof=global my"`
-	FolderID string `query:"folder_id"`
-	Limit    int    `query:"limit" validate:"omitempty,min=1"`
+	Query    string `form:"q" validate:"omitempty"`
+	Scope    string `form:"scope" validate:"omitempty,oneof=global my"`
+	FolderID string `form:"folder_id" validate:"omitempty,uuid"`
+	Limit    int    `form:"limit" validate:"omitempty,min=1"`
 }
 
 func (h *MemeHandler) Search(c echo.Context) error {
@@ -42,8 +44,33 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		req.Scope = "global"
 	}
 
+	var imgInput *inference.ImageInput
+	file, err := c.FormFile("image")
+	if err == nil {
+		if _, err := h.assetService.ValidateUpload(file); err != nil {
+			return err
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		data := make([]byte, file.Size)
+		if _, err := src.Read(data); err != nil {
+			return err
+		}
+
+		imgInput = &inference.ImageInput{
+			Data:   data,
+			Format: filepath.Ext(file.Filename),
+		}
+	}
+
 	results, err := h.memeService.Search(c.Request().Context(), service.SearchParams{
 		Query:    req.Query,
+		Image:    imgInput,
 		Limit:    req.Limit,
 		Scope:    req.Scope,
 		OwnerID:  ownerID,
@@ -74,6 +101,27 @@ func (h *MemeHandler) GetMeme(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, meme)
+}
+
+type GetSimilarMemesRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Limit int    `query:"limit" validate:"omitempty,min=1"`
+}
+
+func (h *MemeHandler) GetSimilar(c echo.Context) error {
+	var req GetSimilarMemesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	userID, _ := c.Get("user_id").(string)
+
+	results, err := h.memeService.GetSimilarMemes(c.Request().Context(), req.ID, userID, req.Limit)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, results)
 }
 
 type BatchRetryRequest struct {

@@ -1,10 +1,10 @@
 "use client"
 
-import React, { useState } from "react"
-import { FolderPlus, Upload, Download, Heart, Move, Trash2, RefreshCcw, Copy, Share2 } from "lucide-react"
+import React, { useState, useEffect } from "react"
+import { FolderPlus, Upload, Download, Heart, Move, Trash2, RefreshCcw, Copy, Share2, Pencil, Globe, Lock } from "lucide-react"
 import { useFileBrowser } from "./file-browser-context"
 import { shareMeme, downloadMeme } from "@/lib/meme"
-import { memeRetry, favoriteToggle as toggleFavoriteApi } from "@/lib/api"
+import { memeRetry, favoriteToggle as toggleFavoriteApi, nodeBulkUpdate } from "@/lib/api"
 import { useFavoriteStore } from "@/store/favorite"
 import {
   ContextMenu,
@@ -23,6 +23,7 @@ interface FileContextMenuProps {
   onOpenChange?: (open: boolean) => void
   onNewFolder?: () => void
   onUpload?: () => void
+  onRename?: (item: BrowseItem) => void
 }
 
 export function FileContextMenu({
@@ -32,11 +33,22 @@ export function FileContextMenu({
   onOpenChange,
   onNewFolder,
   onUpload,
+  onRename,
 }: FileContextMenuProps) {
-  const { deleteItems, moveItems, refresh, clearSelection, copyItems } = useFileBrowser()
+  const { deleteItems, moveItems, refresh, clearSelection, copyItems, updateItems } = useFileBrowser()
 
   const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false)
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false)
+
+  const handleRename = (item: BrowseItem) => {
+    onRename?.(item)
+    clearSelection()
+  }
+
+  const handleBatchVisibility = async (itemsToUpdate: BrowseItem[], visibility: "PUBLIC" | "PRIVATE") => {
+    await updateItems(itemsToUpdate.map((i) => ({ id: i.id, visibility })))
+    clearSelection()
+  }
 
   const handleDownload = (itemsToDownload: BrowseItem[]) => {
     itemsToDownload.forEach((item) => {
@@ -129,47 +141,80 @@ export function FileContextMenu({
               const allFavorited = favoritableItems.length > 0 && favoritableItems.every((i) => i.is_favorite)
               const allFailed = failedMemes.length === menuItems.length
 
+              const hasPublic = menuItems.some((i) => i.visibility === "PUBLIC")
+              const hasPrivate = menuItems.some((i) => i.visibility === "PRIVATE")
+
               return (
                 <>
-                  {allFailed && failedMemes.length > 0 && (
+                  {/* Group 1: Core Actions (Meme only) */}
+                  {((allFailed && failedMemes.length > 0) || !hasFolder) && (
                     <>
-                      <ContextMenuItem onClick={() => handleRetry(failedMemes)}>
-                        <RefreshCcw className="mr-2 h-4 w-4" />
-                        Retry{isMultiple ? ` (${failedMemes.length})` : ""}
-                      </ContextMenuItem>
+                      {allFailed && failedMemes.length > 0 && (
+                        <ContextMenuItem onClick={() => handleRetry(failedMemes)}>
+                          <RefreshCcw className="mr-2 h-4 w-4" />
+                          Retry
+                        </ContextMenuItem>
+                      )}
+                      {!hasFolder && (
+                        <>
+                          <ContextMenuItem onClick={() => handleDownload(menuItems)}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download {isMultiple ? "All" : ""}
+                          </ContextMenuItem>
+                          {!isMultiple && (
+                            <ContextMenuItem onClick={() => handleShare(menuItems[0])}>
+                              <Share2 className="mr-2 h-4 w-4" />
+                              Share
+                            </ContextMenuItem>
+                          )}
+                        </>
+                      )}
                       <ContextMenuSeparator />
                     </>
                   )}
-                  {!hasFolder && (
-                    <>
-                      <ContextMenuItem onClick={() => handleDownload(menuItems)}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download{isMultiple ? ` (${menuItems.length})` : ""}
-                      </ContextMenuItem>
-                      {!isMultiple && (
-                        <ContextMenuItem onClick={() => handleShare(menuItems[0])}>
-                          <Share2 className="mr-2 h-4 w-4" />
-                          Share
-                        </ContextMenuItem>
-                      )}
-                    </>
-                  )}
+
+                  {/* Group 2: Organization */}
+                  <ContextMenuItem onClick={() => setIsMoveDialogOpen(true)}>
+                    <Move className="mr-2 h-4 w-4" />
+                    Move to...
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => setIsCopyDialogOpen(true)}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy to...
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+
+                  {/* Group 3: Status & Properties */}
                   {favoritableItems.length > 0 && (
                     <ContextMenuItem onClick={() => handleBatchFavorite(favoritableItems, !allFavorited)}>
                       <Heart className={`mr-2 h-4 w-4 ${allFavorited ? "fill-current" : ""}`} />
                       {allFavorited ? "Unfavorite" : "Favorite"}
-                      {isMultiple ? ` (${favoritableItems.length})` : ""}
                     </ContextMenuItem>
                   )}
-                  <ContextMenuItem onClick={() => setIsMoveDialogOpen(true)}>
-                    <Move className="mr-2 h-4 w-4" />
-                    Move{isMultiple ? ` (${menuItems.length})` : ""} to...
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => setIsCopyDialogOpen(true)}>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy{isMultiple ? ` (${menuItems.length})` : ""} to...
-                  </ContextMenuItem>
+
+                  {hasPrivate && (
+                    <ContextMenuItem onClick={() => handleBatchVisibility(menuItems, "PUBLIC")}>
+                      <Globe className="mr-2 h-4 w-4" />
+                      Make Public
+                    </ContextMenuItem>
+                  )}
+                  {hasPublic && (
+                    <ContextMenuItem onClick={() => handleBatchVisibility(menuItems, "PRIVATE")}>
+                      <Lock className="mr-2 h-4 w-4" />
+                      Make Private
+                    </ContextMenuItem>
+                  )}
+
+                  {!isMultiple && activeItem?.type === "folder" && (
+                    <ContextMenuItem onClick={() => handleRename(activeItem)}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Rename
+                    </ContextMenuItem>
+                  )}
+
                   <ContextMenuSeparator />
+
+                  {/* Group 4: Danger Zone */}
                   <ContextMenuItem variant="destructive" onClick={() => handleDelete(menuItems.map((i) => i.id))}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete{isMultiple ? ` (${menuItems.length})` : ""}

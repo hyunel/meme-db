@@ -3,6 +3,7 @@ import { User, getAuthToken, clearAuth } from "@/store/auth";
 interface RequestOptions extends RequestInit {
     params?: Record<string, string | number | boolean>;
     json?: any;
+    form?: FormData;
 }
 
 export class ApiError extends Error {
@@ -36,6 +37,11 @@ export async function request(path: string, options: RequestOptions = {}): Promi
     if (options.json) {
         headers['Content-Type'] = 'application/json';
         options.body = JSON.stringify(options.json);
+    }
+
+    if (options.form) {
+        delete headers['Content-Type'];
+        options.body = options.form;
     }
 
     const response = await fetch(url, { ...options, headers });
@@ -95,7 +101,7 @@ export interface Node {
     id: string;
     name: string;
     type: 'FOLDER' | 'FILE';
-    visibility: 'PRIVATE' | 'PUBLIC' | 'LINK';
+    visibility: 'PRIVATE' | 'PUBLIC';
     parent_id?: string;
     is_favorite: boolean;
     created_at: string;
@@ -120,17 +126,17 @@ export function nodeCreate(data: { name: string; type: 'FOLDER' | 'FILE'; parent
     });
 }
 
-export function nodeUpdate(id: string, data: Partial<Node>): Promise<Node> {
-    return request(`/api/fs/nodes/${id}`, {
-        method: 'PATCH',
-        json: data,
-    });
-}
-
 export function nodeBulkDelete(ids: string[]): Promise<void> {
     return request('/api/fs/nodes', {
         method: 'DELETE',
         json: { ids },
+    });
+}
+
+export function nodeBulkUpdate(items: Partial<Node>[]): Promise<Node[]> {
+    return request('/api/fs/nodes', {
+        method: 'PATCH',
+        json: { items },
     });
 }
 
@@ -224,7 +230,8 @@ export interface Meme {
 }
 
 export interface SearchRequest {
-    q: string;
+    q?: string;
+    image?: File;
     scope?: 'global' | 'my';
     folder_id?: string;
     limit?: number;
@@ -238,9 +245,23 @@ export interface SearchResult {
 }
 
 export function memeSearch(params: SearchRequest): Promise<SearchResult[]> {
+    const formData = new FormData();
+    if (params.q) formData.append('q', params.q);
+    if (params.image) formData.append('image', params.image);
+    if (params.scope) formData.append('scope', params.scope);
+    if (params.folder_id) formData.append('folder_id', params.folder_id);
+    if (params.limit) formData.append('limit', String(params.limit));
+
     return request('/api/search', {
+        method: 'POST', // Use POST for multipart search
+        form: formData,
+    });
+}
+
+export function memeGetSimilar(id: string, limit?: number): Promise<SearchResult[]> {
+    return request(`/api/memes/${id}/similar`, {
         method: 'GET',
-        params: params as any,
+        params: limit ? { limit } : undefined,
     });
 }
 

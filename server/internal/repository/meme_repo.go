@@ -46,23 +46,136 @@ func (row *searchCandidateRow) ToModel() *model.SearchCandidate {
 	}
 }
 
-func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error) {
-	var args []interface{}
-	commonWhere := "WHERE 1=1"
-
-	if params.Scope == "my" {
-		commonWhere += " AND n.owner_id = $1::uuid"
-		args = append(args, params.OwnerID) // $1
-	} else if params.OwnerID != "" {
-		commonWhere += " AND (n.visibility = 'PUBLIC' OR n.owner_id = $1::uuid)"
-		args = append(args, params.OwnerID) // $1
-	} else {
-		commonWhere += " AND n.visibility = 'PUBLIC'"
+func (r *MemeRepository) buildRecallQuery(subqueries []string, args []interface{}) (string, []interface{}) {
+	if len(subqueries) == 0 {
+		return "", nil
 	}
 
+	query := "SELECT DISTINCT ON (asset_id) asset_id, vlm_json, width, height, analyzed_at, similarity, recall_type FROM ("
+	for i, sub := range subqueries {
+		if i > 0 {
+			query += " UNION ALL "
+		}
+		query += sub
+	}
+	query += ") AS combined ORDER BY asset_id, similarity DESC"
+
+	return query, args
+}
+
+func (r *MemeRepository) SearchSimilar(ctx context.Context, params SearchSimilarParams) ([]*model.SearchCandidate, error) {
+	var args []interface{}
+	// Use JOIN on assets for efficient property access, and EXISTS for nodes to avoid duplicates.
+	joinClause := "JOIN assets a ON m.asset_id = a.id"
+	commonWhere := "WHERE m.asset_id != $1::uuid"
+	args = append(args, params.SourceAssetID) // $1
+
+	if params.OwnerID != "" {
+		commonWhere += " AND (a.public_ref_count > 0 OR EXISTS (SELECT 1 FROM nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = $2::uuid))"
+		args = append(args, params.OwnerID) // $2
+	} else {
+		commonWhere += " AND a.public_ref_count > 0"
+	}
+
+	// Helper to build subquery for each channel
+	buildSubquery := func(recallType string, vectorCol string, threshold float32, limit int) string {
+		// Note: We use $1 (SourceAssetID) directly in the sub-select
+		where := commonWhere + fmt.Sprintf(" AND m.%s IS NOT NULL", vectorCol)
+
+		// Subquery to get source vector: (SELECT vectorCol FROM meme_info WHERE asset_id = $1)
+		sourceVectorSQL := fmt.Sprintf("(SELECT %s FROM meme_info WHERE asset_id = $1::uuid)", vectorCol)
+
+		// Similarity calculation: 1 - (m.vector <=> source_vector)
+		similaritySQL := fmt.Sprintf("1 - (m.%s <=> %s)", vectorCol, sourceVectorSQL)
+
+		if threshold > 0 {
+			where += fmt.Sprintf(" AND %s >= %f", similaritySQL, threshold)
+		}
+
+		return fmt.Sprintf(`
+			(SELECT m.asset_id, m.vlm_json, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
+			 FROM meme_info m
+			 %s
+			 %s
+			 ORDER BY similarity DESC
+			 LIMIT %d)`, similaritySQL, recallType, joinClause, where, limit)
+	}
+
+	var subqueries []string
+	if params.Metaphor.Enabled {
+		subqueries = append(subqueries, buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Threshold, params.Metaphor.Limit))
+	}
+	if params.Semantic.Enabled {
+		subqueries = append(subqueries, buildSubquery("semantic", "semantic_vector", params.Semantic.Threshold, params.Semantic.Limit))
+	}
+	if params.Clip.Enabled {
+		subqueries = append(subqueries, buildSubquery("clip", "clip_vector", params.Clip.Threshold, params.Clip.Limit))
+	}
+
+	query, finalArgs := r.buildRecallQuery(subqueries, args)
+	if query == "" {
+		return nil, nil
+	}
+
+	rows, err := r.db.Query(ctx, query, finalArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates, err := pgx.CollectRows(rows, pgx.RowToStructByName[searchCandidateRow])
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*model.SearchCandidate, len(candidates))
+	for i, c := range candidates {
+		result[i] = c.ToModel()
+	}
+	return result, nil
+}
+
+func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error) {
+	var args []interface{}
+	var joinClause string
+	commonWhere := "WHERE 1=1"
+
+	// 1. Determine Search Scope & Strategy (Using EXISTS)
 	if params.FolderPath != nil {
-		commonWhere += fmt.Sprintf(" AND n.path <@ $%d::ltree", len(args)+1)
 		args = append(args, *params.FolderPath)
+		pathIdx := len(args)
+
+		nodeCondition := fmt.Sprintf("n.asset_id = m.asset_id AND n.path <@ $%d::ltree", pathIdx)
+
+		if params.Scope == "my" {
+			args = append(args, params.OwnerID)
+			ownerIdx := len(args)
+			nodeCondition += fmt.Sprintf(" AND n.owner_id = $%d::uuid", ownerIdx)
+		} else if params.OwnerID != "" {
+			args = append(args, params.OwnerID)
+			ownerIdx := len(args)
+			nodeCondition += fmt.Sprintf(" AND (n.visibility = 'PUBLIC' OR n.owner_id = $%d::uuid)", ownerIdx)
+		} else {
+			nodeCondition += " AND n.visibility = 'PUBLIC'"
+		}
+		commonWhere += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM nodes n WHERE %s)", nodeCondition)
+	} else {
+		// Global Search (No Folder restriction)
+		if params.Scope == "my" {
+			args = append(args, params.OwnerID)
+			ownerIdx := len(args)
+			commonWhere += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = $%d::uuid)", ownerIdx)
+		} else {
+			// Global Context: Use JOIN assets for public_ref_count
+			joinClause = "JOIN assets a ON m.asset_id = a.id"
+
+			if params.OwnerID != "" {
+				args = append(args, params.OwnerID)
+				ownerIdx := len(args)
+				commonWhere += fmt.Sprintf(" AND (a.public_ref_count > 0 OR EXISTS (SELECT 1 FROM nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = $%d::uuid))", ownerIdx)
+			} else {
+				commonWhere += " AND a.public_ref_count > 0"
+			}
+		}
 	}
 
 	// Helper to build subquery for each channel
@@ -89,10 +202,10 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 		return fmt.Sprintf(`
 			(SELECT m.asset_id, m.vlm_json, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
 			 FROM meme_info m
-			 JOIN nodes n ON m.asset_id = n.asset_id
+			 %s
 			 %s
 			 ORDER BY similarity DESC
-			 LIMIT %d)`, selectSimilarity, recallType, where, limit)
+			 LIMIT %d)`, selectSimilarity, recallType, joinClause, where, limit)
 	}
 
 	var subqueries []string
@@ -102,28 +215,22 @@ func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombin
 	if params.Semantic.Enabled {
 		subqueries = append(subqueries, buildSubquery("semantic", "semantic_vector", params.Semantic.Value, params.Semantic.Threshold, params.Semantic.Limit))
 	}
-	if params.Clip.Enabled {
-		subqueries = append(subqueries, buildSubquery("clip", "clip_vector", params.Clip.Value, params.Clip.Threshold, params.Clip.Limit))
+	if params.ClipText.Enabled {
+		subqueries = append(subqueries, buildSubquery("clip_text", "clip_vector", params.ClipText.Value, params.ClipText.Threshold, params.ClipText.Limit))
 	}
 	if params.OCR.Enabled {
 		subqueries = append(subqueries, buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit))
 	}
+	if params.ClipImage.Enabled {
+		subqueries = append(subqueries, buildSubquery("clip_image", "clip_vector", params.ClipImage.Value, params.ClipImage.Threshold, params.ClipImage.Limit))
+	}
 
-	if len(subqueries) == 0 {
+	query, finalArgs := r.buildRecallQuery(subqueries, args)
+	if query == "" {
 		return nil, nil
 	}
 
-	// Correcting query building
-	query := "SELECT DISTINCT ON (asset_id) asset_id, vlm_json, width, height, analyzed_at, similarity, recall_type FROM ("
-	for i, sub := range subqueries {
-		if i > 0 {
-			query += " UNION ALL "
-		}
-		query += sub
-	}
-	query += ") AS combined ORDER BY asset_id, similarity DESC"
-
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, query, finalArgs...)
 	if err != nil {
 		return nil, err
 	}

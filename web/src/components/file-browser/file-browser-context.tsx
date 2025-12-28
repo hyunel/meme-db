@@ -7,7 +7,7 @@ import { useSelection } from "./hooks/use-selection"
 import { useDragDrop } from "./hooks/use-drag-drop"
 import { useUpload } from "./hooks/use-upload"
 import type { SortOption } from "./utils/constants"
-import type { BrowseItem, UploadingFile } from "./utils/types"
+import type { BrowseItem, UploadingFile, FileWithTarget } from "./utils/types"
 import type { Node } from "@/lib/api"
 
 interface FileBrowserContextType {
@@ -25,10 +25,11 @@ interface FileBrowserContextType {
   navigateToBreadcrumb: (index: number) => void
 
   // Actions
-  createFolder: (name: string) => void
-  deleteItems: (ids: string[]) => void
-  moveItems: (ids: string[], targetFolderId?: string) => void
-  copyItems: (ids: string[], targetFolderId?: string) => void
+  createFolder: (name: string) => Promise<void>
+  deleteItems: (ids: string[]) => Promise<void>
+  moveItems: (ids: string[], targetFolderId?: string) => Promise<void>
+  copyItems: (ids: string[], targetFolderId?: string) => Promise<void>
+  updateItems: (items: (Partial<Node> & { id: string })[]) => Promise<void>
   refresh: () => void
 
   // Selection
@@ -51,7 +52,7 @@ interface FileBrowserContextType {
 
   // Upload
   uploadingFiles: UploadingFile[]
-  upload: (files: File[], targetFolderId?: string) => void
+  upload: (files: FileWithTarget[], targetFolderId?: string) => void
 }
 
 const FileBrowserContext = createContext<FileBrowserContextType | undefined>(undefined)

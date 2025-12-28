@@ -23,20 +23,31 @@ type RecallConfig[T any] struct {
 }
 
 type SearchCombinedParams struct {
-	Metaphor RecallConfig[pgvector.Vector]
-	Semantic RecallConfig[pgvector.Vector]
-	Clip     RecallConfig[pgvector.Vector]
-	OCR      RecallConfig[string]
+	Metaphor  RecallConfig[pgvector.Vector]
+	Semantic  RecallConfig[pgvector.Vector]
+	ClipText  RecallConfig[pgvector.Vector]
+	ClipImage RecallConfig[pgvector.Vector]
+	OCR       RecallConfig[string]
 
 	Scope      string
 	OwnerID    string
 	FolderPath *string
 }
 
+type SearchSimilarParams struct {
+	SourceAssetID string
+	Metaphor      RecallConfig[pgvector.Vector]
+	Semantic      RecallConfig[pgvector.Vector]
+	Clip          RecallConfig[pgvector.Vector]
+
+	OwnerID string
+}
+
 type MemeRepo interface {
 	CreateMeme(ctx context.Context, meme *model.MemeInfo) error
 	UpdateMemeStatus(ctx context.Context, assetID string, status string) error
 	SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error)
+	SearchSimilar(ctx context.Context, params SearchSimilarParams) ([]*model.SearchCandidate, error)
 	GetMemeViews(ctx context.Context, assetIDs []string, ownerID *string) (map[string]*model.MemeView, error)
 	GetPendingMemes(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error)
 	ResetMemeStatus(ctx context.Context, assetIDs []string) error

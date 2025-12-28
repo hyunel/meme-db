@@ -29,7 +29,7 @@ func NewAssetService(cfg *config.Config, repo *repository.Provider) *AssetServic
 	return &AssetService{cfg: cfg, repo: repo}
 }
 
-func (s *AssetService) validateUpload(fileHeader *multipart.FileHeader) (string, error) {
+func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
 	// 1. Check File Size
 	maxSizeBytes := int64(s.cfg.Upload.MaxSizeMB * 1024 * 1024)
 	if fileHeader.Size > maxSizeBytes {
@@ -89,7 +89,7 @@ func (s *AssetService) validateUpload(fileHeader *multipart.FileHeader) (string,
 }
 
 func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.FileHeader) (*model.Asset, error) {
-	mimeType, err := s.validateUpload(fileHeader)
+	mimeType, err := s.ValidateUpload(fileHeader)
 	if err != nil {
 		return nil, err
 	}

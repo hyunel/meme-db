@@ -86,7 +86,7 @@ export function MemeRenderer({ meme, className }: MemeRendererProps) {
     <img
       src={meme.url}
       alt=""
-      className={cn("object-cover bg-checkered", className)}
+      className={cn("w-full h-full object-cover bg-checkered", className)}
     />
   )
 }

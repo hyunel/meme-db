@@ -60,31 +60,37 @@ func (h *FileSystemHandler) GetNode(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-type UpdateNodeRequest struct {
-	ID         string            `param:"id" validate:"required"`
+type BulkUpdateNodeItem struct {
+	ID         string            `json:"id" validate:"required"`
 	Name       *string           `json:"name"`
 	Visibility *model.Visibility `json:"visibility"`
-	IsFavorite *bool             `json:"is_favorite"`
 }
 
-func (h *FileSystemHandler) UpdateNode(c echo.Context) error {
+type BulkUpdateNodesRequest struct {
+	Items []BulkUpdateNodeItem `json:"items" validate:"required,gt=0"`
+}
+
+func (h *FileSystemHandler) BulkUpdateNodes(c echo.Context) error {
 	ownerID := c.Get("user_id").(string)
-	var req UpdateNodeRequest
+	var req BulkUpdateNodesRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	input := service.UpdateNodeInput{
-		Name:       req.Name,
-		Visibility: req.Visibility,
-		IsFavorite: req.IsFavorite,
+	inputs := make([]service.BulkUpdateNodeInput, len(req.Items))
+	for i, item := range req.Items {
+		inputs[i] = service.BulkUpdateNodeInput{
+			ID:         item.ID,
+			Name:       item.Name,
+			Visibility: item.Visibility,
+		}
 	}
 
-	node, err := h.fsService.UpdateNode(c.Request().Context(), req.ID, ownerID, input)
+	nodes, err := h.fsService.BulkUpdateNodes(c.Request().Context(), ownerID, inputs)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, node)
+	return c.JSON(http.StatusOK, nodes)
 }
 
 type BulkActionRequest struct {

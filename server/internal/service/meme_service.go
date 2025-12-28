@@ -36,8 +36,63 @@ func NewMemeService(
 	}
 }
 
+func (s *MemeService) GetSimilarMemes(ctx context.Context, assetID string, ownerID string, limit int) ([]model.SearchResult, error) {
+	// 1. Perform Multi-Channel Similarity Search
+	results, err := s.repo.Meme.SearchSimilar(ctx, repository.SearchSimilarParams{
+		SourceAssetID: assetID,
+		Metaphor:      repository.RecallConfig[pgvector.Vector]{Enabled: true, Limit: 10},
+		Semantic:      repository.RecallConfig[pgvector.Vector]{Enabled: true, Limit: 10},
+		Clip:          repository.RecallConfig[pgvector.Vector]{Enabled: true, Limit: 10},
+		OwnerID:       ownerID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform similarity search: %w", err)
+	}
+
+	if len(results) == 0 {
+		return []model.SearchResult{}, nil
+	}
+
+	// 3. Assemble results (Enrich with views)
+	assetIDs := make([]string, len(results))
+	for i, r := range results {
+		assetIDs[i] = r.AssetID
+	}
+	memeMap, err := s.GetMemeViews(ctx, assetIDs, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	finalRes := make([]model.SearchResult, 0, len(results))
+	for _, r := range results {
+		meme, ok := memeMap[r.AssetID]
+		if !ok {
+			continue // Should not happen if DB is consistent
+		}
+		finalRes = append(finalRes, model.SearchResult{
+			Meme:       meme,
+			RecallType: r.RecallType,
+			Score:      r.Similarity, // For similarity search, we use the vector similarity as score
+			Similarity: r.Similarity,
+		})
+	}
+
+	// Sort by similarity descending (it's already sorted by DB per asset, but we might have duplicates across channels)
+	sort.Slice(finalRes, func(i, j int) bool {
+		return finalRes[i].Similarity > finalRes[j].Similarity
+	})
+
+	// Truncate to requested limit
+	if limit > 0 && len(finalRes) > limit {
+		finalRes = finalRes[:limit]
+	}
+
+	return finalRes, nil
+}
+
 type SearchParams struct {
 	Query    string
+	Image    *inference.ImageInput
 	Limit    int
 	Scope    string
 	OwnerID  string
@@ -54,38 +109,53 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		folderPath = &node.Path
 	}
 
-	var metaVec, clipVec []float32
+	var textVec, clipTextVec, clipImageVec []float32
 	g, gCtx := errgroup.WithContext(ctx)
 
 	// 1. Get Embeddings in Parallel
-	g.Go(func() error {
-		vec, err := s.inferClient.TextEmbedding(gCtx, params.Query, s.cfg.Prompt.Retrieval)
-		if err != nil {
-			return err
-		}
-		metaVec = vec
-		return nil
-	})
+	if params.Query != "" {
+		g.Go(func() error {
+			vec, err := s.inferClient.TextEmbedding(gCtx, params.Query, s.cfg.Prompt.Retrieval)
+			if err != nil {
+				return err
+			}
+			textVec = vec
+			return nil
+		})
 
-	g.Go(func() error {
-		vec, err := s.inferClient.ClipTextEmbedding(gCtx, params.Query)
-		if err != nil {
-			return err
-		}
-		clipVec = vec
-		return nil
-	})
+		g.Go(func() error {
+			vec, err := s.inferClient.ClipTextEmbedding(gCtx, params.Query)
+			if err != nil {
+				return err
+			}
+			clipTextVec = vec
+			return nil
+		})
+	}
+
+	if params.Image != nil {
+		g.Go(func() error {
+			vec, err := s.inferClient.ClipImageEmbedding(gCtx, *params.Image)
+			if err != nil {
+				return err
+			}
+			clipImageVec = vec
+			return nil
+		})
+	}
 
 	if err := g.Wait(); err != nil {
 		return nil, fmt.Errorf("failed to get embeddings: %w", err)
 	}
 
 	// 2. Perform Combined DB Search
+	imageMode := len(clipImageVec) > 0
 	results, err := s.repo.Meme.SearchCombined(ctx, repository.SearchCombinedParams{
-		Metaphor:   repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(metaVec), Limit: 10},
-		Semantic:   repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(metaVec), Limit: 10},
-		Clip:       repository.RecallConfig[pgvector.Vector]{Enabled: true, Value: pgvector.NewVector(clipVec), Limit: 10},
-		OCR:        repository.RecallConfig[string]{Enabled: true, Value: params.Query, Limit: 20},
+		ClipImage:  repository.RecallConfig[pgvector.Vector]{Enabled: imageMode, Value: pgvector.NewVector(clipImageVec), Limit: 50},
+		Metaphor:   repository.RecallConfig[pgvector.Vector]{Enabled: !imageMode && len(textVec) > 0, Value: pgvector.NewVector(textVec), Limit: 15},
+		Semantic:   repository.RecallConfig[pgvector.Vector]{Enabled: !imageMode && len(textVec) > 0, Value: pgvector.NewVector(textVec), Limit: 10},
+		ClipText:   repository.RecallConfig[pgvector.Vector]{Enabled: !imageMode && len(clipTextVec) > 0, Value: pgvector.NewVector(clipTextVec), Limit: 15},
+		OCR:        repository.RecallConfig[string]{Enabled: !imageMode && params.Query != "", Value: params.Query, Limit: 10},
 		Scope:      params.Scope,
 		OwnerID:    params.OwnerID,
 		FolderPath: folderPath,
@@ -99,35 +169,44 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	}
 
 	candidates := make([]*model.SearchCandidate, 0, len(results))
+	scores := make([]float32, 0, len(results))
 
-	docs := make([]string, 0, len(results))
-	for _, r := range results {
-		candidates = append(candidates, r)
-
-		out, err := inference.ParseVLMOutput(string(r.VLMJSON))
-		if err != nil {
-			slog.Warn("Failed to parse VLM output for rerank doc", "asset_id", r.AssetID, "error", err)
-			continue
-		}
-		docs = append(docs, out.GetRerankDoc())
-	}
-
-	// 4. Rerank individually
-	scores := make([]float32, len(docs))
-	rerankG, rerankCtx := errgroup.WithContext(ctx)
-	for i, doc := range docs {
-		rerankG.Go(func() error {
-			score, err := s.inferClient.Rerank(rerankCtx, params.Query, doc, s.cfg.Prompt.Retrieval)
+	if params.Query != "" {
+		// 3. Prepare docs for reranking
+		docs := make([]string, 0, len(results))
+		for _, r := range results {
+			out, err := inference.ParseVLMOutput(string(r.VLMJSON))
 			if err != nil {
-				return err
+				slog.Warn("Failed to parse VLM output for rerank doc", "asset_id", r.AssetID, "error", err)
+				continue
 			}
-			scores[i] = score
-			return nil
-		})
-	}
+			candidates = append(candidates, r)
+			docs = append(docs, out.GetRerankDoc())
+		}
 
-	if err := rerankG.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to rerank: %w", err)
+		// 4. Rerank individually
+		scores = make([]float32, len(candidates))
+		rerankG, rerankCtx := errgroup.WithContext(ctx)
+		for i, doc := range docs {
+			rerankG.Go(func() error {
+				score, err := s.inferClient.Rerank(rerankCtx, params.Query, doc, s.cfg.Prompt.Retrieval)
+				if err != nil {
+					return err
+				}
+				scores[i] = score
+				return nil
+			})
+		}
+
+		if err := rerankG.Wait(); err != nil {
+			return nil, fmt.Errorf("failed to rerank: %w", err)
+		}
+	} else {
+		// Skip rerank if query is empty
+		for _, r := range results {
+			candidates = append(candidates, r)
+			scores = append(scores, r.Similarity)
+		}
 	}
 
 	// 5. Assemble results in batch

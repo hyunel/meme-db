@@ -4,10 +4,8 @@ export enum SortOption {
 }
 
 export const ACCEPTED_FILE_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/gif",
+  "image/*",
   "video/webm",
+  "video/mp4",
   ".tgs",
 ] as const

@@ -13,9 +13,10 @@ import { FileContextMenu } from "./file-context-menu"
 interface FileGridProps {
   onNewFolder?: () => void
   onUpload?: () => void
+  onRename?: (item: BrowseItem) => void
 }
 
-export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
+export function FileGrid({ onNewFolder, onUpload, onRename }: FileGridProps) {
   const {
     items,
     isLoading,
@@ -68,6 +69,7 @@ export function FileGrid({ onNewFolder, onUpload }: FileGridProps) {
       onOpenChange={(open) => !open && setActiveItem(null)}
       onNewFolder={onNewFolder}
       onUpload={onUpload}
+      onRename={onRename}
     >
       <div
         ref={containerRef}

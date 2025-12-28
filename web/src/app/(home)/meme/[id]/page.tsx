@@ -15,9 +15,11 @@ import { EmptyState } from "@/components/ui/empty-state"
 import useSWR, { mutate } from "swr"
 import {
   memeGet,
+  memeGetSimilar,
   memeAdd,
   memeRetry,
   Meme,
+  SearchResult,
   favoriteToggle,
   tagAddToMeme,
   tagRemoveFromMeme,
@@ -42,7 +44,12 @@ export default function MemeDetailsPage() {
     }
   )
 
-  const recommendations: Meme[] = [];
+  const { data: similarResults, isLoading: isSimilarLoading } = useSWR<SearchResult[]>(
+    memeId ? ['/api/memes', memeId, 'similar'] : null,
+    ([, id]) => memeGetSimilar(id as string)
+  )
+
+  const recommendations: Meme[] = similarResults?.map(r => r.meme) || [];
 
   const [localFavorite, setLocalFavorite] = useState<boolean | null>(null)
   const [localTags, setLocalTags] = useState<Tag[] | null>(null)
@@ -331,7 +338,19 @@ export default function MemeDetailsPage() {
 
           <div className="mt-12 md:mt-16">
             <h2 className="text-2xl font-bold mb-6">Similar Memes</h2>
-            <MemeGrid items={recommendations} fixedHeight={true} />
+            {isSimilarLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="aspect-square bg-muted animate-pulse rounded-lg" />
+                ))}
+              </div>
+            ) : recommendations.length > 0 ? (
+              <MemeGrid items={recommendations} />
+            ) : (
+              <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
+                <p className="text-muted-foreground">No similar memes found.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

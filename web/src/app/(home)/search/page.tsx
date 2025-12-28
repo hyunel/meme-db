@@ -2,16 +2,15 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { MemeGrid } from "@/components/meme-grid"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, Sparkles, TrendingUp, Clock, Zap } from "lucide-react"
+import { Search, Sparkles, TrendingUp, Clock, Zap, X, ImagePlus } from "lucide-react"
 import { useUser } from "@/hooks/use-user"
 import { memeSearch } from "@/lib/api"
 import type { Meme } from "@/lib/api"
-import { MemeCard } from "@/components/meme-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { toast } from "sonner"
 
@@ -25,22 +24,53 @@ const DEMO_SEARCHES = [
 export default function SearchPage() {
   const { user } = useUser()
   const [query, setQuery] = useState("")
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [scope, setScope] = useState<"global" | "my">("global")
   const [results, setResults] = useState<Meme[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview)
+      }
+    }
+  }, [imagePreview])
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (imagePreview) URL.revokeObjectURL(imagePreview)
+      setSelectedImage(file)
+      setImagePreview(URL.createObjectURL(file))
+      // Auto focus the search input after image selection
+      setTimeout(() => searchInputRef.current?.focus(), 0)
+    }
+  }
+
+  const removeImage = () => {
+    setSelectedImage(null)
+    if (imagePreview) URL.revokeObjectURL(imagePreview)
+    setImagePreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
 
   const handleSearch = async (e: React.FormEvent, searchQuery?: string) => {
     e.preventDefault()
     const finalQuery = (searchQuery || query).trim()
-    if (!finalQuery) return
+    if (!finalQuery && !selectedImage) return
 
     setIsSearching(true)
     setHasSearched(true)
 
     try {
       const searchResults = await memeSearch({
-        q: finalQuery,
+        q: finalQuery || undefined,
+        image: selectedImage || undefined,
         scope: scope,
       })
       setResults(searchResults.map((r) => r.meme))
@@ -72,15 +102,49 @@ export default function SearchPage() {
           )}
 
           <form onSubmit={handleSearch} className="space-y-4">
-            <div className="relative group">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <div className="relative group flex items-center">
+              <Search className="absolute left-5 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors z-10" />
               <Input
+                ref={searchInputRef}
                 type="text"
-                placeholder="Search for memes..."
+                placeholder={selectedImage ? "Add text to image search..." : "Search for memes..."}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="pl-14 pr-4 h-14 md:h-16 text-base md:text-lg shadow-lg border transition-[border-color] focus-visible:border-primary focus-visible:ring-1"
+                className="pl-14 pr-16 h-14 md:h-16 text-base md:text-lg shadow-lg border transition-[border-color] focus-visible:border-primary focus-visible:ring-1"
               />
+
+              <div className="absolute right-2 flex items-center">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  ref={fileInputRef}
+                  className="hidden"
+                />
+                {imagePreview ? (
+                  <div className="relative h-10 w-10 md:h-12 md:w-12 rounded-lg overflow-hidden border border-primary/50 shadow-sm group/thumb animate-in fade-in zoom-in duration-200">
+                    <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+                    >
+                      <X className="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-10 w-10 md:h-12 md:w-12 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
+                    title="Search by image"
+                  >
+                    <ImagePlus className="w-5 h-5 md:w-6 md:h-6" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {user && (
@@ -185,6 +249,7 @@ export default function SearchPage() {
                     onClick={() => {
                       setHasSearched(false)
                       setQuery("")
+                      removeImage()
                     }}
                   >
                     New Search

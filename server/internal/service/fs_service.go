@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"mime/multipart"
 	"strings"
 
@@ -178,40 +179,48 @@ func (s *FileSystemService) GetNode(ctx context.Context, id string, ownerID stri
 	}, nil
 }
 
-type UpdateNodeInput struct {
+type BulkUpdateNodeInput struct {
+	ID         string
 	Name       *string
 	Visibility *model.Visibility
-	IsFavorite *bool
 }
 
-func (s *FileSystemService) UpdateNode(ctx context.Context, id string, ownerID string, input UpdateNodeInput) (*model.NodeView, error) {
-	node, err := s.repo.Node.GetNode(ctx, id, ownerID)
+func (s *FileSystemService) BulkUpdateNodes(ctx context.Context, ownerID string, inputs []BulkUpdateNodeInput) ([]*model.NodeView, error) {
+	var nodes []*model.Node
+
+	err := s.repo.Transaction(ctx, func(txRepo *repository.Repositories) error {
+		for _, input := range inputs {
+			node, err := txRepo.Node.GetNode(ctx, input.ID, ownerID)
+			if err != nil {
+				return apperror.NotFound(fmt.Sprintf("node %s not found", input.ID))
+			}
+
+			if input.Name != nil {
+				node.Name = *input.Name
+			}
+			if input.Visibility != nil {
+				node.Visibility = *input.Visibility
+			}
+
+			if err := txRepo.Node.UpdateNode(ctx, node); err != nil {
+				return err
+			}
+
+			// Fetch fresh to reflect updates
+			freshNode, err := txRepo.Node.GetNode(ctx, node.ID, ownerID)
+			if err != nil {
+				return err
+			}
+			nodes = append(nodes, freshNode)
+		}
+		return nil
+	})
+
 	if err != nil {
-		return nil, apperror.NotFound("node not found")
-	}
-
-	if input.Name != nil {
-		node.Name = *input.Name
-	}
-	if input.Visibility != nil {
-		node.Visibility = *input.Visibility
-	}
-
-	if err := s.repo.Node.UpdateNode(ctx, node); err != nil {
 		return nil, err
 	}
 
-	// Fetch fresh to reflect updates
-	freshNode, err := s.repo.Node.GetNode(ctx, id, ownerID)
-	if err != nil {
-		return nil, err
-	}
-
-	views, err := s.assembleNodeViews(ctx, []*model.Node{freshNode}, ownerID)
-	if err != nil {
-		return nil, err
-	}
-	return views[0], nil
+	return s.assembleNodeViews(ctx, nodes, ownerID)
 }
 
 func (s *FileSystemService) BulkDeleteNodes(ctx context.Context, ownerID string, ids []string) error {

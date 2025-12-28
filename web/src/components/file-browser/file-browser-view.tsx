@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { ACCEPTED_FILE_TYPES } from "./utils/constants"
+import type { BrowseItem } from "./utils/types"
 
 export function FileBrowserView() {
   const {
@@ -21,19 +22,42 @@ export function FileBrowserView() {
     items,
     deleteItems,
     createFolder,
+    updateItems,
     upload,
   } = useFileBrowser()
 
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [newFolderName, setNewFolderName] = useState("")
+  const [dialogMode, setDialogMode] = useState<"create" | "rename">("create")
+  const [editingItem, setEditingItem] = useState<BrowseItem | null>(null)
+  const [inputValue, setInputValue] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleNewFolder = () => {
-    if (newFolderName.trim()) {
-      createFolder(newFolderName.trim())
-      setNewFolderName("")
-      setDialogOpen(false)
+  const handleDialogConfirm = () => {
+    if (!inputValue.trim()) return
+
+    if (dialogMode === "create") {
+      createFolder(inputValue.trim())
+    } else if (dialogMode === "rename" && editingItem) {
+      updateItems([{ id: editingItem.id, name: inputValue.trim() }])
     }
+
+    setInputValue("")
+    setDialogOpen(false)
+    setEditingItem(null)
+  }
+
+  const openCreateDialog = () => {
+    setDialogMode("create")
+    setEditingItem(null)
+    setInputValue("")
+    setDialogOpen(true)
+  }
+
+  const openRenameDialog = (item: BrowseItem) => {
+    setDialogMode("rename")
+    setEditingItem(item)
+    setInputValue(item.name)
+    setDialogOpen(true)
   }
 
   const handleBulkDelete = () => {
@@ -57,7 +81,7 @@ export function FileBrowserView() {
 
       <BrowserHeader
         title={currentFolder?.name || "My Library"}
-        onNewFolder={() => setDialogOpen(true)}
+        onNewFolder={openCreateDialog}
         onUploadClick={() => fileInputRef.current?.click()}
       />
 
@@ -69,15 +93,19 @@ export function FileBrowserView() {
         accept={ACCEPTED_FILE_TYPES.join(",")}
         onChange={(e) => {
           if (e.target.files) {
-            upload(Array.from(e.target.files), currentFolder?.id)
+            upload(
+              Array.from(e.target.files).map((file) => ({ file })),
+              currentFolder?.id,
+            )
           }
         }}
       />
 
       <div className="flex-1 flex flex-col min-h-0">
         <FileGrid
-          onNewFolder={() => setDialogOpen(true)}
+          onNewFolder={openCreateDialog}
           onUpload={() => fileInputRef.current?.click()}
+          onRename={openRenameDialog}
         />
       </div>
 
@@ -92,29 +120,30 @@ export function FileBrowserView() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Folder</DialogTitle>
+            <DialogTitle>{dialogMode === "create" ? "Create New Folder" : "Rename"}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <Label htmlFor="folder-name" className="mb-2 block">
-              Folder Name
+            <Label htmlFor="item-name" className="mb-2 block">
+              Name
             </Label>
             <Input
-              id="folder-name"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="Enter folder name"
+              id="item-name"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Enter name"
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleNewFolder()
+                if (e.key === "Enter") handleDialogConfirm()
               }}
               autoFocus
+              onFocus={(e) => e.target.select()}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleNewFolder} disabled={!newFolderName.trim()}>
-              Create
+            <Button onClick={handleDialogConfirm} disabled={!inputValue.trim()}>
+              {dialogMode === "create" ? "Create" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

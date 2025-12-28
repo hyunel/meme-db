@@ -114,7 +114,7 @@ func main() {
 	e.GET("/api/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-	e.GET("/api/search", memeHandler.Search)
+	e.POST("/api/search", memeHandler.Search)
 
 	// Auth
 	e.POST("/api/auth/register", authHandler.Register)
@@ -123,6 +123,7 @@ func main() {
 
 	// Meme
 	e.GET("/api/memes/:id", memeHandler.GetMeme)
+	e.GET("/api/memes/:id/similar", memeHandler.GetSimilar)
 	api.POST("/memes/retry", memeHandler.BatchRetry)
 	api.POST("/memes/:id/add", memeHandler.Add)
 
@@ -133,7 +134,7 @@ func main() {
 	api.POST("/fs/nodes", fsHandler.CreateNode)
 	api.GET("/fs/nodes", fsHandler.GetNode) // List root
 	api.GET("/fs/nodes/:id", fsHandler.GetNode)
-	api.PATCH("/fs/nodes/:id", fsHandler.UpdateNode)
+	api.PATCH("/fs/nodes", fsHandler.BulkUpdateNodes)
 	api.DELETE("/fs/nodes", fsHandler.BulkDelete)
 	api.POST("/fs/nodes/move", fsHandler.BulkMove)
 	api.POST("/fs/nodes/copy", fsHandler.BulkCopy)

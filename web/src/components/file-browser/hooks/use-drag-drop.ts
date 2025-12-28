@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react"
-import type { BrowseItem } from "../utils/types"
+import type { BrowseItem, FileWithTarget } from "../utils/types"
 import { createDragPreview } from "../utils/drag-preview"
 
 export function useDragDrop(
   selectedItems: Set<string>,
   onMoveItems: (ids: string[], targetFolderId?: string) => void,
-  onUploadFiles: (files: File[], targetFolderId?: string) => void,
+  onUploadFiles: (files: FileWithTarget[], targetFolderId?: string) => void,
   items: BrowseItem[],
   clearSelection: () => void,
   currentFolderId?: string,
@@ -99,7 +99,7 @@ export function useDragDrop(
   }, [])
 
   const handleDrop = useCallback(
-    (e: React.DragEvent, targetFolderId?: string) => {
+    async (e: React.DragEvent, targetFolderId?: string) => {
       e.preventDefault()
       e.stopPropagation()
       setIsDragging(false)
@@ -115,9 +115,23 @@ export function useDragDrop(
         return
       }
 
-      const files = Array.from(e.dataTransfer.files)
-      if (files.length > 0) {
-        onUploadFiles(files, targetFolderId)
+      const dtItems = Array.from(e.dataTransfer.items || [])
+      if (dtItems.length > 0) {
+        const filesWithTarget: FileWithTarget[] = []
+        const traverse = async (entry: any, path = "") => {
+          if (entry.isFile) {
+            const file = await new Promise<File>((resolve) => entry.file(resolve))
+            filesWithTarget.push({ file, path })
+          } else if (entry.isDirectory) {
+            const entries = await new Promise<any[]>((res) => entry.createReader().readEntries(res))
+            for (const child of entries) await traverse(child, path ? `${path}/${entry.name}` : entry.name)
+          }
+        }
+        await Promise.all(dtItems.map((item) => traverse(item.webkitGetAsEntry())))
+        if (filesWithTarget.length) onUploadFiles(filesWithTarget, targetFolderId)
+      } else {
+        const files = Array.from(e.dataTransfer.files)
+        if (files.length) onUploadFiles(files.map((file) => ({ file })), targetFolderId)
       }
     },
     [draggingItems, onMoveItems, onUploadFiles, canDrop, clearSelection],

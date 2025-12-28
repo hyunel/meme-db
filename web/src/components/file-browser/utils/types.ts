@@ -8,6 +8,12 @@ export interface UploadingFile {
   progress: number
   preview?: string
   error?: string
+  path?: string // Relative path for folder uploads
+}
+
+export interface FileWithTarget {
+  file: File
+  path?: string
 }
 
 export interface ContextMenuState {
