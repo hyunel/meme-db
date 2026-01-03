@@ -14,7 +14,7 @@ export default function TagPage() {
   const {
     data,
     isLoading
-  } = useSWR(params.tag ? ['/api/tags' + params.tag, params.tag] : null, async ([, tagId]) => tagGetMemes(tagId as string))
+  } = useSWR(params.tag ? ['/api/tags', params.tag] : null, async ([, tagId]) => tagGetMemes(tagId as string))
 
   if (isLoading) {
     return <TagLoading />

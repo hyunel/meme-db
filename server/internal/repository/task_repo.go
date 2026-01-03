@@ -13,32 +13,20 @@ import (
 
 const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, run_at, started_at, finished_at, created_at, updated_at`
 
-type taskRepo struct {
+type TaskRepository struct {
 	db db.DBTX
 }
 
-type TaskOpts struct {
-	OwnerID  *string
-	Priority int
-	RunAt    time.Time
-	Cron     *string
+func (r *TaskRepository) Create(ctx context.Context, jobType string, payload interface{}) (*model.Task, error) {
+	return r.CreateWithOpts(ctx, jobType, payload, nil)
 }
 
-func NewTaskRepository(db db.DBTX) *taskRepo {
-	return &taskRepo{db: db}
-}
-
-func (r *taskRepo) CreateTask(ctx context.Context, jobType string, payload interface{}) (*model.Task, error) {
-	return r.CreateTaskWithOpts(ctx, jobType, payload, nil)
-}
-
-func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, payload interface{}, opts *TaskOpts) (*model.Task, error) {
+func (r *TaskRepository) CreateWithOpts(ctx context.Context, jobType string, payload interface{}, opts *TaskOpts) (*model.Task, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	// Default values
 	var ownerID *string
 	priority := 0
 	runAt := time.Now()
@@ -50,13 +38,11 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 		if !opts.RunAt.IsZero() {
 			runAt = opts.RunAt
 		}
-		if opts.Cron != nil {
-			cron = opts.Cron
-		}
+		cron = opts.Cron
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO tasks (owner_id, job_type, payload, status, priority, run_at, cron)
+		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING %s
 	`, taskSelectColumns)
@@ -65,52 +51,45 @@ func (r *taskRepo) CreateTaskWithOpts(ctx context.Context, jobType string, paylo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
-
 	task, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Task])
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan created task: %w", err)
 	}
-
 	return &task, nil
 }
 
-func (r *taskRepo) GetNextPendingTask(ctx context.Context) (*model.Task, error) {
-	// Fetch and lock the next pending task using FOR UPDATE SKIP LOCKED
+func (r *TaskRepository) GetNextPending(ctx context.Context) (*model.Task, error) {
 	query := fmt.Sprintf(`
-		UPDATE tasks
+		UPDATE jobs.tasks
 		SET started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE id = (
-			SELECT id
-			FROM tasks
-			WHERE status = $1 AND run_at <= $2
+			SELECT id FROM jobs.tasks
+			WHERE status = $1 AND run_at <= CURRENT_TIMESTAMP
+			  AND (started_at IS NULL OR started_at < CURRENT_TIMESTAMP - INTERVAL '%d minutes')
 			ORDER BY priority DESC, run_at ASC
-			FOR UPDATE SKIP LOCKED
-			LIMIT 1
+			FOR UPDATE SKIP LOCKED LIMIT 1
 		)
 		RETURNING %s
-	`, taskSelectColumns)
+	`, model.TaskProcessingTimeout, taskSelectColumns)
 
-	rows, err := r.db.Query(ctx, query, model.TaskStatusPending, time.Now())
+	rows, err := r.db.Query(ctx, query, model.TaskStatusPending)
 	if err != nil {
 		return nil, err
 	}
-
 	task, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Task])
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, nil // No pending tasks
+			return nil, nil
 		}
 		return nil, err
 	}
-
 	return &task, nil
 }
 
-func (r *taskRepo) UpdateTaskStatus(ctx context.Context, id string, status string, errorMessage *string) error {
+func (r *TaskRepository) UpdateStatus(ctx context.Context, id string, status string, errorMessage *string) error {
 	query := `
-		UPDATE tasks
-		SET status = $1::VARCHAR(20),
-		    error_message = $2,
+		UPDATE jobs.tasks
+		SET status = $1::VARCHAR(20), error_message = $2,
 		    finished_at = CASE WHEN $1::VARCHAR(20) IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE finished_at END,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $3::uuid
@@ -119,32 +98,26 @@ func (r *taskRepo) UpdateTaskStatus(ctx context.Context, id string, status strin
 	return err
 }
 
-func (r *taskRepo) CreateHistoryFromTask(ctx context.Context, taskID string, historyStatus string, finishedAt *time.Time, errorMessage *string) error {
+func (r *TaskRepository) CreateHistory(ctx context.Context, taskID string, historyStatus string, finishedAt *time.Time, errorMessage *string) error {
 	if historyStatus != model.TaskStatusCompleted && historyStatus != model.TaskStatusFailed {
 		return fmt.Errorf("history task status must be completed or failed, got: %s", historyStatus)
 	}
 
-	insertQuery := `
-		INSERT INTO tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, error_message)
+	query := `
+		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, run_at, started_at, finished_at, error_message)
 		SELECT owner_id, id, job_type, payload, $1, priority, cron, run_at, started_at, $2, $3
-		FROM tasks
-		WHERE id = $4::uuid
+		FROM jobs.tasks WHERE id = $4::uuid
 	`
-	_, err := r.db.Exec(ctx, insertQuery,
-		historyStatus, // $1
-		finishedAt,    // $2
-		errorMessage,  // $3
-		taskID,        // $4
-	)
+	_, err := r.db.Exec(ctx, query, historyStatus, finishedAt, errorMessage, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to create task history: %w", err)
 	}
 	return nil
 }
 
-func (r *taskRepo) ResetTask(ctx context.Context, taskID string, runAt time.Time, payload interface{}) error {
+func (r *TaskRepository) Reset(ctx context.Context, taskID string, runAt time.Time, payload interface{}) error {
 	query := `
-		UPDATE tasks
+		UPDATE jobs.tasks
 		SET status = $1, run_at = $2, payload = $3, finished_at = NULL, started_at = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $4::uuid
 	`

@@ -37,7 +37,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		return err
 	}
 
-	ownerID, _ := c.Get("user_id").(string)
+	ownerID := GetUserID(c)
 
 	// If user is not logged in, scope must be global
 	if ownerID == "" {
@@ -73,7 +73,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		Image:    imgInput,
 		Limit:    req.Limit,
 		Scope:    req.Scope,
-		OwnerID:  ownerID,
+		UserID:   ownerID,
 		FolderID: req.FolderID,
 	})
 	if err != nil {
@@ -93,9 +93,9 @@ func (h *MemeHandler) GetMeme(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := GetUserID(c)
 
-	meme, err := h.memeService.GetMemeView(c.Request().Context(), req.ID, userID)
+	meme, err := h.memeService.GetMemeView(c.Request().Context(), userID, req.ID)
 	if err != nil {
 		return err
 	}
@@ -114,9 +114,9 @@ func (h *MemeHandler) GetSimilar(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := GetUserID(c)
 
-	results, err := h.memeService.GetSimilarMemes(c.Request().Context(), req.ID, userID, req.Limit)
+	results, err := h.memeService.GetSimilarMemes(c.Request().Context(), userID, req.ID, req.Limit)
 	if err != nil {
 		return err
 	}
@@ -134,9 +134,9 @@ func (h *MemeHandler) BatchRetry(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := MustGetUserID(c)
 
-	if err := h.memeService.RetryProcessing(c.Request().Context(), req.IDs, userID); err != nil {
+	if err := h.memeService.RetryProcessing(c.Request().Context(), userID, req.IDs); err != nil {
 		return err
 	}
 
@@ -149,7 +149,7 @@ func (h *MemeHandler) Add(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := MustGetUserID(c)
 
 	node, err := h.fsService.AddAssetToRoot(c.Request().Context(), userID, req.ID)
 	if err != nil {

@@ -24,7 +24,7 @@ type CreateNodeRequest struct {
 }
 
 func (h *FileSystemHandler) CreateNode(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req CreateNodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
@@ -45,19 +45,29 @@ type GetNodeRequest struct {
 	ID string `param:"id" validate:"omitempty"` // Optional: if empty, gets root
 }
 
+type GetNodeResponse struct {
+	Node        *model.NodeView   `json:"node"`
+	Children    []*model.NodeView `json:"children"`
+	Breadcrumbs []*model.NodeView `json:"breadcrumbs"`
+}
+
 func (h *FileSystemHandler) GetNode(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req GetNodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	res, err := h.fsService.GetNode(c.Request().Context(), req.ID, ownerID)
+	result, err := h.fsService.GetNode(c.Request().Context(), ownerID, req.ID)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, res)
+	return c.JSON(http.StatusOK, GetNodeResponse{
+		Node:        result.Node,
+		Children:    result.Children,
+		Breadcrumbs: result.Breadcrumbs,
+	})
 }
 
 type BulkUpdateNodeItem struct {
@@ -71,7 +81,7 @@ type BulkUpdateNodesRequest struct {
 }
 
 func (h *FileSystemHandler) BulkUpdateNodes(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req BulkUpdateNodesRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
@@ -99,7 +109,7 @@ type BulkActionRequest struct {
 }
 
 func (h *FileSystemHandler) BulkDelete(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
@@ -112,7 +122,7 @@ func (h *FileSystemHandler) BulkDelete(c echo.Context) error {
 }
 
 func (h *FileSystemHandler) BulkMove(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
@@ -129,7 +139,7 @@ func (h *FileSystemHandler) BulkMove(c echo.Context) error {
 }
 
 func (h *FileSystemHandler) BulkCopy(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req BulkActionRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
@@ -160,7 +170,7 @@ func (h *FileSystemHandler) UploadMeme(c echo.Context) error {
 		req.ParentID = nil
 	}
 
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 
 	node, err := h.fsService.UploadMeme(c.Request().Context(), ownerID, req.ParentID, req.File)
 	if err != nil {

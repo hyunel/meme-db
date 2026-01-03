@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 
 export function useFolderPreview(folderId: string, enabled: boolean = true) {
   const { data, isLoading } = useSWR(
-    enabled ? [`/api/fs/nodes`, folderId] : null,
+    enabled ? [`/api/library`, folderId] : null,
     () => nodeList(folderId)
   )
 

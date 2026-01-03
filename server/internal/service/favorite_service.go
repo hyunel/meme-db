@@ -41,7 +41,12 @@ func (s *FavoriteService) ToggleFavorite(ctx context.Context, userID string, ite
 		return nil
 	}
 
-	// Group by Type and Favorite status to minimize DB calls
+	r, release, err := s.repo.Conn(ctx, userID)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	type key struct {
 		TargetType FavoriteTargetType
 		IsFavorite bool
@@ -55,9 +60,8 @@ func (s *FavoriteService) ToggleFavorite(ctx context.Context, userID string, ite
 	for k, targetIDs := range groups {
 		switch k.TargetType {
 		case FavoriteTargetMeme:
-			// Check access to assets
 			for _, id := range targetIDs {
-				exists, err := s.repo.Asset.HasAssetAccess(ctx, id, userID)
+				exists, err := r.Asset.HasAccess(ctx, id)
 				if err != nil {
 					return err
 				}
@@ -67,19 +71,18 @@ func (s *FavoriteService) ToggleFavorite(ctx context.Context, userID string, ite
 			}
 
 			if k.IsFavorite {
-				if err := s.repo.Favorite.AddAssetFavorite(ctx, userID, targetIDs); err != nil {
+				if err := r.Favorite.AddAssets(ctx, targetIDs); err != nil {
 					return err
 				}
 			} else {
-				if err := s.repo.Favorite.RemoveAssetFavorite(ctx, userID, targetIDs); err != nil {
+				if err := r.Favorite.RemoveAssets(ctx, targetIDs); err != nil {
 					return err
 				}
 			}
 
 		case FavoriteTargetFolder:
-			// Check nodes exist and are folders
 			for _, id := range targetIDs {
-				node, err := s.repo.Node.GetNode(ctx, id, userID)
+				node, err := r.Node.Get(ctx, id)
 				if err != nil {
 					return apperror.NotFound(fmt.Sprintf("folder %s not found", id))
 				}
@@ -89,11 +92,11 @@ func (s *FavoriteService) ToggleFavorite(ctx context.Context, userID string, ite
 			}
 
 			if k.IsFavorite {
-				if err := s.repo.Favorite.AddNodeFavorite(ctx, userID, targetIDs); err != nil {
+				if err := r.Favorite.AddNodes(ctx, targetIDs); err != nil {
 					return err
 				}
 			} else {
-				if err := s.repo.Favorite.RemoveNodeFavorite(ctx, userID, targetIDs); err != nil {
+				if err := r.Favorite.RemoveNodes(ctx, targetIDs); err != nil {
 					return err
 				}
 			}
@@ -112,8 +115,13 @@ type ListFavoritesResponse struct {
 }
 
 func (s *FavoriteService) ListFavorites(ctx context.Context, userID string) (*ListFavoritesResponse, error) {
-	// 1. Get favorite IDs from repo
-	assetIDs, nodeIDs, err := s.repo.Favorite.ListFavorites(ctx, userID)
+	r, release, err := s.repo.Conn(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	assetIDs, nodeIDs, err := r.Favorite.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +131,8 @@ func (s *FavoriteService) ListFavorites(ctx context.Context, userID string) (*Li
 		Folders: []*model.NodeView{},
 	}
 
-	// 2. Fetch Meme Views
 	if len(assetIDs) > 0 {
-		memes, err := s.memeService.GetMemeViews(ctx, assetIDs, userID)
+		memes, err := s.memeService.getMemeViews(ctx, r, assetIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -136,9 +143,8 @@ func (s *FavoriteService) ListFavorites(ctx context.Context, userID string) (*Li
 		}
 	}
 
-	// 3. Fetch Folder Nodes
 	if len(nodeIDs) > 0 {
-		nodes, err := s.repo.Node.GetNodes(ctx, nodeIDs, userID)
+		nodes, err := r.Node.GetMany(ctx, nodeIDs)
 		if err != nil {
 			return nil, err
 		}

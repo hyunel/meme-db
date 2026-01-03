@@ -22,7 +22,7 @@ type AddTagRequest struct {
 
 type RemoveTagRequest struct {
 	MemeID string `param:"id" validate:"required,uuid"`
-	TagID  string `param:"tag_id" validate:"required,uuid"`
+	TagID  string `param:"tagId" validate:"required,uuid"`
 }
 
 type GetMemeTagsRequest struct {
@@ -34,7 +34,7 @@ type GetTagMemesRequest struct {
 }
 
 type SearchTagsRequest struct {
-	Query string `query:"q" validate:"required,min=1"`
+	Query string `query:"q" validate:"omitempty,min=1"`
 }
 
 func (h *TagHandler) GetMemeTags(c echo.Context) error {
@@ -43,9 +43,9 @@ func (h *TagHandler) GetMemeTags(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := GetUserID(c)
 
-	tags, err := h.tagService.GetMemeTags(c.Request().Context(), req.MemeID, userID)
+	tags, err := h.tagService.GetMemeTags(c.Request().Context(), userID, req.MemeID)
 	if err != nil {
 		return err
 	}
@@ -73,9 +73,9 @@ func (h *TagHandler) GetTagMemes(c echo.Context) error {
 		return err
 	}
 
-	userID, _ := c.Get("user_id").(string)
+	userID := GetUserID(c)
 
-	tag, memes, err := h.tagService.GetTagMemes(c.Request().Context(), req.TagID, userID)
+	tag, memes, err := h.tagService.GetTagMemes(c.Request().Context(), userID, req.TagID)
 	if err != nil {
 		return err
 	}
@@ -87,13 +87,13 @@ func (h *TagHandler) GetTagMemes(c echo.Context) error {
 }
 
 func (h *TagHandler) AddTag(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req AddTagRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	tag, err := h.tagService.AddTagToMeme(c.Request().Context(), req.MemeID, ownerID, req.Name)
+	tag, err := h.tagService.AddTagToMeme(c.Request().Context(), ownerID, req.MemeID, req.Name)
 	if err != nil {
 		return err
 	}
@@ -102,12 +102,12 @@ func (h *TagHandler) AddTag(c echo.Context) error {
 }
 
 func (h *TagHandler) RemoveTag(c echo.Context) error {
-	ownerID := c.Get("user_id").(string)
+	ownerID := MustGetUserID(c)
 	var req RemoveTagRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	err := h.tagService.RemoveTagFromMeme(c.Request().Context(), req.MemeID, ownerID, req.TagID)
+	err := h.tagService.RemoveTagFromMeme(c.Request().Context(), ownerID, req.MemeID, req.TagID)
 	if err != nil {
 		return err
 	}

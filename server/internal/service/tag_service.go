@@ -20,50 +20,60 @@ func NewTagService(repo *repository.Provider, memeService *MemeService) *TagServ
 	}
 }
 
-func (s *TagService) GetMemeTags(ctx context.Context, assetID string, userID string) ([]*model.Tag, error) {
-	var uid *string
-	if userID != "" {
-		uid = &userID
+func (s *TagService) GetMemeTags(ctx context.Context, userID string, assetID string) ([]*model.Tag, error) {
+	r, release, err := s.repo.Conn(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
-	return s.repo.Tag.GetAssetTags(ctx, assetID, uid)
+	defer release()
+	return r.Tag.GetAssetTags(ctx, assetID)
 }
 
 func (s *TagService) SearchTags(ctx context.Context, query string) ([]*model.Tag, error) {
-	return s.repo.Tag.SearchTags(ctx, query)
+	return s.repo.Tag.Search(ctx, query)
 }
 
-func (s *TagService) AddTagToMeme(ctx context.Context, assetID string, userID string, tagName string) (*model.Tag, error) {
+func (s *TagService) AddTagToMeme(ctx context.Context, userID string, assetID string, tagName string) (*model.Tag, error) {
 	var tag *model.Tag
-	err := s.repo.Transaction(ctx, func(r *repository.Repositories) error {
+	err := s.repo.Tx(ctx, userID, func(r *repository.Repos) error {
 		var err error
-		tag, err = r.Tag.CreateTag(ctx, tagName)
+		tag, err = r.Tag.Create(ctx, tagName)
 		if err != nil {
 			return err
 		}
-
-		return r.Tag.AddAssetTag(ctx, assetID, tag.ID, &userID)
+		return r.Tag.AddToAsset(ctx, assetID, tag.ID)
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to add tag to meme: %w", err)
 	}
 
-	// Set type to USER for the response since the user just added it
 	tag.Type = "USER"
 	return tag, nil
 }
 
-func (s *TagService) RemoveTagFromMeme(ctx context.Context, assetID string, userID string, tagID string) error {
-	return s.repo.Tag.RemoveAssetTag(ctx, assetID, tagID, &userID)
+func (s *TagService) RemoveTagFromMeme(ctx context.Context, userID string, assetID string, tagID string) error {
+	r, release, err := s.repo.Conn(ctx, userID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return r.Tag.RemoveFromAsset(ctx, assetID, tagID)
 }
 
-func (s *TagService) GetTagMemes(ctx context.Context, tagID string, userID string) (*model.Tag, []*model.MemeView, error) {
-	tag, err := s.repo.Tag.GetTag(ctx, tagID)
+func (s *TagService) GetTagMemes(ctx context.Context, userID string, tagID string) (*model.Tag, []*model.MemeView, error) {
+	r, release, err := s.repo.Conn(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer release()
+
+	tag, err := r.Tag.Get(ctx, tagID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	assets, err := s.repo.Tag.GetAssetsByTag(ctx, tagID)
+	assets, err := r.Tag.GetAssetsByTag(ctx, tagID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -73,12 +83,11 @@ func (s *TagService) GetTagMemes(ctx context.Context, tagID string, userID strin
 		assetIDs[i] = a.ID
 	}
 
-	memeMap, err := s.memeService.GetMemeViews(ctx, assetIDs, userID)
+	memeMap, err := s.memeService.getMemeViews(ctx, r, assetIDs)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Maintain order from GetAssetsByTag
 	memes := make([]*model.MemeView, 0, len(assets))
 	for _, a := range assets {
 		if m, ok := memeMap[a.ID]; ok {

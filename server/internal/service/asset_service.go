@@ -14,36 +14,40 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
+type AssetServiceConfig struct {
+	StoragePath  string
+	JWTSecret    string
+	MaxSizeMB    float64
+	AllowedTypes []string
+	BatchSize    int
+}
+
 type AssetService struct {
-	cfg  *config.Config
+	cfg  AssetServiceConfig
 	repo *repository.Provider
 }
 
-func NewAssetService(cfg *config.Config, repo *repository.Provider) *AssetService {
+func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider) *AssetService {
 	return &AssetService{cfg: cfg, repo: repo}
 }
 
 func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
-	// 1. Check File Size
-	maxSizeBytes := int64(s.cfg.Upload.MaxSizeMB * 1024 * 1024)
+	maxSizeBytes := int64(s.cfg.MaxSizeMB * 1024 * 1024)
 	if fileHeader.Size > maxSizeBytes {
-		return "", apperror.BadRequest(fmt.Sprintf("file too large: %d bytes (max %.1f MB)", fileHeader.Size, s.cfg.Upload.MaxSizeMB))
+		return "", apperror.BadRequest(fmt.Sprintf("file too large: %d bytes (max %.1f MB)", fileHeader.Size, s.cfg.MaxSizeMB))
 	}
 
-	// 2. Check File Type
 	file, err := fileHeader.Open()
 	if err != nil {
 		return "", fmt.Errorf("failed to open file for validation: %w", err)
 	}
 	defer file.Close()
 
-	// Detect MIME type from content
 	buffer := make([]byte, 512)
 	n, err := file.Read(buffer)
 	if err != nil && err != io.EOF {
@@ -53,13 +57,12 @@ func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string,
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 
 	allowed := false
-	for _, pattern := range s.cfg.Upload.AllowedTypes {
+	for _, pattern := range s.cfg.AllowedTypes {
 		parts := strings.Split(pattern, ",")
 		if len(parts) == 0 {
 			continue
 		}
 
-		// MIME type check
 		if strings.HasSuffix(parts[0], "/*") {
 			prefix := strings.TrimSuffix(parts[0], "*")
 			if strings.HasPrefix(detectedMime, prefix) {
@@ -71,7 +74,6 @@ func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string,
 			break
 		}
 
-		// Extension check
 		for _, extPattern := range parts[1:] {
 			extPattern = strings.ToLower(strings.TrimSpace(extPattern))
 			if ext != extPattern {
@@ -100,29 +102,25 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 	}
 	defer file.Close()
 
-	// 1. Calculate Hash
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, file); err != nil {
 		return nil, fmt.Errorf("failed to hash file: %w", err)
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	// 2. Check if asset exists
-	existing, err := s.repo.Asset.GetAssetByHash(ctx, hash)
+	existing, err := s.repo.Asset.GetByHash(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
-
 	if existing != nil {
 		return existing, nil
 	}
 
-	// 3. Save file to storage
 	file.Seek(0, 0)
 
 	ext := filepath.Ext(fileHeader.Filename)
 	relPath := filepath.Join(hash[:2], hash[2:4], hash[4:]+ext)
-	absPath := filepath.Join(s.cfg.Server.StoragePath, relPath)
+	absPath := filepath.Join(s.cfg.StoragePath, relPath)
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
@@ -140,8 +138,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 	}
 
 	var asset *model.Asset
-	err = s.repo.Transaction(ctx, func(r *repository.Repositories) error {
-		// a. Create Asset Record
+	err = s.repo.TxNoRLS(ctx, func(txR *repository.Repos) error {
 		asset = &model.Asset{
 			FileHash:    hash,
 			FileSize:    fileHeader.Size,
@@ -149,23 +146,21 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 			Extension:   ext,
 			StoragePath: relPath,
 		}
-		if err := r.Asset.CreateAsset(ctx, asset); err != nil {
+		if err := txR.Asset.Create(ctx, asset); err != nil {
 			return err
 		}
 
-		// b. Create MemeInfo Stub
 		memeInfo := &model.MemeInfo{
 			AssetID:          asset.ID,
 			ProcessingStatus: model.ProcessingStatusPending,
 		}
-		if err := r.Meme.CreateMeme(ctx, memeInfo); err != nil {
+		if err := txR.Meme.Create(ctx, memeInfo); err != nil {
 			return fmt.Errorf("failed to create meme info stub: %w", err)
 		}
 
-		// c. Trigger Processing Task
-		_, err = r.Task.CreateTaskWithOpts(ctx, model.JobProcessMemes, map[string]any{
+		_, err = txR.Task.CreateWithOpts(ctx, model.JobProcessMemes, map[string]any{
 			"start_id":   asset.ID,
-			"batch_size": s.cfg.Inference.BatchSize,
+			"batch_size": s.cfg.BatchSize,
 		}, &repository.TaskOpts{Priority: model.PriorityHigh})
 		if err != nil {
 			return fmt.Errorf("failed to create processing task: %w", err)
@@ -183,18 +178,15 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 }
 
 func (s *AssetService) GetAssetURL(assetID string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.Server.JWTSecret))
+	h := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
 	h.Write([]byte(assetID))
 	fullSignature := h.Sum(nil)
-
-	// Take first 8 bytes and encode
 	signature := base64.RawURLEncoding.EncodeToString(fullSignature[:8])
-
 	return fmt.Sprintf("/api/assets/%s?token=%s", assetID, signature)
 }
 
 func (s *AssetService) VerifyAccessToken(assetID string, token string) error {
-	h := hmac.New(sha256.New, []byte(s.cfg.Server.JWTSecret))
+	h := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
 	h.Write([]byte(assetID))
 	fullSignature := h.Sum(nil)
 	expectedSignature := base64.RawURLEncoding.EncodeToString(fullSignature[:8])

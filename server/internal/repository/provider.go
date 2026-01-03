@@ -7,68 +7,64 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Repositories holds all repository interfaces.
-type Repositories struct {
-	User     UserRepo
-	Meme     MemeRepo
-	Asset    AssetRepo
-	Task     TaskRepo
-	Node     NodeRepo
-	Tag      TagRepo
-	Favorite FavoriteRepo
-}
-
-// Provider manages repositories and transactions.
-// It embeds Repositories to allow direct access to pool-based repos.
+// Provider manages database connections.
+// It embeds Repos for direct pool-based access (no RLS),
+// and provides Conn/Tx methods for RLS-enabled operations.
 type Provider struct {
-	Repositories
-	pool *pgxpool.Pool
+	*Repos // Embedded for direct access without RLS
+	pool   *pgxpool.Pool
 }
 
-// NewProvider creates a new Provider with pool-based repositories.
 func NewProvider(pool *pgxpool.Pool) *Provider {
 	return &Provider{
-		Repositories: Repositories{
-			User:     NewUserRepository(pool),
-			Meme:     NewMemeRepository(pool),
-			Asset:    NewAssetRepository(pool),
-			Task:     NewTaskRepository(pool),
-			Node:     NewNodeRepository(pool),
-			Tag:      NewTagRepository(pool),
-			Favorite: NewFavoriteRepository(pool),
-		},
-		pool: pool,
+		Repos: NewRepos(pool),
+		pool:  pool,
 	}
 }
 
-// Transaction executes a function within a database transaction.
-func (p *Provider) Transaction(ctx context.Context, fn func(*Repositories) error) error {
+// Pool returns the underlying connection pool.
+func (p *Provider) Pool() *pgxpool.Pool { return p.pool }
+
+// Conn acquires a connection with RLS context. Caller MUST call release().
+func (p *Provider) Conn(ctx context.Context, userID string) (*Repos, func(), error) {
+	conn, err := db.Acquire(ctx, p.pool, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return NewRepos(conn), conn.Release, nil
+}
+
+// Tx executes fn within a transaction with RLS context.
+func (p *Provider) Tx(ctx context.Context, userID string, fn func(*Repos) error) error {
+	conn, err := db.Acquire(ctx, p.pool, userID)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := fn(NewRepos(tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// TxNoRLS executes fn within a transaction without RLS context.
+// Use this for system-level operations that don't require user context.
+func (p *Provider) TxNoRLS(ctx context.Context, fn func(*Repos) error) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	// Create a new set of repositories bound to the transaction
-	txRepos := &Repositories{
-		User:     NewUserRepository(tx),
-		Meme:     NewMemeRepository(tx),
-		Asset:    NewAssetRepository(tx),
-		Task:     NewTaskRepository(tx),
-		Node:     NewNodeRepository(tx),
-		Tag:      NewTagRepository(tx),
-		Favorite: NewFavoriteRepository(tx),
-	}
-
-	if err := fn(txRepos); err != nil {
+	if err := fn(NewRepos(tx)); err != nil {
 		return err
 	}
-
 	return tx.Commit(ctx)
-}
-
-// Interface check
-func _(db db.DBTX) {
-	// Ensure Repositories can be constructed with DBTX
-	// This function is just for compilation checking if we mess up constructors
 }

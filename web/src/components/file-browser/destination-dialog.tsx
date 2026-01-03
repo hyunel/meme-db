@@ -38,7 +38,7 @@ export function DestinationDialog({
 
   // Use SWR to fetch nodes for the current location
   const { data: response, isLoading } = useSWR(
-    open ? [`/api/fs/nodes`, currentFolderId] : null,
+    open ? [`/api/library`, currentFolderId] : null,
     () => nodeList(currentFolderId)
   )
 

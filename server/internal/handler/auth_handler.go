@@ -2,10 +2,9 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/hyunel/MemeDB/internal/model"
-	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -69,7 +68,8 @@ func (h *AuthHandler) Login(c echo.Context) error {
 }
 
 func (h *AuthHandler) GetMe(c echo.Context) error {
-	userID := c.Get("user_id").(string)
+	userID := MustGetUserID(c)
+
 	user, err := h.authService.GetUser(c.Request().Context(), userID)
 	if err != nil {
 		return err
@@ -78,34 +78,8 @@ func (h *AuthHandler) GetMe(c echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-func (h *AuthHandler) IdentifyMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		authHeader := c.Request().Header.Get("Authorization")
-		if authHeader == "" {
-			return next(c)
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			return next(c)
-		}
-
-		claims, err := h.authService.ParseToken(parts[1])
-		if err != nil {
-			return next(c)
-		}
-
-		c.Set("user_id", claims.UserID)
-		return next(c)
-	}
-}
-
-func (h *AuthHandler) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		userID, ok := c.Get("user_id").(string)
-		if !ok || userID == "" {
-			return apperror.Unauthorized("unauthorized")
-		}
-		return next(c)
-	}
+// IdentityProvider returns the AuthService as an rbac.IdentityProvider.
+// Used to create the identity middleware.
+func (h *AuthHandler) IdentityProvider() rbac.IdentityProvider {
+	return h.authService
 }

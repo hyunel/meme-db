@@ -54,7 +54,7 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 	}
 
 	// 1. Fetch a batch of pending memes (+1 for next StartID)
-	memes, err := h.repo.Meme.GetPendingMemes(ctx, payload.StartID, payload.BatchSize)
+	memes, err := h.repo.Meme.GetPending(ctx, payload.StartID, payload.BatchSize)
 	if err != nil {
 		return fmt.Errorf("failed to get pending memes: %w", err)
 	}
@@ -77,14 +77,13 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 		g.Go(func() error {
 			if err := h.processMeme(gCtx, m); err != nil {
 				slog.Error("Meme processing failed", "asset_id", m.AssetID, "error", err)
-				// Explicitly mark as failed
-				_ = h.repo.Meme.UpdateMemeStatus(ctx, m.AssetID, model.ProcessingStatusFailed)
+				_ = h.repo.Meme.UpdateStatus(ctx, m.AssetID, model.ProcessingStatusFailed)
 			}
 			return nil
 		})
 	}
 
-	_ = g.Wait() // Ignore group error as we handle them individually
+	_ = g.Wait()
 
 	// 3. Update payload for next run
 	if payload.ShouldReschedule && nextStartID != "" {
@@ -99,7 +98,7 @@ func (h *ProcessMemesHandler) Handle(ctx context.Context, task *model.Task) erro
 
 func (h *ProcessMemesHandler) processMeme(ctx context.Context, meme *model.MemeInfo) error {
 	// 1. Prepare item
-	asset, err := h.repo.Asset.GetAsset(ctx, meme.AssetID)
+	asset, err := h.repo.Asset.Get(ctx, meme.AssetID)
 	if err != nil {
 		return fmt.Errorf("failed to get asset: %w", err)
 	}
@@ -153,7 +152,7 @@ func (h *ProcessMemesHandler) processMeme(ctx context.Context, meme *model.MemeI
 	meme.ProcessingStatus = model.ProcessingStatusSuccess
 	meme.AnalyzedAt = &now
 
-	if err := h.repo.Meme.CreateMeme(ctx, meme); err != nil {
+	if err := h.repo.Meme.Create(ctx, meme); err != nil {
 		return fmt.Errorf("failed to update meme in repo: %w", err)
 	}
 

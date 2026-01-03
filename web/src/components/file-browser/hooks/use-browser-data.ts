@@ -32,7 +32,7 @@ export function useBrowserData(user: User | null) {
   }, [])
 
   const { data, isLoading, error } = useSWR(
-    user ? ["/api/fs/nodes", currentFolderId] : null,
+    user ? ["/api/library", currentFolderId] : null,
     ([, id]) => nodeList(id),
     {
       refreshInterval: (data) => {
@@ -98,37 +98,37 @@ export function useBrowserData(user: User | null) {
 
   const createFolder = async (name: string) => {
     await nodeCreate({ name, type: "FOLDER", parent_id: currentFolderId })
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
   }
 
   const deleteItems = async (ids: string[]) => {
     await nodeBulkDelete(ids)
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
   }
 
   const moveItems = async (ids: string[], targetFolderId?: string) => {
     await nodeBulkMove(ids, targetFolderId || "")
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
     if (targetFolderId) {
-      mutate([`/api/fs/nodes`, targetFolderId])
+      mutate([`/api/library`, targetFolderId])
     }
   }
 
   const copyItems = async (ids: string[], targetFolderId?: string) => {
     await nodeBulkCopy(ids, targetFolderId || "")
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
     if (targetFolderId) {
-      mutate([`/api/fs/nodes`, targetFolderId])
+      mutate([`/api/library`, targetFolderId])
     }
   }
 
   const updateItems = async (items: (Partial<Node> & { id: string })[]) => {
     await nodeBulkUpdate(items)
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
   }
 
   const refresh = useCallback(() => {
-    mutate([`/api/fs/nodes`, currentFolderId])
+    mutate([`/api/library`, currentFolderId])
   }, [mutate, currentFolderId])
 
   return {

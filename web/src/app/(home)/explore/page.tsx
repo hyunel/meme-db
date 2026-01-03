@@ -15,7 +15,7 @@ export default function ExplorePage() {
   const { user } = useUser()
   const [searchQuery, setSearchQuery] = useState("")
 
-  const { data, isLoading } = useSWR("/api/explore/folders", exploreList)
+  const { data, isLoading } = useSWR("explore", exploreList)
 
   const featuredFolders = data?.featured || []
   const popularFolders = data?.popular || []

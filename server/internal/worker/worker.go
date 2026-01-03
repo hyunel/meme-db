@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	minBackoff  = 500 * time.Millisecond
-	maxBackoff  = 5 * time.Second
-	taskTimeout = 10 * time.Minute
+	minBackoff = 500 * time.Millisecond
+	maxBackoff = 5 * time.Second
 )
 
 var ErrRescheduled = errors.New("task rescheduled")
@@ -27,17 +26,12 @@ type Worker struct {
 	handlers map[string]TaskHandler
 }
 
-func NewWorker(
-	cfg *config.Config,
-	repo *repository.Provider,
-) (*Worker, error) {
-	w := &Worker{
+func NewWorker(cfg *config.Config, repo *repository.Provider) (*Worker, error) {
+	return &Worker{
 		cfg:      cfg,
 		repo:     repo,
 		handlers: make(map[string]TaskHandler),
-	}
-
-	return w, nil
+	}, nil
 }
 
 func (w *Worker) RegisterHandler(jobType string, handler TaskHandler) {
@@ -45,7 +39,6 @@ func (w *Worker) RegisterHandler(jobType string, handler TaskHandler) {
 }
 
 func (w *Worker) Start(ctx context.Context) {
-	// Start single queue loop
 	go func() {
 		backoff := minBackoff
 
@@ -56,9 +49,8 @@ func (w *Worker) Start(ctx context.Context) {
 			default:
 				processed := w.processNext(ctx)
 				if processed {
-					backoff = minBackoff // Reset backoff on success
+					backoff = minBackoff
 				} else {
-					// No task, sleep with backoff
 					select {
 					case <-ctx.Done():
 						return
@@ -79,8 +71,9 @@ func (w *Worker) Start(ctx context.Context) {
 
 func (w *Worker) processNext(ctx context.Context) bool {
 	var processed bool
-	err := w.repo.Transaction(ctx, func(r *repository.Repositories) error {
-		task, err := r.Task.GetNextPendingTask(ctx)
+
+	err := w.repo.TxNoRLS(ctx, func(r *repository.Repos) error {
+		task, err := r.Task.GetNextPending(ctx)
 		if err != nil {
 			return err
 		}
@@ -97,15 +90,14 @@ func (w *Worker) processNext(ctx context.Context) bool {
 		if !ok {
 			procErr = fmt.Errorf("no handler for job type: %s", task.JobType)
 		} else {
-			// We could wrap this in a panic handler to ensure worker doesn't crash
 			func() {
 				defer func() {
-					if r := recover(); r != nil {
-						procErr = fmt.Errorf("panic in handler: %v", r)
+					if rec := recover(); rec != nil {
+						procErr = fmt.Errorf("panic in handler: %v", rec)
 					}
 				}()
 
-				handlerCtx, cancel := context.WithTimeout(ctx, taskTimeout)
+				handlerCtx, cancel := context.WithTimeout(ctx, time.Duration(model.TaskProcessingTimeout)*time.Minute)
 				defer cancel()
 
 				procErr = handler.Handle(handlerCtx, task)
@@ -114,7 +106,7 @@ func (w *Worker) processNext(ctx context.Context) bool {
 
 		if errors.Is(procErr, ErrRescheduled) {
 			slog.Info("Task rescheduled by handler", "id", task.ID)
-			return r.Task.ResetTask(ctx, task.ID, time.Now(), task.Payload)
+			return r.Task.Reset(ctx, task.ID, time.Now(), task.Payload)
 		}
 
 		// Handle Cron rescheduling regardless of success/failure
@@ -123,7 +115,6 @@ func (w *Worker) processNext(ctx context.Context) bool {
 			if err != nil {
 				slog.Error("Invalid cron expression", "id", task.ID, "cron", *task.Cron, "error", err)
 			} else {
-				// Prepare history record logic
 				now := time.Now()
 				historyStatus := model.TaskStatusCompleted
 				var errMsg *string
@@ -133,15 +124,13 @@ func (w *Worker) processNext(ctx context.Context) bool {
 					errMsg = &msg
 				}
 
-				// Atomic Reschedule: Create History -> Reset Task
-				if err := r.Task.CreateHistoryFromTask(ctx, task.ID, historyStatus, &now, errMsg); err != nil {
+				if err := r.Task.CreateHistory(ctx, task.ID, historyStatus, &now, errMsg); err != nil {
 					return err
 				}
-				if err := r.Task.ResetTask(ctx, task.ID, next, task.Payload); err != nil {
+				if err := r.Task.Reset(ctx, task.ID, next, task.Payload); err != nil {
 					return err
 				}
 
-				// If there was an error in execution, we log it but still rescheduled.
 				if procErr != nil {
 					slog.Error("Task execution failed before rescheduling", "id", task.ID, "error", procErr)
 				} else {
@@ -162,7 +151,7 @@ func (w *Worker) processNext(ctx context.Context) bool {
 			slog.Info("Task completed", "id", task.ID)
 		}
 
-		return r.Task.UpdateTaskStatus(ctx, task.ID, status, errMsg)
+		return r.Task.UpdateStatus(ctx, task.ID, status, errMsg)
 	})
 
 	if err != nil {

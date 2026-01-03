@@ -41,20 +41,10 @@ type User struct {
 	Username     string    `json:"username" db:"username"`
 	Email        string    `json:"email" db:"email"`
 	PasswordHash string    `json:"-" db:"password_hash"`
+	Role         string    `json:"role" db:"role"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
-
-type NodeType string
-type Visibility string
-
-const (
-	NodeTypeFolder NodeType   = "FOLDER"
-	NodeTypeFile   NodeType   = "FILE"
-	VisibilityPriv Visibility = "PRIVATE"
-	VisibilityPub  Visibility = "PUBLIC"
-	VisibilityLink Visibility = "LINK"
-)
 
 type Node struct {
 	ID          string     `json:"id" db:"id"`
@@ -95,16 +85,6 @@ type Task struct {
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
-
-const (
-	TaskStatusPending   = "pending"
-	TaskStatusCompleted = "completed"
-	TaskStatusFailed    = "failed"
-)
-
-const (
-	JobProcessMemes = "process_memes"
-)
 
 // ==============================================================================
 // Aggregated Views (DTOs)

@@ -23,7 +23,7 @@ func (h *FavoriteHandler) Toggle(c echo.Context) error {
 		return err
 	}
 
-	userID := c.Get("user_id").(string)
+	userID := MustGetUserID(c)
 
 	if err := h.favService.ToggleFavorite(c.Request().Context(), userID, req); err != nil {
 		return err
@@ -33,7 +33,7 @@ func (h *FavoriteHandler) Toggle(c echo.Context) error {
 }
 
 func (h *FavoriteHandler) List(c echo.Context) error {
-	userID := c.Get("user_id").(string)
+	userID := MustGetUserID(c)
 
 	res, err := h.favService.ListFavorites(c.Request().Context(), userID)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/pkg/logger"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/pkg/validator"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/hyunel/MemeDB/internal/service"
@@ -55,9 +56,23 @@ func main() {
 	defer inferClient.Close()
 
 	// 5. Setup Services
-	authService := service.NewAuthService(cfg, repo)
-	assetService := service.NewAssetService(cfg, repo)
-	memeService := service.NewMemeService(cfg, repo, assetService, inferClient)
+	authService := service.NewAuthService(service.AuthServiceConfig{
+		JWTSecret: cfg.Server.JWTSecret,
+	}, repo)
+
+	assetService := service.NewAssetService(service.AssetServiceConfig{
+		StoragePath:  cfg.Server.StoragePath,
+		JWTSecret:    cfg.Server.JWTSecret,
+		MaxSizeMB:    cfg.Upload.MaxSizeMB,
+		AllowedTypes: cfg.Upload.AllowedTypes,
+		BatchSize:    cfg.Inference.BatchSize,
+	}, repo)
+
+	memeService := service.NewMemeService(service.MemeServiceConfig{
+		RetrievalPrompt: cfg.Prompt.Retrieval,
+		BatchSize:       cfg.Inference.BatchSize,
+	}, repo, assetService, inferClient)
+
 	fsService := service.NewFileSystemService(repo, memeService, assetService)
 	favService := service.NewFavoriteService(repo, memeService, assetService)
 	tagService := service.NewTagService(repo, memeService)
@@ -105,51 +120,12 @@ func main() {
 	}))
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
-	e.Use(authHandler.IdentifyMiddleware)
 
-	api := e.Group("/api")
-	api.Use(authHandler.AuthMiddleware)
+	// Global identity middleware - sets identity for all requests
+	e.Use(rbac.IdentityMiddleware(authHandler.IdentityProvider()))
 
 	// 9. Setup Routes
-	e.GET("/api/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-	})
-	e.POST("/api/search", memeHandler.Search)
-
-	// Auth
-	e.POST("/api/auth/register", authHandler.Register)
-	e.POST("/api/auth/login", authHandler.Login)
-	api.GET("/auth/me", authHandler.GetMe)
-
-	// Meme
-	e.GET("/api/memes/:id", memeHandler.GetMeme)
-	e.GET("/api/memes/:id/similar", memeHandler.GetSimilar)
-	api.POST("/memes/retry", memeHandler.BatchRetry)
-	api.POST("/memes/:id/add", memeHandler.Add)
-
-	// Asset
-	e.GET("/api/assets/:id", assetHandler.GetAssetContent)
-
-	// FileSystem
-	api.POST("/fs/nodes", fsHandler.CreateNode)
-	api.GET("/fs/nodes", fsHandler.GetNode) // List root
-	api.GET("/fs/nodes/:id", fsHandler.GetNode)
-	api.PATCH("/fs/nodes", fsHandler.BulkUpdateNodes)
-	api.DELETE("/fs/nodes", fsHandler.BulkDelete)
-	api.POST("/fs/nodes/move", fsHandler.BulkMove)
-	api.POST("/fs/nodes/copy", fsHandler.BulkCopy)
-	api.POST("/fs/upload", fsHandler.UploadMeme)
-
-	// Favorites
-	api.GET("/favorites", favHandler.List)
-	api.POST("/favorites", favHandler.Toggle)
-
-	// Tags
-	e.GET("/api/tags/search", tagHandler.SearchTags)
-	e.GET("/api/tags/:id", tagHandler.GetTagMemes)
-	e.GET("/api/memes/:id/tags", tagHandler.GetMemeTags)
-	api.POST("/memes/:id/tags", tagHandler.AddTag)
-	api.DELETE("/memes/:id/tags/:tag_id", tagHandler.RemoveTag)
+	setupRoutes(e, authHandler, memeHandler, fsHandler, assetHandler, favHandler, tagHandler)
 
 	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -157,4 +133,63 @@ func main() {
 	if err := e.Start(addr); err != nil {
 		slog.Error("Server failed", "error", err)
 	}
+}
+
+func setupRoutes(
+	e *echo.Echo,
+	auth *handler.AuthHandler,
+	meme *handler.MemeHandler,
+	fs *handler.FileSystemHandler,
+	asset *handler.AssetHandler,
+	fav *handler.FavoriteHandler,
+	tag *handler.TagHandler,
+) {
+	api := e.Group("/api")
+
+	// Health
+	api.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// Auth (public)
+	api.POST("/auth/register", auth.Register)
+	api.POST("/auth/login", auth.Login)
+	api.GET("/auth/me", auth.GetMe, rbac.RequireAuth())
+
+	// ===== Public Routes (guest readable) =====
+	api.POST("/search", meme.Search)
+	api.GET("/assets/:id", asset.GetAssetContent)
+
+	// Memes
+	api.GET("/memes/:id", meme.GetMeme)
+	api.GET("/memes/:id/similar", meme.GetSimilar)
+	api.GET("/memes/:id/tags", tag.GetMemeTags)
+
+	// Tags
+	api.GET("/tags", tag.SearchTags)
+	api.GET("/tags/:id/memes", tag.GetTagMemes)
+
+	// ===== Protected Routes (authenticated) =====
+	priv := api.Group("", rbac.RequireAuth())
+
+	// Meme operations
+	priv.POST("/memes/retry", meme.BatchRetry)
+	priv.POST("/memes/:id/save", meme.Add)
+	priv.POST("/memes/:id/tags", tag.AddTag)
+	priv.DELETE("/memes/:id/tags/:tagId", tag.RemoveTag)
+
+	// Library (FileSystem)
+	lib := priv.Group("/library")
+	lib.GET("", fs.GetNode)
+	lib.GET("/:id", fs.GetNode)
+	lib.POST("/folders", fs.CreateNode)
+	lib.POST("/upload", fs.UploadMeme)
+	lib.PATCH("/nodes", fs.BulkUpdateNodes)
+	lib.DELETE("/nodes", fs.BulkDelete)
+	lib.POST("/nodes/move", fs.BulkMove)
+	lib.POST("/nodes/copy", fs.BulkCopy)
+
+	// Favorites
+	priv.GET("/favorites", fav.List)
+	priv.POST("/favorites", fav.Toggle)
 }

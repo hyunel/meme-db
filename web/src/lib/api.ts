@@ -116,39 +116,40 @@ export interface GetNodeResponse {
 }
 
 export function nodeList(id: string = ''): Promise<GetNodeResponse> {
-    return request(`/api/fs/nodes/${id}`);
+    const path = id ? `/api/library/${id}` : '/api/library';
+    return request(path);
 }
 
-export function nodeCreate(data: { name: string; type: 'FOLDER' | 'FILE'; parent_id: string }): Promise<Node> {
-    return request('/api/fs/nodes', {
+export function nodeCreate(data: { name: string; type: 'FOLDER' | 'FILE'; parent_id?: string }): Promise<Node> {
+    return request('/api/library/folders', {
         method: 'POST',
         json: data,
     });
 }
 
 export function nodeBulkDelete(ids: string[]): Promise<void> {
-    return request('/api/fs/nodes', {
+    return request('/api/library/nodes', {
         method: 'DELETE',
         json: { ids },
     });
 }
 
 export function nodeBulkUpdate(items: Partial<Node>[]): Promise<Node[]> {
-    return request('/api/fs/nodes', {
+    return request('/api/library/nodes', {
         method: 'PATCH',
         json: { items },
     });
 }
 
 export function nodeBulkMove(ids: string[], destParentId: string): Promise<void> {
-    return request('/api/fs/nodes/move', {
+    return request('/api/library/nodes/move', {
         method: 'POST',
         json: { ids, dest_parent_id: destParentId },
     });
 }
 
 export function nodeBulkCopy(ids: string[], destParentId: string): Promise<void> {
-    return request('/api/fs/nodes/copy', {
+    return request('/api/library/nodes/copy', {
         method: 'POST',
         json: { ids, dest_parent_id: destParentId },
     });
@@ -161,7 +162,7 @@ export function nodeUpload(
 ): Promise<Node> {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        const url = `${process.env.NEXT_PUBLIC_API_BASE || ''}/api/fs/upload`;
+        const url = `${process.env.NEXT_PUBLIC_API_BASE || ''}/api/library/upload`;
 
         xhr.open('POST', url);
 
@@ -277,7 +278,7 @@ export function memeRetry(ids: string[]): Promise<void> {
 }
 
 export function memeAdd(id: string): Promise<Node> {
-    return request(`/api/memes/${id}/add`, {
+    return request(`/api/memes/${id}/save`, {
         method: 'POST',
     });
 }
@@ -301,7 +302,7 @@ export function tagRemoveFromMeme(memeId: string, tagId: string): Promise<void> 
 }
 
 export function tagSearch(query: string): Promise<Tag[]> {
-    return request('/api/tags/search', {
+    return request('/api/tags', {
         method: 'GET',
         params: { q: query },
     });
@@ -313,7 +314,7 @@ export interface GetTagMemesResponse {
 }
 
 export function tagGetMemes(id: string): Promise<GetTagMemesResponse> {
-    return request(`/api/tags/${id}`);
+    return request(`/api/tags/${id}/memes`);
 }
 
 /* Favorite APIs */
@@ -342,6 +343,8 @@ export function favoriteToggle(
 }
 
 /* Explore APIs */
+// TODO: Backend does not have explore API yet.
+// Disabling or removing if not used.
 export interface ListExploreFoldersResponse {
     featured: Node[];
     popular: Node[];
@@ -349,5 +352,6 @@ export interface ListExploreFoldersResponse {
 }
 
 export function exploreList(): Promise<ListExploreFoldersResponse> {
-    return request('/api/explore');
+    return Promise.resolve({ featured: [], popular: [], all: [] });
+    // return request('/api/explore');
 }
