@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package inference;
+
+option go_package = "github.com/hyunel/MemeDB/server/internal/pb";
+
+service InferenceService {
+  // Single text embedding using Qwen
+  rpc TextEmbedding (TextEmbeddingRequest) returns (TextEmbeddingResponse);
+
+  // Single image embedding using CLIP
+  rpc ClipImageEmbedding (ClipImageEmbeddingRequest) returns (ClipImageEmbeddingResponse);
+
+  // Single text embedding using CLIP
+  rpc ClipTextEmbedding (ClipTextEmbeddingRequest) returns (ClipTextEmbeddingResponse);
+
+  // Rerank text pair using Qwen
+  rpc Rerank (RerankRequest) returns (RerankResponse);
+
+  // Caption image using VLM
+  rpc ImageCaption (ImageCaptionRequest) returns (ImageCaptionResponse);
+}
+
+message TaskOptions {
+  int32 priority = 1; // 0 = default, higher is better
+}
+
+message Image {
+  bytes data = 1;
+  string file_format = 2;
+}
+
+message Embedding {
+  repeated float values = 1;
+}
+
+message TextEmbeddingRequest {
+  TaskOptions options = 1;
+  string text = 2;
+  string task_description = 3;
+}
+
+message TextEmbeddingResponse {
+  Embedding embedding = 1;
+}
+
+message ClipImageEmbeddingRequest {
+  TaskOptions options = 1;
+  Image image = 2;
+}
+
+message ClipImageEmbeddingResponse {
+  Embedding embedding = 1;
+}
+
+message ClipTextEmbeddingRequest {
+  TaskOptions options = 1;
+  string text = 2;
+}
+
+message ClipTextEmbeddingResponse {
+  Embedding embedding = 1;
+}
+
+message RerankRequest {
+  TaskOptions options = 1;
+  string query = 2;
+  string document = 3;
+  string task_description = 4;
+}
+
+message RerankResponse {
+  float score = 1;
+}
+
+message ImageCaptionRequest {
+  TaskOptions options = 1;
+  Image image = 2;
+  string prompt = 3;
+}
+
+message ImageCaptionResponse {
+  string caption = 1;
+  int32 width = 2;
+  int32 height = 3;
+  Embedding clip_embedding = 4;
+}

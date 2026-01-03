@@ -1,0 +1,39 @@
+# Global concurrency for CPU resource manager
+concurrency: 8
+
+vlm:
+  # Change it according to your GPU memory capacity
+  batch_size: 4
+
+  # Change it according to your API rate limits
+  concurrency: 8
+
+  # Option 1: Use local transformers model (Qwen2-VL, etc.)
+  # provider: "local"
+  # local:
+  #   model: "Qwen/Qwen3-VL-2B-Instruct"  # HuggingFace model ID
+
+  # Option 2: Use OpenAI-compatible API (Gemini, GLM, OpenAI, etc.)
+  provider: "openai"
+  openai:
+    model: "gemini-2.5-flash"
+    api_key: "${GEMINI_API_KEY}"  # Environment variable
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+  # openai:
+  #   model: "gpt-4o"
+  #   api_key: "${OPENAI_API_KEY}"
+
+  # openai:
+  #   model: "glm-4v-flash"
+  #   api_key: "${GLM_API_KEY}"
+  #   base_url: "https://open.bigmodel.cn/api/paas/v4/"
+
+clip:
+  batch_size: 64
+
+embedding:
+  batch_size: 16
+
+reranker:
+  batch_size: 16
