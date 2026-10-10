@@ -59,7 +59,9 @@ MemeDB/
 - **Transaction Management**:
   - Transactions must be managed at the Service layer using the `repository.Provider`.
   - For simple queries, use the default repositories provided by the `Provider` (e.g., `s.repo.User.Get`).
-  - For multiple operations requiring atomicity, use the `Transaction` helper.
+  - For multiple operations requiring atomicity, use the `Transaction` helper (`Provider.Tx`).
+- **Access Control**: Enforced explicitly in repository queries (owner / visibility filters); there is no row-level security. A node is public if it or an ancestor folder is public (`library.public_files`).
+- **Schema**: `server/sql/init.sql` creates a fresh database; `server/sql/migrations/` upgrades existing ones.
 
 ### Protobuf Workflow
 - **Definition**: Protocol buffers are defined in `protos/`.

@@ -1,0 +1,428 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, RefreshCw, Search } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+
+export function AdminPageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
+  return (
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+    </header>
+  )
+}
+
+export function useDebounced<T>(value: T, ms = 300) {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return v
+}
+
+/** Ticks a clock so relative/elapsed values re-render while enabled. */
+export function useNow(enabled: boolean, ms = 1000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!enabled) return
+    const id = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(id)
+  }, [enabled, ms])
+  return now
+}
+
+export function SearchInput({ value, onChange, placeholder, className }: { value: string; onChange: (v: string) => void; placeholder: string; className?: string }) {
+  return (
+    <div className={cn('relative min-w-0 flex-1 sm:max-w-xs', className)}>
+      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+      <Input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} className="h-10 pl-9 text-base md:h-9 md:text-sm" />
+    </div>
+  )
+}
+
+export function FilterSelect<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  className,
+}: {
+  value: T
+  onChange: (v: T) => void
+  options: readonly (readonly [T, string])[]
+  label: string
+  className?: string
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as T)}>
+      <SelectTrigger aria-label={label} className={cn('h-10 min-w-28 md:h-9', className)}>
+        <SelectValue>{(v: T) => options.find((o) => o[0] === v)?.[1] ?? label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([v, l]) => (
+          <SelectItem key={v} value={v}>
+            {l}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+export function Toolbar({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2">{children}</div>
+}
+
+export function RefreshControls({ auto, onAutoChange, onRefresh }: { auto?: boolean; onAutoChange?: (v: boolean) => void; onRefresh: () => void }) {
+  const [spin, setSpin] = useState(false)
+  return (
+    <div className="flex items-center gap-3">
+      {onAutoChange && (
+        <div className="flex items-center gap-2">
+          <Switch id="auto-refresh" checked={auto} onCheckedChange={onAutoChange} />
+          <Label htmlFor="auto-refresh" className="text-sm font-normal whitespace-nowrap">
+            自动刷新
+          </Label>
+        </div>
+      )}
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="刷新"
+        onClick={() => {
+          setSpin(true)
+          onRefresh()
+          setTimeout(() => setSpin(false), 500)
+        }}
+        className="size-10 md:size-9"
+      >
+        <RefreshCw className={cn(spin && 'animate-spin')} />
+      </Button>
+    </div>
+  )
+}
+
+export function CopyId({ value, className }: { value: string; className?: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <span className={cn('inline-flex max-w-full items-center gap-1 font-mono text-xs', className)}>
+      <span className="truncate">{value}</span>
+      <button
+        type="button"
+        aria-label={`复制 ${value}`}
+        className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        onClick={async (e) => {
+          e.stopPropagation()
+          e.preventDefault()
+          try {
+            await navigator.clipboard.writeText(value)
+            setDone(true)
+            setTimeout(() => setDone(false), 1200)
+          } catch {
+            toast.error('复制失败')
+          }
+        }}
+      >
+        {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </button>
+    </span>
+  )
+}
+
+export function ExpandableText({ text, max = 40 }: { text: string; max?: number }) {
+  const [open, setOpen] = useState(false)
+  if (text.length <= max) return <span>{text}</span>
+  return (
+    <span>
+      {open ? text : `${text.slice(0, max)}…`}{' '}
+      <button type="button" className="text-xs font-medium underline underline-offset-2" onClick={() => setOpen(!open)}>
+        {open ? '收起' : '展开'}
+      </button>
+    </span>
+  )
+}
+
+/* ------------------------------- pagination ------------------------------- */
+
+/** Page state of a server-paged list; it returns to page 1 whenever resetKey changes. */
+export function usePaging(resetKey: string, initialSize = 20) {
+  const [state, setState] = useState({ key: resetKey, page: 1 })
+  const [pageSize, setPageSize] = useState(initialSize)
+  const page = state.key === resetKey ? state.page : 1
+  return {
+    page,
+    pageSize,
+    /** Query parameters for the list endpoint. */
+    query: { page, page_size: pageSize },
+    /** Changes whenever the visible rows may change; selections reset with it. */
+    pageKey: `${resetKey}|${page}|${pageSize}`,
+    setPage: (p: number) => setState({ key: resetKey, page: Math.max(1, p) }),
+    setPageSize: (n: number) => {
+      setPageSize(n)
+      setState({ key: resetKey, page: 1 })
+    },
+  }
+}
+
+export type Paging = ReturnType<typeof usePaging>
+
+export function Pagination({ paging, total }: { paging: Paging; total: number }) {
+  const [jump, setJump] = useState('')
+  const { page, pageSize } = paging
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  return (
+    <nav aria-label="分页" className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="tabular-nums">共 {total} 条</span>
+        <Select value={String(pageSize)} onValueChange={(v) => paging.setPageSize(Number(v))}>
+          <SelectTrigger aria-label="每页条数" className="h-9 w-24">
+            <SelectValue>{(v: string) => `${v} 条/页`}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {[10, 20, 50, 100].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} 条/页
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label="上一页" disabled={page <= 1} onClick={() => paging.setPage(Math.min(page, pageCount) - 1)}>
+          <ChevronLeft />
+        </Button>
+        <span className="min-w-16 text-center tabular-nums" aria-live="polite">
+          {page} / {pageCount}
+        </span>
+        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label="下一页" disabled={page >= pageCount} onClick={() => paging.setPage(page + 1)}>
+          <ChevronRight />
+        </Button>
+        <form
+          className="ml-auto flex items-center gap-1 sm:ml-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const n = Number(jump)
+            if (Number.isInteger(n) && n >= 1) paging.setPage(Math.min(n, pageCount))
+            setJump('')
+          }}
+        >
+          <Input inputMode="numeric" value={jump} onChange={(e) => setJump(e.target.value.replace(/\D/g, ''))} aria-label="跳转到页码" placeholder="页码" className="h-10 w-16 text-base md:h-9 md:text-sm" />
+          <Button type="submit" variant="ghost" className="h-10 md:h-9" disabled={!jump}>
+            跳转
+          </Button>
+        </form>
+      </div>
+    </nav>
+  )
+}
+
+/* -------------------------------- data list -------------------------------- */
+
+export interface Column<T> {
+  key: string
+  header: string
+  cell: (row: T) => React.ReactNode
+  /** title: card heading on mobile; hidden: desktop only */
+  mobile?: 'title' | 'field' | 'hidden'
+  className?: string
+}
+
+/** Table on desktop, stacked cards on mobile. */
+export function DataList<T>({
+  rows,
+  columns,
+  getId,
+  selected,
+  onSelectedChange,
+  actions,
+  empty,
+  rowLabel,
+  loading = false,
+}: {
+  rows: T[]
+  columns: Column<T>[]
+  getId: (row: T) => string
+  selected?: Set<string>
+  onSelectedChange?: (s: Set<string>) => void
+  actions?: (row: T) => React.ReactNode
+  empty: React.ReactNode
+  rowLabel: (row: T) => string
+  loading?: boolean
+}) {
+  const selectable = Boolean(selected && onSelectedChange)
+  const ids = rows.map(getId)
+  const all = selectable && ids.length > 0 && ids.every((id) => selected!.has(id))
+  const some = selectable && ids.some((id) => selected!.has(id))
+  const toggle = (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectedChange!(next)
+  }
+  const title = columns.find((c) => c.mobile === 'title')
+  const fields = columns.filter((c) => c.mobile !== 'title' && c.mobile !== 'hidden')
+
+  if (loading)
+    return (
+      <div className="flex h-40 items-center justify-center rounded-xl border bg-card text-muted-foreground" aria-busy="true">
+        <Loader2 className="size-5 animate-spin" aria-label="加载中" />
+      </div>
+    )
+  if (!rows.length) return <div className="rounded-xl border bg-card">{empty}</div>
+
+  const RowMenu = ({ row }: { row: T }) =>
+    actions ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={`${rowLabel(row)} 的操作`} className="size-10 md:size-8" />}>
+          <MoreHorizontal />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          {actions(row)}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null
+
+  return (
+    <>
+      <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {selectable && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    aria-label="全选本页"
+                    checked={all}
+                    indeterminate={!all && some}
+                    onCheckedChange={() => onSelectedChange!(all ? new Set() : new Set(ids))}
+                  />
+                </TableHead>
+              )}
+              {columns.map((c) => (
+                <TableHead key={c.key} className={c.className}>
+                  {c.header}
+                </TableHead>
+              ))}
+              {actions && (
+                <TableHead className="w-12">
+                  <span className="sr-only">操作</span>
+                </TableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const id = getId(r)
+              return (
+                <TableRow key={id} data-state={selected?.has(id) ? 'selected' : undefined}>
+                  {selectable && (
+                    <TableCell>
+                      <Checkbox aria-label={`选择 ${rowLabel(r)}`} checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />
+                    </TableCell>
+                  )}
+                  {columns.map((c) => (
+                    <TableCell key={c.key} className={c.className}>
+                      {c.cell(r)}
+                    </TableCell>
+                  ))}
+                  {actions && (
+                    <TableCell>
+                      <RowMenu row={r} />
+                    </TableCell>
+                  )}
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex flex-col gap-2 md:hidden">
+        {selectable && (
+          <label className="flex h-10 items-center gap-2 px-1 text-sm text-muted-foreground">
+            <Checkbox checked={all} indeterminate={!all && some} onCheckedChange={() => onSelectedChange!(all ? new Set() : new Set(ids))} />
+            全选本页
+          </label>
+        )}
+        <ul className="flex flex-col gap-2">
+          {rows.map((r) => {
+            const id = getId(r)
+            return (
+              <li key={id} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', selected?.has(id) && 'border-foreground/40 bg-muted/40')}>
+                <div className="flex items-start gap-3">
+                  {selectable && <Checkbox aria-label={`选择 ${rowLabel(r)}`} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
+                  <div className="min-w-0 flex-1">{title?.cell(r)}</div>
+                  <div className="-mt-1 -mr-1">
+                    <RowMenu row={r} />
+                  </div>
+                </div>
+                {fields.length > 0 && (
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    {fields.map((c) => (
+                      <div key={c.key} className="flex min-w-0 flex-col gap-0.5">
+                        <dt className="text-xs text-muted-foreground">{c.header}</dt>
+                        <dd className="min-w-0">{c.cell(r)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </>
+  )
+}
+
+/* ------------------------------- bulk actions ------------------------------ */
+
+export function BulkBar({ count, onClear, children }: { count: number; onClear: () => void; children: React.ReactNode }) {
+  if (!count) return null
+  return (
+    <div
+      role="toolbar"
+      aria-label="批量操作"
+      className="sticky bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap items-center gap-2 rounded-xl border bg-foreground px-3 py-2 text-background shadow-lg"
+    >
+      <span className="text-sm tabular-nums">已选 {count} 项</span>
+      <div className="flex flex-1 flex-wrap justify-end gap-2 [&_button]:h-9">{children}</div>
+      <Button size="sm" variant="ghost" className="h-9 text-background hover:bg-background/15 hover:text-background" onClick={onClear}>
+        取消
+      </Button>
+    </div>
+  )
+}
+
+export function StatCard({ label, value, hint, href, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; href?: string; tone?: 'danger' | 'warn' }) {
+  const body = (
+    <>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn('text-2xl font-semibold tabular-nums', tone === 'danger' && 'text-destructive', tone === 'warn' && 'text-[oklch(0.5_0.13_70)]')}>{value}</span>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </>
+  )
+  const cls = 'flex min-w-0 flex-col gap-1 rounded-xl border bg-card p-4'
+  return href ? (
+    <Link href={href} className={cn(cls, 'transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none')}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
+  )
+}
