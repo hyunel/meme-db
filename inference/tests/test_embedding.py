@@ -1,23 +1,20 @@
 import pytest
 import numpy as np
 from PIL import Image
+from app.config import ModelConfig, ModelType
 from app.manager import ModelManager
 
 @pytest.fixture(scope="module")
 def manager():
     print("Loading models...")
-    mgr = ModelManager()
-    mgr.load_models()
-    return mgr
+    return ModelManager(ModelConfig.from_yaml("models.yaml")).load_models()
 
 def test_text_embedding(manager):
     print("Testing Text Embedding...")
-    text_model = manager.text_embedding
+    text_model = manager[ModelType.TEXT_EMBEDDING]
     texts = ["Hello?", "How are you?", "Goodbye."]
-    descs = ["", "", ""]
 
-    embeddings = text_model.get_embedding(texts, descs)
-    text_embed1, text_embed2, text_embed3 = embeddings
+    text_embed1, text_embed2, text_embed3 = text_model.get_embedding([(t, "") for t in texts])
 
     text_embed_score1 = np.array(text_embed1) @ np.array(text_embed2).T
     text_embed_score2 = np.array(text_embed1) @ np.array(text_embed3).T
@@ -27,19 +24,17 @@ def test_text_embedding(manager):
 
 def test_reranker(manager):
     print("Testing Reranker...")
-    reranker_model = manager.reranker
+    reranker_model = manager[ModelType.RERANKER]
     pairs = [("What is AI?", "AI is the simulation of human intelligence."), ("What is AI?", "The sky is blue.")]
-    descs = ["", ""]
 
-    scores = reranker_model.predict(pairs, descs)
-    rerank_score1, rerank_score2 = scores
+    rerank_score1, rerank_score2 = reranker_model.predict([(p, "") for p in pairs])
 
     print(f'Rerank scores: {rerank_score1}, {rerank_score2}')
     assert rerank_score1 > rerank_score2
 
 def test_clip(manager):
     print("Testing CLIP...")
-    clip_model = manager.clip
+    clip_model = manager[ModelType.CLIP]
     clip_text_embed1, clip_text_embed2 = clip_model.get_text_embedding(["A red square.", "A blue circle."])
     clip_image_embed = clip_model.get_image_embedding([Image.new('RGB', (224, 224), color = 'red')])[0]
 
