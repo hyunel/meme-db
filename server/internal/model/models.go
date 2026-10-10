@@ -18,6 +18,7 @@ type Asset struct {
 	MimeType    string    `json:"mime_type" db:"mime_type"`
 	Extension   string    `json:"extension" db:"extension"`
 	StoragePath string    `json:"-" db:"storage_path"`
+	UploadedBy  *string   `json:"-" db:"uploaded_by"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 }
 

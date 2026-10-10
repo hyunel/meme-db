@@ -25,6 +25,20 @@ CREATE SCHEMA IF NOT EXISTS jobs;
 CREATE SCHEMA IF NOT EXISTS ops;
 
 -- ============================================================================
+-- TABLES: IAM
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS iam.users (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    status VARCHAR(20) NOT NULL DEFAULT 'active', -- active | disabled
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
 -- TABLES: Core
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS core.assets (
@@ -34,10 +48,12 @@ CREATE TABLE IF NOT EXISTS core.assets (
     mime_type VARCHAR(50) NOT NULL,
     extension VARCHAR(10) NOT NULL,
     storage_path VARCHAR(255) NOT NULL,
+    uploaded_by UUID REFERENCES iam.users(id) ON DELETE SET NULL, -- First uploader
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_assets_created ON core.assets(created_at);
+CREATE INDEX IF NOT EXISTS idx_assets_uploader ON core.assets(uploaded_by, created_at);
 
 CREATE TABLE IF NOT EXISTS core.meme_info (
     asset_id UUID PRIMARY KEY REFERENCES core.assets(id) ON DELETE CASCADE,
@@ -57,20 +73,6 @@ CREATE INDEX IF NOT EXISTS idx_meme_sem ON core.meme_info USING hnsw (semantic_v
 CREATE INDEX IF NOT EXISTS idx_meme_meta ON core.meme_info USING hnsw (metaphor_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_clip ON core.meme_info USING hnsw (clip_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_ocr ON core.meme_info USING GIN (ocr_text gin_trgm_ops);
-
--- ============================================================================
--- TABLES: IAM
--- ============================================================================
-CREATE TABLE IF NOT EXISTS iam.users (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'user',
-    status VARCHAR(20) NOT NULL DEFAULT 'active', -- active | disabled
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
 
 -- ============================================================================
 -- TABLES: Library

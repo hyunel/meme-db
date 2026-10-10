@@ -39,7 +39,7 @@ const kindOptions = [
 ] as const
 const kindLabel: Record<MediaKind, string> = { image: '静态图', gif: 'GIF', video: '视频', lottie: 'Lottie' }
 
-type Pending = { kind: 'retry'; ids: string[] } | { kind: 'retryFilter' } | { kind: 'delete'; memes: Meme[] } | null
+type Pending = { kind: 'retry'; ids: string[] } | { kind: 'retryFilter' } | { kind: 'retryAll' } | { kind: 'delete'; memes: Meme[] } | null
 
 export function AdminContent() {
   const params = useSearchParams()
@@ -109,10 +109,15 @@ export function AdminContent() {
         title="内容管理"
         description="全站表情包及其处理状态"
         actions={
-          <Button variant="outline" className="h-10 md:h-9" disabled={!total} onClick={() => setPending({ kind: 'retryFilter' })}>
-            <RotateCw aria-hidden />
-            重新处理筛选结果
-          </Button>
+          <>
+            <Button variant="outline" className="h-10 md:h-9" disabled={!total} onClick={() => setPending({ kind: 'retryFilter' })}>
+              <RotateCw aria-hidden />
+              重新处理筛选结果
+            </Button>
+            <Button variant="outline" className="h-10 md:h-9" onClick={() => setPending({ kind: 'retryAll' })}>
+              全量重新处理
+            </Button>
+          </>
         }
       />
 
@@ -175,6 +180,14 @@ export function AdminContent() {
         description={`将重新处理${pending?.kind === 'retry' ? ` ${pending.ids.length} 个` : `当前筛选下的全部 ${total} 个`}表情包，处理期间它们会显示为排队中或处理中。`}
         confirmLabel="重新处理"
         onConfirm={() => (pending?.kind === 'retry' ? reprocess({ ids: pending.ids }) : reprocess({ filter }))}
+      />
+      <ConfirmDialog
+        open={pending?.kind === 'retryAll'}
+        onOpenChange={(o) => !o && setPending(null)}
+        title="全量重新处理"
+        description="将重新处理全站所有表情包，可能耗时较长，并会为每个表情包调用一次识别服务。期间新上传的表情包会优先处理。"
+        confirmLabel="开始全量处理"
+        onConfirm={() => reprocess({ filter: {} })}
       />
       <ConfirmDialog
         open={pending?.kind === 'delete'}

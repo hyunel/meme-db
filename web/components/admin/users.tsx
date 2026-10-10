@@ -284,7 +284,7 @@ export function AdminUserDetail({ id }: { id: string }) {
 
               <section aria-labelledby="recent" className="flex flex-col gap-3">
                 <h2 id="recent" className="text-sm font-medium text-muted-foreground">
-                  最近加入库中
+                  最近上传
                 </h2>
                 {user.recent.length ? (
                   <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -297,7 +297,7 @@ export function AdminUserDetail({ id }: { id: string }) {
                     ))}
                   </ul>
                 ) : (
-                  <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">该用户的库中还没有表情包</p>
+                  <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">该用户还没有上传表情包</p>
                 )}
               </section>
             </>
