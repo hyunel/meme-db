@@ -10,15 +10,15 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { EmptyState, ErrorState } from '@/components/states'
 import { AdminPageHeader, FilterSelect, RefreshControls, SearchInput, Toolbar, useDebounced } from './admin-ui'
-import { LevelBadge, logLevels } from './labels'
+import { LevelBadge } from './labels'
 import { rangeOptions, rangeStart, type RangeKey } from './shared'
-import { api } from '@/lib/api'
-import { formatDateTime, toMs } from '@/lib/format'
+import { api, qs } from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 import type { LogEntry, LogLevel } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const PAGE = 40
-const MAX_KEPT = 5000 // The server keeps the same number of entries
+const PAGE = 100
+const EXPORT_MAX = 5000
 const levelOptions = [
   ['debug', '最低：DEBUG'],
   ['info', '最低：INFO'],
@@ -38,44 +38,74 @@ function attrHref(key: string, value: string) {
   return null
 }
 
-/** Log entries newest first, fetched incrementally from the server's in-memory buffer. */
-function useLogs(live: boolean) {
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const lastId = useRef(0)
+type LogQuery = { level: LogLevel; q: string; from?: number; attr: string[] }
 
-  const load = useCallback(async () => {
-    try {
-      const fresh = await api<LogEntry[]>(`/admin/logs?after=${lastId.current}`)
-      if (fresh.length) {
-        lastId.current = fresh[fresh.length - 1].id
-        setLogs((cur) => [...fresh.reverse(), ...cur].slice(0, MAX_KEPT))
-      }
-      setError(null)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoaded(true)
-    }
-  }, [])
+/** Stored log entries matching query, newest first: a first page, older pages on
+ * demand (loadOlder) and newer entries as they arrive (poll). */
+function useLogs(query: LogQuery, live: boolean) {
+  const key = JSON.stringify(query)
+  const [data, setData] = useState<{ key: string; logs: LogEntry[]; hasMore: boolean; error?: string }>()
+  const current = data?.key === key ? data : undefined
+  const latest = useRef(current)
+  const busy = useRef(false)
+  useEffect(() => {
+    latest.current = current
+  })
+
+  const fetchLogs = useCallback((extra: Record<string, number>) => api<LogEntry[]>(`/admin/logs${qs({ ...JSON.parse(key), ...extra })}`), [key])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let stale = false
+    fetchLogs({ limit: PAGE }).then(
+      (logs) => !stale && setData({ key, logs, hasMore: logs.length === PAGE }),
+      (e) => !stale && setData({ key, logs: [], hasMore: false, error: (e as Error).message }),
+    )
+    return () => {
+      stale = true
+    }
+  }, [fetchLogs, key])
+
+  const update = useCallback(
+    (fn: (d: NonNullable<typeof data>) => NonNullable<typeof data>) => setData((d) => (d?.key === key ? fn(d) : d)),
+    [key],
+  )
+
+  const loadOlder = useCallback(async () => {
+    const cur = latest.current
+    if (!cur?.hasMore || busy.current) return
+    busy.current = true
+    try {
+      const older = await fetchLogs({ before: cur.logs[cur.logs.length - 1].id, limit: PAGE })
+      update((d) => ({ ...d, logs: [...d.logs, ...older], hasMore: older.length === PAGE }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      busy.current = false
+    }
+  }, [fetchLogs, update])
+
+  const poll = useCallback(async () => {
+    const cur = latest.current
+    if (!cur) return
+    try {
+      const newer = await fetchLogs({ after: cur.logs[0]?.id ?? 0, limit: 500 })
+      if (newer.length) update((d) => ({ ...d, logs: [...newer.reverse(), ...d.logs] }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }, [fetchLogs, update])
 
   useEffect(() => {
     if (!live) return
-    const id = setInterval(load, 2000)
+    const id = setInterval(poll, 2000)
     return () => clearInterval(id)
-  }, [live, load])
+  }, [live, poll])
 
-  return { logs, error, loaded, load }
+  return { logs: current?.logs ?? [], loaded: Boolean(current), error: current?.error, hasMore: Boolean(current?.hasMore), loadOlder, poll, fetchLogs }
 }
 
 export function AdminLogs() {
   const [live, setLive] = useState(false)
-  const { logs, error, loaded, load } = useLogs(live)
   const [minLevel, setMinLevel] = useState<LogLevel>('debug')
   const [q, setQ] = useState('')
   const dq = useDebounced(q.trim().toLowerCase())
@@ -85,32 +115,14 @@ export function AdminLogs() {
   const [draft, setDraft] = useState({ key: '', value: '' })
   // While live tailing, scrolling or selecting text pauses the view at this entry.
   const [frozenId, setFrozenId] = useState<number | null>(null)
-  const [limit, setLimit] = useState(PAGE)
   const sentinel = useRef<HTMLDivElement>(null)
+  const query = useMemo<LogQuery>(() => ({ level: minLevel, q: dq, from, attr: conds.map((c) => `${c.key}=${c.value}`) }), [minLevel, dq, from, conds])
+  const { logs, error, loaded, hasMore, loadOlder, poll, fetchLogs } = useLogs(query, live)
 
   const attrKeys = useMemo(() => Array.from(new Set(logs.flatMap((l) => Object.keys(l.attrs)))).sort(), [logs])
 
-  const filtered = useMemo(() => {
-    const minIdx = logLevels.indexOf(minLevel)
-    return logs.filter((l) => {
-      if (logLevels.indexOf(l.level) < minIdx) return false
-      if (from !== undefined && toMs(l.time) < from) return false
-      if (dq && !l.message.toLowerCase().includes(dq) && !Object.values(l.attrs).some((v) => v.toLowerCase().includes(dq))) return false
-      return conds.every((c) => (l.attrs[c.key] ?? '').toLowerCase() === c.value.toLowerCase())
-    })
-  }, [logs, minLevel, from, dq, conds])
-
-  const visibleAll = frozenId === null ? filtered : filtered.filter((l) => l.id <= frozenId)
-  const newCount = filtered.length - visibleAll.length
-  const visible = visibleAll.slice(0, limit)
-  const hasMore = visibleAll.length > limit
-
-  const filterKey = [minLevel, range, dq, conds.map((c) => `${c.key}=${c.value}`).join('&')].join('|')
-  const [lastKey, setLastKey] = useState(filterKey)
-  if (lastKey !== filterKey) {
-    setLastKey(filterKey)
-    setLimit(PAGE)
-  }
+  const visible = frozenId === null ? logs : logs.filter((l) => l.id <= frozenId)
+  const newCount = logs.length - visible.length
 
   const latestId = logs[0]?.id ?? 0
   useEffect(() => {
@@ -130,10 +142,10 @@ export function AdminLogs() {
   useEffect(() => {
     const el = sentinel.current
     if (!el || !hasMore) return
-    const io = new IntersectionObserver((entries) => entries[0].isIntersecting && setLimit((n) => n + PAGE), { rootMargin: '200px' })
+    const io = new IntersectionObserver((entries) => entries[0].isIntersecting && void loadOlder(), { rootMargin: '200px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [hasMore, visible.length])
+  }, [hasMore, loadOlder, logs.length])
 
   const resume = () => {
     window.getSelection()?.removeAllRanges()
@@ -147,22 +159,26 @@ export function AdminLogs() {
     setDraft({ key: draft.key, value: '' })
   }
 
-  const exportLogs = () => {
-    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `memedb-logs-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success(`已导出 ${filtered.length} 条日志`)
+  const exportLogs = async () => {
+    try {
+      const all = await fetchLogs({ limit: EXPORT_MAX })
+      const url = URL.createObjectURL(new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `memedb-logs-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`已导出最近 ${all.length} 条符合条件的日志`)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
   }
 
   return (
     <>
       <AdminPageHeader
         title="日志"
-        description="服务运行日志（保留最近 5000 条，重启后清空），按时间从新到旧"
+        description="服务运行日志，按时间从新到旧"
         actions={
           <>
             <div className="flex h-10 items-center gap-2 rounded-md border bg-background px-3 md:h-9">
@@ -179,8 +195,8 @@ export function AdminLogs() {
                 实时追踪
               </Label>
             </div>
-            {!live && <RefreshControls onRefresh={() => void load()} />}
-            <Button variant="outline" className="h-10 md:h-9" onClick={exportLogs} disabled={!filtered.length}>
+            {!live && <RefreshControls onRefresh={() => void poll()} />}
+            <Button variant="outline" className="h-10 md:h-9" onClick={exportLogs} disabled={!logs.length}>
               <Download aria-hidden />
               导出
             </Button>
@@ -257,10 +273,10 @@ export function AdminLogs() {
         </button>
       )}
 
-      {error && <ErrorState title="日志加载失败" description={error} onRetry={() => void load()} />}
+      {error && <ErrorState title="日志加载失败" description={error} />}
 
       <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
-        共 {visibleAll.length} 条{live && frozenId === null && ' · 正在实时追踪'}
+        已加载 {visible.length} 条{live && frozenId === null && ' · 正在实时追踪'}
       </p>
 
       {loaded && visible.length === 0 ? (

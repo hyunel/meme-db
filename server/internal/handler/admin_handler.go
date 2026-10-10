@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
-	"github.com/hyunel/MemeDB/internal/pkg/logger"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -17,7 +16,7 @@ type AdminHandler struct {
 	memeService  *service.MemeService
 	tagService   *service.TagService
 	statsService *service.StatsService
-	logs         *logger.Buffer
+	logService   *service.LogService
 }
 
 func NewAdminHandler(
@@ -25,14 +24,14 @@ func NewAdminHandler(
 	memeService *service.MemeService,
 	tagService *service.TagService,
 	statsService *service.StatsService,
-	logs *logger.Buffer,
+	logService *service.LogService,
 ) *AdminHandler {
 	return &AdminHandler{
 		userService:  userService,
 		memeService:  memeService,
 		tagService:   tagService,
 		statsService: statsService,
-		logs:         logs,
+		logService:   logService,
 	}
 }
 
@@ -349,14 +348,34 @@ func (h *AdminHandler) Stats(c echo.Context) error {
 }
 
 type LogsRequest struct {
-	After int64 `query:"after" validate:"min=0"`
+	RangeQuery          // Only From applies
+	After      int64    `query:"after" validate:"min=0"`
+	Before     int64    `query:"before" validate:"min=0"`
+	Limit      int      `query:"limit" validate:"omitempty,min=1,max=5000"`
+	Level      string   `query:"level" validate:"omitempty,oneof=debug info warn error"`
+	Query      string   `query:"q" validate:"max=200"`
+	Attrs      []string `query:"attr" validate:"max=10"` // key=value
 }
 
-// Logs returns the kept log entries newer than the given entry ID, oldest first.
+// Logs returns stored log entries matching the filters: those newer than After, oldest
+// first, or else a page older than Before (0 = the latest), newest first.
 func (h *AdminHandler) Logs(c echo.Context) error {
 	var req LogsRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, h.logs.After(req.After))
+	f := service.LogFilter{MinLevel: req.Level, Query: strings.TrimSpace(req.Query), Since: req.timeRange().From, Attrs: map[string]string{}}
+	for _, a := range req.Attrs {
+		k, v, ok := strings.Cut(a, "=")
+		if !ok || k == "" {
+			return apperror.BadRequest("信息条件需为 key=value 形式")
+		}
+		f.Attrs[k] = v
+	}
+
+	logs, err := h.logService.List(c.Request().Context(), f, req.After, req.Before, limitOr(req.Limit, 100))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, logs)
 }

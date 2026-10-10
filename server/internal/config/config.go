@@ -19,6 +19,7 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
 	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
+	Log       LogConfig       `yaml:"log" validate:"required"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
 }
@@ -41,6 +42,10 @@ type ServerConfig struct {
 
 type DatabaseConfig struct {
 	URL string `yaml:"url" validate:"required,url"`
+}
+
+type LogConfig struct {
+	Retention time.Duration `yaml:"retention" validate:"required,gt=0"`
 }
 
 type InferenceConfig struct {

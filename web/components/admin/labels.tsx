@@ -35,8 +35,6 @@ export function TaskStatusBadge({ status }: { status: TaskState }) {
   )
 }
 
-export const logLevels: LogLevel[] = ['debug', 'info', 'warn', 'error']
-
 const levelTone: Record<LogLevel, string> = {
   debug: 'text-muted-foreground bg-muted',
   info: 'text-[oklch(0.4_0.15_255)] bg-[oklch(0.93_0.05_250)]',

@@ -22,6 +22,7 @@ type Repos struct {
 	Tag      *TagRepository
 	Favorite *FavoriteRepository
 	Stats    *StatsRepository
+	Log      *LogRepository
 }
 
 // NewRepos creates a new Repos instance with the given database connection.
@@ -35,6 +36,7 @@ func NewRepos(db db.DBTX) *Repos {
 		Tag:      &TagRepository{db: db},
 		Favorite: &FavoriteRepository{db: db},
 		Stats:    &StatsRepository{db: db},
+		Log:      &LogRepository{db: db},
 	}
 }
 

@@ -14,6 +14,7 @@ CREATE TYPE node_type AS ENUM ('FOLDER', 'FILE');
 -- iam     : Identity & Access Management (users, roles)
 -- library : User content (nodes, favorites, tags)
 -- jobs    : Background task queue
+-- ops     : Operational data (service logs)
 --
 -- Access control is enforced by the application's queries (owner / visibility filters).
 -- ============================================================================
@@ -21,6 +22,7 @@ CREATE SCHEMA IF NOT EXISTS core;
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS library;
 CREATE SCHEMA IF NOT EXISTS jobs;
+CREATE SCHEMA IF NOT EXISTS ops;
 
 -- ============================================================================
 -- TABLES: Core
@@ -162,3 +164,16 @@ CREATE TABLE IF NOT EXISTS jobs.tasks_history PARTITION OF jobs.tasks FOR VALUES
 CREATE INDEX IF NOT EXISTS idx_tasks_queue ON jobs.tasks_active(priority DESC, run_at ASC);
 CREATE INDEX IF NOT EXISTS idx_tasks_history ON jobs.tasks_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_asset ON jobs.tasks ((payload->>'asset_id'));
+
+-- ============================================================================
+-- TABLES: Ops
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ops.logs (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    time TIMESTAMPTZ NOT NULL,
+    level VARCHAR(10) NOT NULL,               -- debug | info | warn | error
+    message TEXT NOT NULL,
+    attrs JSONB NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_time ON ops.logs(time);
