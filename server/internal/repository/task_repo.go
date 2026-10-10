@@ -11,7 +11,16 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, run_at, started_at, finished_at, created_at, updated_at`
+const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, run_at, started_at, finished_at, created_at, updated_at,
+	COALESCE(context->'attempts', '[]') AS history`
+
+// withAttempt returns the task context expression ctx with an attempt record (see
+// model.TaskAttempt) appended to its "attempts" list.
+func withAttempt(ctx, ok, errorMessage string) string {
+	return fmt.Sprintf(`jsonb_set(COALESCE(%[1]s, '{}'), '{attempts}',
+		COALESCE(%[1]s->'attempts', '[]') || jsonb_build_object('at', CURRENT_TIMESTAMP, 'ok', %[2]s, 'error', %[3]s))`,
+		ctx, ok, errorMessage)
+}
 
 type TaskRepository struct {
 	db db.DBTX
@@ -83,11 +92,11 @@ func (r *TaskRepository) Claim(ctx context.Context, limit int, lease time.Durati
 
 // Finish moves a claimed task to a terminal status (completed or failed).
 func (r *TaskRepository) Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error {
-	query := `
+	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
-		SET status = $3, error_message = $4, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		SET status = $3::varchar, error_message = $4, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, context = %s
 		WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
-	`
+	`, withAttempt("context", "$3::varchar = 'completed'", "$4::text"))
 	if _, err := r.db.Exec(ctx, query, id, attempts, status, errorMessage); err != nil {
 		return fmt.Errorf("failed to finish task: %w", err)
 	}
@@ -96,11 +105,11 @@ func (r *TaskRepository) Finish(ctx context.Context, id string, attempts int, st
 
 // Retry puts a claimed task back into the queue, due at runAt.
 func (r *TaskRepository) Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error {
-	query := `
+	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
-		SET status = 'pending', run_at = $3, error_message = $4, started_at = NULL, updated_at = CURRENT_TIMESTAMP
+		SET status = 'pending', run_at = $3, error_message = $4, started_at = NULL, updated_at = CURRENT_TIMESTAMP, context = %s
 		WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
-	`
+	`, withAttempt("context", "false", "$4::text"))
 	if _, err := r.db.Exec(ctx, query, id, attempts, runAt, errorMessage); err != nil {
 		return fmt.Errorf("failed to retry task: %w", err)
 	}
@@ -121,19 +130,23 @@ func (r *TaskRepository) Release(ctx context.Context, id string, attempts int) e
 }
 
 // Reschedule ends a run of a recurring (cron) task: the run is recorded as a history
-// row with the given terminal status, and the task is reset to run again at next.
+// row with the given terminal status and its attempts, and the task is reset to run
+// again at next.
 func (r *TaskRepository) Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error {
-	query := `
-		WITH reset AS (
+	query := fmt.Sprintf(`
+		WITH run AS (
+			SELECT context FROM jobs.tasks WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
+		), reset AS (
 			UPDATE jobs.tasks
-			SET status = 'pending', run_at = $3, attempts = 0, started_at = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
+			SET status = 'pending', run_at = $3, attempts = 0, started_at = NULL, error_message = NULL,
+				context = context - 'attempts', updated_at = CURRENT_TIMESTAMP
 			WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
 			RETURNING id, owner_id, job_type, payload, priority, cron
 		)
-		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, attempts, run_at, started_at, finished_at, error_message)
-		SELECT owner_id, id, job_type, payload, $4::varchar, priority, cron, $2::int, $5::timestamptz, $6::timestamptz, CURRENT_TIMESTAMP, $7::text
+		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, attempts, run_at, started_at, finished_at, error_message, context)
+		SELECT owner_id, id, job_type, payload, $4::varchar, priority, cron, $2::int, $5::timestamptz, $6::timestamptz, CURRENT_TIMESTAMP, $7::text, %s
 		FROM reset
-	`
+	`, withAttempt("(SELECT context FROM run)", "$4::varchar = 'completed'", "$7::text"))
 	_, err := r.db.Exec(ctx, query, task.ID, task.Attempts, next, status, task.RunAt, task.StartedAt, errorMessage)
 	if err != nil {
 		return fmt.Errorf("failed to reschedule task: %w", err)
@@ -209,7 +222,7 @@ type TaskFilter struct {
 	Sort      string // due (default: running, retrying, then by run_at) | created | finished
 }
 
-func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*model.Task, int, error) {
+func (f TaskFilter) where() filter {
 	var w filter
 	var states []string
 	for _, s := range f.States {
@@ -231,7 +244,11 @@ func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*
 		w.where("cron IS NOT NULL")
 	}
 	w.timeRange("created_at", f.Created)
+	return w
+}
 
+func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*model.Task, int, error) {
+	w := f.where()
 	total, err := count(ctx, r.db, "SELECT count(*) FROM jobs.tasks "+w.clause(), w.args...)
 	if err != nil {
 		return nil, 0, err
@@ -244,6 +261,12 @@ func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*
 	query := fmt.Sprintf(`SELECT %s FROM jobs.tasks %s ORDER BY %s %s`, taskSelectColumns, w.clause(), order, page.clause())
 	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, w.args...))
 	return tasks, total, err
+}
+
+// IDs lists every task matching f.
+func (r *TaskRepository) IDs(ctx context.Context, f TaskFilter) ([]string, error) {
+	w := f.where()
+	return collectScalars[string](r.db.Query(ctx, "SELECT id::text FROM jobs.tasks "+w.clause(), w.args...))
 }
 
 // Summary counts tasks per job type and state; the *InRange counts only consider tasks

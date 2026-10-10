@@ -163,6 +163,14 @@ export interface Task {
   finished_at: string | null
   created_at: string
   updated_at: string
+  /** Finished attempts, oldest first. */
+  history: TaskAttempt[]
+}
+
+export interface TaskAttempt {
+  at: string
+  ok: boolean
+  error: string | null
 }
 
 export interface TaskDetail extends Task {

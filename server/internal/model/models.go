@@ -87,6 +87,15 @@ type Task struct {
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	History []TaskAttempt `json:"history" db:"history"` // Finished attempts, oldest first
+}
+
+// TaskAttempt records the outcome of one attempt of a task.
+type TaskAttempt struct {
+	At    time.Time `json:"at"`
+	OK    bool      `json:"ok"`
+	Error *string   `json:"error"`
 }
 
 // ==============================================================================

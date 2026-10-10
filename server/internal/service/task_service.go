@@ -63,6 +63,16 @@ func (s *TaskService) Retry(ctx context.Context, ids []string) (int, error) {
 	return s.queue.Requeue(ctx, ids)
 }
 
+// RetryMatching requeues every failed task matching f.
+func (s *TaskService) RetryMatching(ctx context.Context, f repository.TaskFilter) (int, error) {
+	f.States = []string{model.TaskStatusFailed}
+	ids, err := s.repo.Task.IDs(ctx, f)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return s.queue.Requeue(ctx, ids)
+}
+
 func (s *TaskService) RunNow(ctx context.Context, id string) error {
 	ok, err := s.queue.RunNow(ctx, id)
 	if err == nil && !ok {
