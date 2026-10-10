@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Sparkles } from 'lucide-react'
 import { kindOf, memeAlt } from '@/lib/media'
+import { LottiePlayer } from './lottie-player'
 import type { MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -52,12 +52,7 @@ export function MemeMedia({
     return <AutoVideo src={meme.url} className={className} controls={controls} label={alt} />
   }
   if (kind === 'lottie') {
-    return (
-      <div className={cn('flex size-full flex-col items-center justify-center gap-2 text-muted-foreground', className)} role="img" aria-label={alt}>
-        <Sparkles className="size-8" aria-hidden />
-        <span className="text-xs">Lottie 动画</span>
-      </div>
-    )
+    return <LottiePlayer url={meme.url} mime={meme.mime_type} label={alt} className={className} />
   }
   return (
     <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn('size-full object-contain', className)} />
