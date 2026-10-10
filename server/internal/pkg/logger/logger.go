@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ANSI color codes
@@ -28,7 +29,7 @@ type ColorHandler struct {
 	mu     *sync.Mutex
 	attrs  []slog.Attr
 	groups []string
-	buf    *Buffer // Optional copy of every record
+	sink   chan<- Entry // Optional copy of every record
 }
 
 func NewColorHandler(w io.Writer, opts *slog.HandlerOptions) *ColorHandler {
@@ -92,7 +93,7 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	fmt.Fprintln(h.w)
 
-	if h.buf != nil {
+	if h.sink != nil {
 		attrs := make(map[string]string, len(h.attrs)+r.NumAttrs())
 		for _, a := range h.attrs {
 			attrs[a.Key] = fmt.Sprint(a.Value.Any())
@@ -101,7 +102,10 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 			attrs[a.Key] = fmt.Sprint(a.Value.Any())
 			return true
 		})
-		h.buf.add(Entry{Time: r.Time, Level: strings.ToLower(level), Message: r.Message, Attrs: attrs})
+		select {
+		case h.sink <- Entry{Time: r.Time, Level: strings.ToLower(level), Message: r.Message, Attrs: attrs}:
+		default: // Never block logging; the record is still on stdout
+		}
 	}
 	return nil
 }
@@ -117,7 +121,7 @@ func (h *ColorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		mu:     h.mu, // Share mutex
 		attrs:  newAttrs,
 		groups: h.groups,
-		buf:    h.buf,
+		sink:   h.sink,
 	}
 }
 
@@ -133,17 +137,26 @@ func (h *ColorHandler) WithGroup(name string) slog.Handler {
 		mu:     h.mu,
 		attrs:  h.attrs,
 		groups: newGroups,
-		buf:    h.buf,
+		sink:   h.sink,
 	}
 }
 
-// Setup configures the default slog logger with ColorHandler and returns a buffer of
-// the latest records.
-func Setup() *Buffer {
+// Entry is a copy of a log record, for storage.
+type Entry struct {
+	Time    time.Time
+	Level   string // debug | info | warn | error
+	Message string
+	Attrs   map[string]string
+}
+
+// Setup configures the default slog logger with ColorHandler and returns a channel
+// receiving a copy of every record; records are dropped while it is full.
+func Setup() <-chan Entry {
 	handler := NewColorHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
-	handler.buf = NewBuffer(5000)
+	entries := make(chan Entry, 4096)
+	handler.sink = entries
 	slog.SetDefault(slog.New(handler))
-	return handler.buf
+	return entries
 }

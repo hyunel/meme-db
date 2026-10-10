@@ -258,6 +258,15 @@ type ServiceStatus struct {
 	Detail string `json:"detail"`
 }
 
+// LogEntry is a stored service log record.
+type LogEntry struct {
+	ID      int64             `json:"id" db:"id"`
+	Time    time.Time         `json:"time" db:"time"`
+	Level   string            `json:"level" db:"level"`
+	Message string            `json:"message" db:"message"`
+	Attrs   map[string]string `json:"attrs" db:"attrs"`
+}
+
 // Page is one page of a filtered list.
 type Page[T any] struct {
 	Items []T `json:"items"`

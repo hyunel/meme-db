@@ -14,6 +14,9 @@ worker:
   job_timeout: 5m     # Per-attempt deadline; the claim lease is twice this
   poll_interval: 5s   # Fallback wake-up for due retries and expired leases
 
+log:
+  retention: 720h     # Stored logs older than this are deleted
+
 prompt:
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"
   caption: |

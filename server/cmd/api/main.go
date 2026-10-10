@@ -31,7 +31,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
 	flag.Parse()
 
-	logs := logger.Setup()
+	logEntries := logger.Setup()
 
 	// 1. Load Config
 	cfg, err := config.LoadConfig(*configPath)
@@ -92,6 +92,7 @@ func main() {
 	userService := service.NewUserService(repo, memeService)
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
+	logService := service.NewLogService(repo, cfg.Log.Retention)
 
 	// 6. Start Task Worker
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
@@ -102,6 +103,14 @@ func main() {
 		taskWorker.Run(ctx)
 	}()
 
+	// Stores logs, including those of the startup so far; it stops last, after shutdown.
+	logCtx, stopLogs := context.WithCancel(context.Background())
+	logsDone := make(chan struct{})
+	go func() {
+		defer close(logsDone)
+		logService.Run(logCtx, logEntries)
+	}()
+
 	// 7. Setup Handlers
 	h := handlers{
 		auth:     handler.NewAuthHandler(authService, userService),
@@ -109,7 +118,7 @@ func main() {
 		meme:     handler.NewMemeHandler(memeService, tagService),
 		library:  handler.NewLibraryHandler(libraryService),
 		favorite: handler.NewFavoriteHandler(favService),
-		admin:    handler.NewAdminHandler(userService, memeService, tagService, statsService, logs),
+		admin:    handler.NewAdminHandler(userService, memeService, tagService, statsService, logService),
 		task:     handler.NewTaskHandler(taskService),
 	}
 
@@ -155,8 +164,8 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown: stop HTTP first, then let the worker release in-flight tasks
-	// before the deferred inference client and DB pool closes run.
+	// Graceful shutdown: stop HTTP first, then let the worker release in-flight tasks and
+	// the remaining logs be stored before the deferred inference client and DB pool closes run.
 	<-ctx.Done()
 	slog.Info("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -165,6 +174,8 @@ func main() {
 		slog.Error("Server shutdown failed", "error", err)
 	}
 	<-workerDone
+	stopLogs()
+	<-logsDone
 }
 
 type handlers struct {
