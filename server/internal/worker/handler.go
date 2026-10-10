@@ -21,6 +21,12 @@ type FailureHandler interface {
 	OnFailure(ctx context.Context, task *model.Task, cause error) error
 }
 
+// RequeueHandler is optionally implemented by handlers whose domain state must follow a
+// failed task back into the queue (see Worker.Requeue).
+type RequeueHandler interface {
+	OnRequeue(ctx context.Context, task *model.Task) error
+}
+
 type permanentError struct{ err error }
 
 func (e *permanentError) Error() string { return e.err.Error() }

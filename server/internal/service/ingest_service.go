@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
@@ -33,11 +35,12 @@ type AnalyzeMemePayload struct {
 // enqueueAnalysis schedules one analysis task per asset. Call it within the transaction
 // that moves the memes to pending, so a pending meme always has a task.
 func enqueueAnalysis(ctx context.Context, r *repository.Repos, priority int, assetIDs ...string) error {
-	for _, id := range assetIDs {
-		_, err := r.Task.CreateWithOpts(ctx, model.JobAnalyzeMeme, AnalyzeMemePayload{AssetID: id}, &repository.TaskOpts{Priority: priority})
-		if err != nil {
-			return fmt.Errorf("failed to enqueue analysis for %s: %w", id, err)
-		}
+	payloads := make([]any, len(assetIDs))
+	for i, id := range assetIDs {
+		payloads[i] = AnalyzeMemePayload{AssetID: id}
+	}
+	if err := r.Task.Enqueue(ctx, model.JobAnalyzeMeme, payloads, repository.TaskOpts{Priority: priority}); err != nil {
+		return fmt.Errorf("failed to enqueue analysis: %w", err)
 	}
 	return nil
 }
@@ -50,6 +53,7 @@ type IngestServiceConfig struct {
 
 // IngestService handles model.JobAnalyzeMeme tasks: it analyzes a meme with the
 // inference service and keeps meme_info.processing_status in sync with the task.
+// The analysis also sets the meme's system tags.
 type IngestService struct {
 	cfg         IngestServiceConfig
 	repo        *repository.Provider
@@ -66,7 +70,7 @@ func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
 		return worker.Permanent(fmt.Errorf("failed to unmarshal payload: %w", err))
 	}
 
-	if err := s.repo.Meme.UpdateStatus(ctx, payload.AssetID, model.ProcessingStatusProcessing); err != nil {
+	if err := s.repo.Meme.SetStatus(ctx, payload.AssetID, model.ProcessingStatusProcessing, nil); err != nil {
 		return fmt.Errorf("failed to mark meme processing: %w", err)
 	}
 
@@ -89,12 +93,25 @@ func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
 	return nil
 }
 
-func (s *IngestService) OnFailure(ctx context.Context, task *model.Task, _ error) error {
+func (s *IngestService) OnFailure(ctx context.Context, task *model.Task, cause error) error {
+	return s.setStatus(ctx, task, model.ProcessingStatusFailed, cause)
+}
+
+func (s *IngestService) OnRequeue(ctx context.Context, task *model.Task) error {
+	return s.setStatus(ctx, task, model.ProcessingStatusPending, nil)
+}
+
+func (s *IngestService) setStatus(ctx context.Context, task *model.Task, status string, cause error) error {
 	var payload AnalyzeMemePayload
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {
-		return nil // No meme to mark
+		return nil // No meme to update
 	}
-	return s.repo.Meme.UpdateStatus(ctx, payload.AssetID, model.ProcessingStatusFailed)
+	var reason *string
+	if cause != nil {
+		msg := cause.Error()
+		reason = &msg
+	}
+	return s.repo.Meme.SetStatus(ctx, payload.AssetID, status, reason)
 }
 
 func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
@@ -142,16 +159,36 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 	metaphorVec := pgvector.NewVector(metaphorEmb)
 	semanticVec := pgvector.NewVector(semanticEmb)
 	clipVec := pgvector.NewVector(res.ClipEmbedding)
-	return s.repo.Meme.Create(ctx, &model.MemeInfo{
-		AssetID:          asset.ID,
-		VLMJSON:          json.RawMessage(res.Caption),
-		OCRText:          &vlmOut.OCRText,
-		MetaphorVector:   &metaphorVec,
-		SemanticVector:   &semanticVec,
-		ClipVector:       &clipVec,
-		Width:            res.Width,
-		Height:           res.Height,
-		ProcessingStatus: model.ProcessingStatusSuccess,
-		AnalyzedAt:       &now,
+	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		err := r.Meme.Create(ctx, &model.MemeInfo{
+			AssetID:          asset.ID,
+			VLMJSON:          json.RawMessage(res.Caption),
+			OCRText:          &vlmOut.OCRText,
+			MetaphorVector:   &metaphorVec,
+			SemanticVector:   &semanticVec,
+			ClipVector:       &clipVec,
+			Width:            res.Width,
+			Height:           res.Height,
+			ProcessingStatus: model.ProcessingStatusSuccess,
+			AnalyzedAt:       &now,
+		})
+		if err != nil {
+			return err
+		}
+		return r.Tag.SetSystemTags(ctx, asset.ID, systemTags(vlmOut))
 	})
+}
+
+// systemTags derives browseable tags from an analysis: named entities and visual styles.
+func systemTags(out *inference.VLMOutput) []string {
+	seen := make(map[string]bool)
+	var tags []string
+	for _, t := range append(slices.Clone(out.SpecificEntities), out.VisualStyle...) {
+		t = strings.TrimSpace(t)
+		if key := strings.ToLower(t); t != "" && len(t) <= 100 && !seen[key] {
+			seen[key] = true
+			tags = append(tags, t)
+		}
+	}
+	return tags
 }

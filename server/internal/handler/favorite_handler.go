@@ -15,30 +15,47 @@ func NewFavoriteHandler(favService *service.FavoriteService) *FavoriteHandler {
 	return &FavoriteHandler{favService: favService}
 }
 
-type ToggleFavoriteRequest []service.FavoriteToggleItem
+func (h *FavoriteHandler) List(c echo.Context) error {
+	favs, err := h.favService.List(c.Request().Context(), Viewer(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, favs)
+}
 
-func (h *FavoriteHandler) Toggle(c echo.Context) error {
-	var req ToggleFavoriteRequest
+type FavoriteRequest struct {
+	Kind string `param:"kind" validate:"required,oneof=meme folder"`
+	ID   string `param:"id" validate:"required,uuid"`
+}
+
+func (h *FavoriteHandler) Add(c echo.Context) error {
+	var req FavoriteRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	userID := MustGetUserID(c)
-
-	if err := h.favService.ToggleFavorite(c.Request().Context(), userID, req); err != nil {
+	if err := h.favService.Add(c.Request().Context(), Viewer(c), req.Kind, req.ID); err != nil {
 		return err
 	}
-
-	return c.NoContent(http.StatusOK)
+	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *FavoriteHandler) List(c echo.Context) error {
-	userID := MustGetUserID(c)
-
-	res, err := h.favService.ListFavorites(c.Request().Context(), userID)
-	if err != nil {
+func (h *FavoriteHandler) Remove(c echo.Context) error {
+	var req FavoriteRequest
+	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, res)
+	if err := h.favService.Remove(c.Request().Context(), Viewer(c), req.Kind, req.ID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ClearStale removes favorites the user can no longer see.
+func (h *FavoriteHandler) ClearStale(c echo.Context) error {
+	if err := h.favService.ClearStale(c.Request().Context(), Viewer(c)); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }

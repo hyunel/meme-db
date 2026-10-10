@@ -22,9 +22,15 @@ type Store interface {
 	Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error
 	Release(ctx context.Context, id string, attempts int) error
 	Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error
+	Requeue(ctx context.Context, ids []string) ([]*model.Task, error)
+	Cancel(ctx context.Context, id, reason string) (*model.Task, error)
+	RunNow(ctx context.Context, id string) (bool, error)
 }
 
-var errLeaseExhausted = errors.New("lease expired too many times")
+var (
+	errLeaseExhausted = errors.New("lease expired too many times")
+	errCancelled      = errors.New("已被管理员取消")
+)
 
 // Worker runs queued tasks, keeping up to cfg.Concurrency in flight and claiming
 // more as slots free up.
@@ -55,6 +61,46 @@ func (w *Worker) Notify() {
 	case w.wake <- struct{}{}:
 	default:
 	}
+}
+
+// Requeue gives failed tasks a fresh attempt budget and returns how many were requeued.
+func (w *Worker) Requeue(ctx context.Context, ids []string) (int, error) {
+	tasks, err := w.store.Requeue(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	for _, task := range tasks {
+		if h, ok := w.handlers[task.JobType].(RequeueHandler); ok {
+			if err := h.OnRequeue(ctx, task); err != nil {
+				return 0, fmt.Errorf("requeue hook for %s: %w", task.ID, err)
+			}
+		}
+	}
+	w.Notify()
+	return len(tasks), nil
+}
+
+// Cancel fails a pending task without running it; it reports false if the task is not pending.
+func (w *Worker) Cancel(ctx context.Context, id string) (bool, error) {
+	task, err := w.store.Cancel(ctx, id, errCancelled.Error())
+	if err != nil || task == nil {
+		return false, err
+	}
+	if h, ok := w.handlers[task.JobType].(FailureHandler); ok {
+		if err := h.OnFailure(ctx, task, errCancelled); err != nil {
+			return false, fmt.Errorf("failure hook: %w", err)
+		}
+	}
+	return true, nil
+}
+
+// RunNow makes a pending task due immediately; it reports false if the task is not pending.
+func (w *Worker) RunNow(ctx context.Context, id string) (bool, error) {
+	ok, err := w.store.RunNow(ctx, id)
+	if ok {
+		w.Notify()
+	}
+	return ok, err
 }
 
 // Run blocks until ctx is cancelled and every in-flight task has been settled.

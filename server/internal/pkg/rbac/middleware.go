@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"strings"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
@@ -16,7 +17,7 @@ const (
 // Implemented by AuthService.
 type IdentityProvider interface {
 	ParseToken(token string) (userID string, err error)
-	GetIdentity(userID string) (*Identity, error)
+	GetIdentity(ctx context.Context, userID string) (*Identity, error)
 }
 
 // GetIdentity retrieves the identity from echo.Context.
@@ -44,7 +45,7 @@ func IdentityMiddleware(provider IdentityProvider) echo.MiddlewareFunc {
 				if len(parts) == 2 && parts[0] == "Bearer" {
 					userID, err := provider.ParseToken(parts[1])
 					if err == nil && userID != "" {
-						identity, err := provider.GetIdentity(userID)
+						identity, err := provider.GetIdentity(c.Request().Context(), userID)
 						if err == nil {
 							SetIdentity(c, identity)
 							return next(c)
@@ -66,7 +67,7 @@ func RequireAuth() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			identity := GetIdentity(c)
 			if identity == nil || !identity.IsAuthenticated() {
-				return apperror.Unauthorized("authentication required")
+				return apperror.Unauthorized("请先登录")
 			}
 			return next(c)
 		}
@@ -79,7 +80,7 @@ func RequireLevel(level int) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			identity := GetIdentity(c)
 			if identity == nil || !identity.AtLeast(level) {
-				return apperror.Forbidden("insufficient permissions")
+				return apperror.Forbidden("没有访问权限")
 			}
 			return next(c)
 		}

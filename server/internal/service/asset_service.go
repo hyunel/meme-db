@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -8,10 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/hyunel/MemeDB/internal/model"
@@ -36,10 +39,32 @@ func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider, notifier
 	return &AssetService{cfg: cfg, repo: repo, notifier: notifier}
 }
 
+// UploadConfig describes what uploads accept, for clients to check files up front.
+type UploadConfig struct {
+	MaxSizeMB float64 `json:"max_size_mb"`
+	Accept    string  `json:"accept"` // For <input type="file" accept>
+}
+
+func (s *AssetService) UploadConfig() UploadConfig {
+	var accept []string
+	for _, rule := range s.cfg.AllowedTypes {
+		parts := strings.Split(rule, ",")
+		if len(parts) > 1 {
+			parts = parts[1:] // Extensions are the narrower filter
+		}
+		for _, p := range parts {
+			accept = append(accept, strings.TrimSpace(p))
+		}
+	}
+	return UploadConfig{MaxSizeMB: s.cfg.MaxSizeMB, Accept: strings.Join(accept, ",")}
+}
+
+// ValidateUpload checks a file against the size limit and the allowed types, and returns
+// its detected MIME type. Each allowed type is "mime/pattern[,.ext...]": the content must
+// match the pattern and, if extensions are listed, the file name must have one of them.
 func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
-	maxSizeBytes := int64(s.cfg.MaxSizeMB * 1024 * 1024)
-	if fileHeader.Size > maxSizeBytes {
-		return "", apperror.BadRequest(fmt.Sprintf("file too large: %d bytes (max %.1f MB)", fileHeader.Size, s.cfg.MaxSizeMB))
+	if fileHeader.Size > int64(s.cfg.MaxSizeMB*1024*1024) {
+		return "", apperror.BadRequest(fmt.Sprintf("文件超过 %g MB 的大小限制", s.cfg.MaxSizeMB))
 	}
 
 	file, err := fileHeader.Open()
@@ -48,145 +73,167 @@ func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string,
 	}
 	defer file.Close()
 
-	buffer := make([]byte, 512)
-	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		return "", fmt.Errorf("failed to read file header: %w", err)
 	}
-	detectedMime := http.DetectContentType(buffer[:n])
+	mime := detectMIME(head[:n])
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 
-	allowed := false
-	for _, pattern := range s.cfg.AllowedTypes {
-		parts := strings.Split(pattern, ",")
-		if len(parts) == 0 {
-			continue
-		}
-
-		if strings.HasSuffix(parts[0], "/*") {
-			prefix := strings.TrimSuffix(parts[0], "*")
-			if strings.HasPrefix(detectedMime, prefix) {
-				allowed = true
-				break
-			}
-		} else if detectedMime == parts[0] {
-			allowed = true
-			break
-		}
-
-		for _, extPattern := range parts[1:] {
-			extPattern = strings.ToLower(strings.TrimSpace(extPattern))
-			if ext != extPattern {
-				allowed = false
-				break
-			}
-		}
+	if !slices.ContainsFunc(s.cfg.AllowedTypes, func(rule string) bool { return matchesType(rule, mime, ext) }) {
+		return "", apperror.BadRequest("不支持的文件类型：" + mime)
 	}
-
-	if !allowed {
-		return "", apperror.BadRequest(fmt.Sprintf("file type not allowed: %s", detectedMime))
-	}
-
-	return detectedMime, nil
+	return mime, nil
 }
 
+func detectMIME(head []byte) string {
+	mime, _, _ := strings.Cut(http.DetectContentType(head), ";")
+	// DetectContentType has no JSON signature (Lottie animations are JSON).
+	if trimmed := bytes.TrimSpace(head); mime == "text/plain" && len(trimmed) > 0 && trimmed[0] == '{' {
+		return "application/json"
+	}
+	return mime
+}
+
+func matchesType(rule, mime, ext string) bool {
+	parts := strings.Split(rule, ",")
+	pattern := strings.TrimSpace(parts[0])
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		if !strings.HasPrefix(mime, prefix) {
+			return false
+		}
+	} else if mime != pattern {
+		return false
+	}
+	return len(parts) == 1 || slices.ContainsFunc(parts[1:], func(e string) bool {
+		return strings.ToLower(strings.TrimSpace(e)) == ext
+	})
+}
+
+// CreateAsset stores an uploaded file, deduplicated by content, and queues new content
+// for analysis.
 func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.FileHeader) (*model.Asset, error) {
 	mimeType, err := s.ValidateUpload(fileHeader)
 	if err != nil {
 		return nil, err
 	}
 
-	file, err := fileHeader.Open()
+	src, err := fileHeader.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer src.Close()
+
+	if err := os.MkdirAll(s.cfg.StoragePath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create storage directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(s.cfg.StoragePath, "upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name()) // No-op once renamed into place
 
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, fmt.Errorf("failed to hash file: %w", err)
+	size, err := io.Copy(io.MultiWriter(tmp, hasher), src)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to save file: %w", err)
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	existing, err := s.repo.Asset.GetByHash(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		return existing, nil
+	if existing, err := s.repo.Asset.GetByHash(ctx, hash); err != nil || existing != nil {
+		return existing, err
 	}
 
-	file.Seek(0, 0)
-
-	ext := filepath.Ext(fileHeader.Filename)
+	// Files are content-addressed, so replacing a concurrent upload of the same content is harmless.
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	relPath := filepath.Join(hash[:2], hash[2:4], hash[4:]+ext)
 	absPath := filepath.Join(s.cfg.StoragePath, relPath)
-
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
-
-	dst, err := os.Create(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, file); err != nil {
-		os.Remove(absPath)
-		return nil, fmt.Errorf("failed to save file: %w", err)
+	if err := os.Rename(tmp.Name(), absPath); err != nil {
+		return nil, fmt.Errorf("failed to store file: %w", err)
 	}
 
 	var asset *model.Asset
-	err = s.repo.TxNoRLS(ctx, func(txR *repository.Repos) error {
-		asset = &model.Asset{
+	created := false
+	err = s.repo.Tx(ctx, func(r *repository.Repos) error {
+		asset, created, err = r.Asset.Create(ctx, &model.Asset{
 			FileHash:    hash,
-			FileSize:    fileHeader.Size,
+			FileSize:    size,
 			MimeType:    mimeType,
 			Extension:   ext,
 			StoragePath: relPath,
-		}
-		if err := txR.Asset.Create(ctx, asset); err != nil {
+		})
+		if err != nil || !created {
 			return err
 		}
-
-		memeInfo := &model.MemeInfo{
-			AssetID:          asset.ID,
-			ProcessingStatus: model.ProcessingStatusPending,
-		}
-		if err := txR.Meme.Create(ctx, memeInfo); err != nil {
+		if err := r.Meme.Create(ctx, &model.MemeInfo{AssetID: asset.ID, ProcessingStatus: model.ProcessingStatusPending}); err != nil {
 			return fmt.Errorf("failed to create meme info stub: %w", err)
 		}
-
-		return enqueueAnalysis(ctx, txR, model.PriorityHigh, asset.ID)
+		return enqueueAnalysis(ctx, r, model.PriorityHigh, asset.ID)
 	})
-
 	if err != nil {
-		os.Remove(absPath)
 		return nil, err
 	}
 
-	s.notifier.Notify()
+	if created {
+		s.notifier.Notify()
+	}
 	return asset, nil
 }
 
-func (s *AssetService) GetAssetURL(assetID string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
-	h.Write([]byte(assetID))
-	fullSignature := h.Sum(nil)
-	signature := base64.RawURLEncoding.EncodeToString(fullSignature[:8])
-	return fmt.Sprintf("/api/assets/%s?token=%s", assetID, signature)
+// RemoveFiles deletes stored files of deleted assets.
+func (s *AssetService) RemoveFiles(paths []string) {
+	for _, p := range paths {
+		if err := os.Remove(filepath.Join(s.cfg.StoragePath, p)); err != nil && !os.IsNotExist(err) {
+			slog.Error("Failed to remove asset file", "path", p, "error", err)
+		}
+	}
 }
 
-func (s *AssetService) VerifyAccessToken(assetID string, token string) error {
+// URL returns a signed, cacheable URL of an asset's content.
+func (s *AssetService) URL(assetID string) string {
+	return fmt.Sprintf("/api/assets/%s?token=%s", assetID, s.sign(assetID))
+}
+
+func (s *AssetService) sign(assetID string) string {
 	h := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
 	h.Write([]byte(assetID))
-	fullSignature := h.Sum(nil)
-	expectedSignature := base64.RawURLEncoding.EncodeToString(fullSignature[:8])
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:8])
+}
 
-	if !hmac.Equal([]byte(token), []byte(expectedSignature)) {
-		return fmt.Errorf("invalid signature")
+// Content resolves a signed asset URL to the asset and the path of its file.
+func (s *AssetService) Content(ctx context.Context, assetID, token string) (*model.Asset, string, error) {
+	if !hmac.Equal([]byte(token), []byte(s.sign(assetID))) {
+		return nil, "", apperror.Unauthorized("无效的访问令牌")
 	}
+	asset, err := s.repo.Asset.Get(ctx, assetID)
+	if err != nil {
+		return nil, "", err
+	}
+	if asset == nil {
+		return nil, "", apperror.NotFound("文件不存在")
+	}
+	return asset, filepath.Join(s.cfg.StoragePath, asset.StoragePath), nil
+}
 
-	return nil
+// signMemes fills in the content URLs of memes.
+func (s *AssetService) signMemes(memes []*model.Meme) {
+	for _, m := range memes {
+		m.URL = s.URL(m.ID)
+	}
+}
+
+// signFolders fills in the content URLs of folder previews.
+func (s *AssetService) signFolders(folders []*model.Folder) {
+	for _, f := range folders {
+		for i := range f.Previews {
+			f.Previews[i].URL = s.URL(f.Previews[i].ID)
+		}
+	}
 }

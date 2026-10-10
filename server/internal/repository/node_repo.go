@@ -3,185 +3,211 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
-	"github.com/jackc/pgx/v5"
 )
 
-const nodeSelectColumns = `id, owner_id, parent_id, path::text as path, name, type, visibility, asset_id, private_note, created_at, updated_at`
+const nodeSelectColumns = `id, owner_id, parent_id, path::text AS path, name, type, is_public, asset_id, created_at, updated_at`
+
+// visibilityOf computes the effective visibility (model.Visibility*) of the node aliased alias.
+func visibilityOf(alias string) string {
+	return fmt.Sprintf(`CASE WHEN %[1]s.is_public THEN 'public'
+		WHEN EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> %[1]s.path) THEN 'inherited'
+		ELSE 'private' END`, alias)
+}
 
 type NodeRepository struct {
 	db db.DBTX
 }
 
-// Create creates a new node. RLS ensures owner_id matches current user.
-func (r *NodeRepository) Create(ctx context.Context, node *model.Node) error {
-	var nodeID *string
-	if node.ID != "" {
-		nodeID = &node.ID
-	}
-
+// Create inserts a node under node.ParentID, which must be a folder of node.OwnerID.
+// It returns nil if that parent folder does not exist.
+func (r *NodeRepository) Create(ctx context.Context, node *model.Node) (*model.Node, error) {
 	query := fmt.Sprintf(`
-		WITH new_node AS (
-			SELECT CASE WHEN $1::uuid IS NULL THEN uuidv7() ELSE $1::uuid END as id
-		)
-		INSERT INTO library.nodes (id, owner_id, parent_id, path, name, type, visibility, asset_id, private_note)
-		SELECT
-			n.id, current_app_user_id(), $2::uuid,
-			CASE
-				WHEN $2::uuid IS NULL THEN replace(n.id::text, '-', '')::ltree
-				ELSE (SELECT path FROM library.nodes WHERE id = $2::uuid) || replace(n.id::text, '-', '')::ltree
-			END,
-			$3, $4, $5, $6::uuid, $7
-		FROM new_node n
+		INSERT INTO library.nodes (id, owner_id, parent_id, path, name, type, is_public, asset_id)
+		SELECT n.id, $1::uuid, p.id, COALESCE(p.path, ''::ltree) || replace(n.id::text, '-', '')::ltree, $3, $4, $5, $6::uuid
+		FROM (SELECT uuidv7() AS id) n
+		LEFT JOIN library.nodes p ON p.id = $2::uuid AND p.owner_id = $1::uuid AND p.type = 'FOLDER'
+		WHERE $2::uuid IS NULL OR p.id IS NOT NULL
 		RETURNING %s
 	`, nodeSelectColumns)
-
-	rows, err := r.db.Query(ctx, query,
-		nodeID, node.ParentID, node.Name, node.Type, node.Visibility, node.AssetID, node.PrivateNote,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create node: %w", err)
-	}
-
-	newNode, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
-	if err != nil {
-		return fmt.Errorf("failed to scan created node: %w", err)
-	}
-	*node = newNode
-	return nil
+	return collectOne[model.Node](r.db.Query(ctx, query,
+		node.OwnerID, node.ParentID, node.Name, node.Type, node.IsPublic, node.AssetID))
 }
 
-// Get retrieves a node by ID. RLS filters by owner or public visibility.
+// Get returns a node by ID, or nil if it does not exist.
 func (r *NodeRepository) Get(ctx context.Context, id string) (*model.Node, error) {
 	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE id = $1::uuid`, nodeSelectColumns)
-	rows, err := r.db.Query(ctx, query, id)
-	if err != nil {
-		return nil, err
-	}
-	node, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
-	if err != nil {
-		return nil, err
-	}
-	return &node, nil
+	return collectOne[model.Node](r.db.Query(ctx, query, id))
 }
 
-// GetMany retrieves multiple nodes by IDs.
-func (r *NodeRepository) GetMany(ctx context.Context, ids []string) ([]*model.Node, error) {
-	if len(ids) == 0 {
-		return []*model.Node{}, nil
-	}
-	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE id = ANY($1::uuid[])`, nodeSelectColumns)
-	rows, err := r.db.Query(ctx, query, ids)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nodes: %w", err)
-	}
-	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
+// GetOwned returns the nodes among ids that belong to ownerID.
+func (r *NodeRepository) GetOwned(ctx context.Context, ownerID string, ids []string) ([]*model.Node, error) {
+	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid`, nodeSelectColumns)
+	return collectAll[model.Node](r.db.Query(ctx, query, ids, ownerID))
 }
 
-// List lists nodes under a parent. RLS filters automatically.
-func (r *NodeRepository) List(ctx context.Context, parentID *string) ([]*model.Node, error) {
-	var query string
-	var args []interface{}
-
+// Children lists the nodes directly under parentID (nil = the owner's root).
+func (r *NodeRepository) Children(ctx context.Context, ownerID string, parentID *string) ([]*model.Node, error) {
+	var w filter
+	w.where("owner_id = " + w.arg(ownerID) + "::uuid")
 	if parentID == nil {
-		query = fmt.Sprintf(`
-			SELECT %s FROM library.nodes
-			WHERE parent_id IS NULL AND owner_id = current_app_user_id()
-			ORDER BY type DESC, name ASC
-		`, nodeSelectColumns)
+		w.where("parent_id IS NULL")
 	} else {
-		query = fmt.Sprintf(`
-			SELECT %s FROM library.nodes
-			WHERE parent_id = $1::uuid AND owner_id = current_app_user_id()
-			ORDER BY type DESC, name ASC
-		`, nodeSelectColumns)
-		args = []interface{}{parentID}
+		w.where("parent_id = " + w.arg(*parentID) + "::uuid")
 	}
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nodes: %w", err)
-	}
-	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
+	query := fmt.Sprintf(`SELECT %s FROM library.nodes %s ORDER BY created_at`, nodeSelectColumns, w.clause())
+	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
 }
 
-// Update updates a node's properties.
-func (r *NodeRepository) Update(ctx context.Context, node *model.Node) error {
-	query := `
-		UPDATE library.nodes
-		SET name = $1, visibility = $2, private_note = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $4::uuid
-	`
-	_, err := r.db.Exec(ctx, query, node.Name, node.Visibility, node.PrivateNote, node.ID)
+// ChildNames lists the names used directly under parentID (nil = the owner's root).
+func (r *NodeRepository) ChildNames(ctx context.Context, ownerID string, parentID *string) ([]string, error) {
+	nodes, err := r.Children(ctx, ownerID, parentID)
+	names := make([]string, len(nodes))
+	for i, n := range nodes {
+		names[i] = n.Name
+	}
+	return names, err
+}
+
+// Ancestors returns the strict ancestors of path, root first.
+func (r *NodeRepository) Ancestors(ctx context.Context, path string) ([]*model.Node, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM library.nodes WHERE path @> $1::ltree AND path <> $1::ltree ORDER BY nlevel(path)
+	`, nodeSelectColumns)
+	return collectAll[model.Node](r.db.Query(ctx, query, path))
+}
+
+func (r *NodeRepository) Rename(ctx context.Context, id, name string) error {
+	_, err := r.db.Exec(ctx, `UPDATE library.nodes SET name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1::uuid`, id, name)
 	return err
 }
 
-// Move moves a node and its subtree to a new parent.
-func (r *NodeRepository) Move(ctx context.Context, id string, newParentID *string, newPath string) error {
+func (r *NodeRepository) SetPublic(ctx context.Context, ownerID string, ids []string, isPublic bool) error {
+	query := `
+		UPDATE library.nodes SET is_public = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid
+	`
+	_, err := r.db.Exec(ctx, query, ids, ownerID, isPublic)
+	return err
+}
+
+// Move moves a node and its subtree under a new parent, renaming it to name.
+func (r *NodeRepository) Move(ctx context.Context, id string, newParentID *string, newPath, name string) error {
 	query := `
 		UPDATE library.nodes
 		SET
 			parent_id = CASE WHEN library.nodes.id = $1::uuid THEN $2::uuid ELSE library.nodes.parent_id END,
-			path = CASE
-				WHEN nlevel(library.nodes.path) > nlevel(t.path) THEN $3::ltree || subpath(library.nodes.path, nlevel(t.path))
-				ELSE $3::ltree
-			END,
+			name = CASE WHEN library.nodes.id = $1::uuid THEN $4 ELSE library.nodes.name END,
+			path = CASE WHEN library.nodes.id = $1::uuid THEN $3::ltree
+				ELSE $3::ltree || subpath(library.nodes.path, nlevel(t.path)) END,
 			updated_at = CURRENT_TIMESTAMP
 		FROM (SELECT path FROM library.nodes WHERE id = $1::uuid) AS t
 		WHERE library.nodes.path <@ t.path
 	`
-	_, err := r.db.Exec(ctx, query, id, newParentID, newPath)
-	if err != nil {
+	if _, err := r.db.Exec(ctx, query, id, newParentID, newPath, name); err != nil {
 		return fmt.Errorf("failed to move node %s: %w", id, err)
 	}
 	return nil
 }
 
-// Delete deletes a node and its children (via CASCADE).
-func (r *NodeRepository) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM library.nodes WHERE id = $1::uuid`, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete node %s: %w", id, err)
-	}
-	return nil
+// Delete deletes the owner's nodes and their subtrees.
+func (r *NodeRepository) Delete(ctx context.Context, ownerID string, ids []string) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM library.nodes WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid`, ids, ownerID)
+	return err
 }
 
-// GetByPath retrieves a node by its ltree path.
-func (r *NodeRepository) GetByPath(ctx context.Context, path string) (*model.Node, error) {
-	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE path = $1::ltree`, nodeSelectColumns)
-	rows, err := r.db.Query(ctx, query, path)
-	if err != nil {
-		return nil, err
-	}
-	node, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Node])
-	if err != nil {
-		return nil, err
-	}
-	return &node, nil
+// RecentFileAssets returns the assets most recently added to a user's library.
+func (r *NodeRepository) RecentFileAssets(ctx context.Context, ownerID string, limit int) ([]string, error) {
+	query := `
+		SELECT asset_id::text FROM library.nodes
+		WHERE owner_id = $1::uuid AND type = 'FILE'
+		ORDER BY created_at DESC LIMIT $2
+	`
+	return collectScalars[string](r.db.Query(ctx, query, ownerID, limit))
 }
 
-// GetSubtree retrieves all nodes under a path.
-func (r *NodeRepository) GetSubtree(ctx context.Context, path string) ([]*model.Node, error) {
+// ==============================================================================
+// Folder views
+// ==============================================================================
+
+type folderRow struct {
+	ID            string            `db:"id"`
+	ParentID      *string           `db:"parent_id"`
+	Name          string            `db:"name"`
+	Visibility    string            `db:"visibility"`
+	OwnerID       string            `db:"owner_id"`
+	OwnerUsername string            `db:"owner_username"`
+	ItemCount     int               `db:"item_count"`
+	Previews      []model.MemeThumb `db:"previews"`
+	FavoriteCount int               `db:"favorite_count"`
+	IsFavorite    bool              `db:"is_favorite"`
+	CreatedAt     time.Time         `db:"created_at"`
+}
+
+// Folders returns folder views for ids (in no particular order), resolved for viewerID.
+// Preview URLs are left empty.
+func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []string) ([]*model.Folder, error) {
+	if len(ids) == 0 {
+		return []*model.Folder{}, nil
+	}
 	query := fmt.Sprintf(`
-		SELECT %s FROM library.nodes WHERE path <@ $1::ltree ORDER BY nlevel(path) ASC
-	`, nodeSelectColumns)
-	rows, err := r.db.Query(ctx, query, path)
+		SELECT f.id, f.parent_id, f.name, f.created_at, %s AS visibility,
+			u.id AS owner_id, u.username AS owner_username,
+			(SELECT count(*) FROM library.nodes c WHERE c.path <@ f.path AND c.type = 'FILE') AS item_count,
+			COALESCE((
+				SELECT jsonb_agg(jsonb_build_object('id', p.asset_id, 'mime_type', p.mime_type) ORDER BY p.created_at)
+				FROM (
+					SELECT c.asset_id, a.mime_type, c.created_at
+					FROM library.nodes c
+					JOIN core.assets a ON a.id = c.asset_id
+					JOIN core.meme_info mi ON mi.asset_id = c.asset_id
+					WHERE c.path <@ f.path AND c.type = 'FILE' AND mi.processing_status = 'success'
+					ORDER BY c.created_at LIMIT 4
+				) p
+			), '[]') AS previews,
+			(SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) AS favorite_count,
+			EXISTS (SELECT 1 FROM library.favorites fv WHERE fv.node_id = f.id AND fv.user_id = $2::uuid) AS is_favorite
+		FROM library.nodes f
+		JOIN iam.users u ON u.id = f.owner_id
+		WHERE f.id = ANY($1::uuid[]) AND f.type = 'FOLDER'
+	`, visibilityOf("f"))
+
+	rows, err := collectAll[folderRow](r.db.Query(ctx, query, ids, nullable(viewerID)))
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
+	folders := make([]*model.Folder, len(rows))
+	for i, row := range rows {
+		folders[i] = &model.Folder{
+			ID:            row.ID,
+			ParentID:      row.ParentID,
+			Name:          row.Name,
+			Visibility:    row.Visibility,
+			Owner:         model.UserRef{ID: row.OwnerID, Username: row.OwnerUsername},
+			ItemCount:     row.ItemCount,
+			Previews:      row.Previews,
+			FavoriteCount: row.FavoriteCount,
+			IsFavorite:    row.IsFavorite,
+			CreatedAt:     row.CreatedAt,
+		}
+	}
+	return folders, nil
 }
 
-// GetAncestors retrieves all ancestor nodes of a path.
-func (r *NodeRepository) GetAncestors(ctx context.Context, path string) ([]*model.Node, error) {
-	query := fmt.Sprintf(`
-		SELECT %s FROM library.nodes WHERE path @> $1::ltree ORDER BY nlevel(path) ASC
-	`, nodeSelectColumns)
-	rows, err := r.db.Query(ctx, query, path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ancestors: %w", err)
-	}
-	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Node])
+// PublicRootFolders lists the topmost public folders of active users (optionally of one
+// owner), most favorited first.
+func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, limit int) ([]string, error) {
+	query := `
+		SELECT f.id::text FROM library.nodes f
+		JOIN iam.users u ON u.id = f.owner_id AND u.status = 'active'
+		WHERE f.type = 'FOLDER' AND f.is_public
+		  AND ($1::uuid IS NULL OR f.owner_id = $1::uuid)
+		  AND NOT EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> f.path AND p.id <> f.id)
+		ORDER BY (SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) DESC, f.created_at DESC
+		LIMIT $2
+	`
+	return collectScalars[string](r.db.Query(ctx, query, nullable(ownerID), limit))
 }

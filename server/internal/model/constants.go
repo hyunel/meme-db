@@ -22,21 +22,30 @@ const (
 )
 
 // ==============================================================================
+// Users
+// ==============================================================================
+
+const (
+	UserStatusActive   = "active"
+	UserStatusDisabled = "disabled"
+)
+
+// ==============================================================================
 // Node Types and Visibility
 // ==============================================================================
 
 type NodeType string
-type Visibility string
 
 const (
 	NodeTypeFolder NodeType = "FOLDER"
 	NodeTypeFile   NodeType = "FILE"
 )
 
+// Effective visibility of a node: its own flag, or inherited from a public ancestor folder.
 const (
-	VisibilityPrivate Visibility = "PRIVATE"
-	VisibilityPublic  Visibility = "PUBLIC"
-	VisibilityLink    Visibility = "LINK"
+	VisibilityPrivate   = "private"
+	VisibilityPublic    = "public"
+	VisibilityInherited = "inherited"
 )
 
 // ==============================================================================

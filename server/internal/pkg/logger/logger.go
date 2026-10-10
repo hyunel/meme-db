@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -27,6 +28,7 @@ type ColorHandler struct {
 	mu     *sync.Mutex
 	attrs  []slog.Attr
 	groups []string
+	buf    *Buffer // Optional copy of every record
 }
 
 func NewColorHandler(w io.Writer, opts *slog.HandlerOptions) *ColorHandler {
@@ -89,6 +91,18 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 	})
 
 	fmt.Fprintln(h.w)
+
+	if h.buf != nil {
+		attrs := make(map[string]string, len(h.attrs)+r.NumAttrs())
+		for _, a := range h.attrs {
+			attrs[a.Key] = fmt.Sprint(a.Value.Any())
+		}
+		r.Attrs(func(a slog.Attr) bool {
+			attrs[a.Key] = fmt.Sprint(a.Value.Any())
+			return true
+		})
+		h.buf.add(Entry{Time: r.Time, Level: strings.ToLower(level), Message: r.Message, Attrs: attrs})
+	}
 	return nil
 }
 
@@ -103,6 +117,7 @@ func (h *ColorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		mu:     h.mu, // Share mutex
 		attrs:  newAttrs,
 		groups: h.groups,
+		buf:    h.buf,
 	}
 }
 
@@ -118,14 +133,17 @@ func (h *ColorHandler) WithGroup(name string) slog.Handler {
 		mu:     h.mu,
 		attrs:  h.attrs,
 		groups: newGroups,
+		buf:    h.buf,
 	}
 }
 
-// Setup configures the default slog logger with ColorHandler
-func Setup() {
+// Setup configures the default slog logger with ColorHandler and returns a buffer of
+// the latest records.
+func Setup() *Buffer {
 	handler := NewColorHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
+	handler.buf = NewBuffer(5000)
+	slog.SetDefault(slog.New(handler))
+	return handler.buf
 }

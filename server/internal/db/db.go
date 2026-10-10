@@ -20,7 +20,9 @@ func NewDB(url string) (*pgxpool.Pool, error) {
 		if err := pgxvec.RegisterTypes(ctx, conn); err != nil {
 			return err
 		}
-		return nil
+		// Let filtered vector searches keep scanning the HNSW index until LIMIT is met.
+		_, err := conn.Exec(ctx, "SET hnsw.iterative_scan = relaxed_order")
+		return err
 	}
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
