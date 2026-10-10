@@ -1,3 +1,5 @@
+# Secrets come from ./.env: JWT_SECRET, POSTGRES_PASSWORD and the VLM API key used in
+# inference/models.yaml (e.g. DEEPSEEK_API_KEY).
 services:
   web:
     build: ./web
@@ -7,11 +9,36 @@ services:
   server:
     build: ./server
     ports: ["8080:8080"]
-    depends_on: [db, inference]
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - ./server/config.docker.yaml:/etc/memedb/config.yaml:ro
+      - assets:/data/assets
+    depends_on:
+      db:
+        condition: service_healthy
+      inference:
+        condition: service_started
+
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    environment:
+      POSTGRES_DB: memedb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - db:/var/lib/postgresql
+      - ./server/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "memedb"]
+      interval: 2s
+      retries: 30
 
   inference:
     build: ./inference
-    ports: ["5000:5000"]
+    env_file: .env
+    volumes:
+      - models:/cache
     deploy:
       resources:
         reservations:
@@ -19,3 +46,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+volumes:
+  assets:
+  db:
+  models:

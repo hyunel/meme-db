@@ -1,0 +1,10 @@
+# Server config for docker-compose; ${VAR} placeholders come from the environment.
+server:
+  jwt_secret: "${JWT_SECRET}"
+  storage_path: "/data/assets"
+
+database:
+  url: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/memedb"
+
+inference:
+  grpc_addr: "inference:50051"
