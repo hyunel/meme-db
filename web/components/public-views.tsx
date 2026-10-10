@@ -11,7 +11,7 @@ import { EmptyState, MemeGridSkeleton } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { formatDate } from '@/lib/format'
 import type { Folder, FolderPage, Meme, Page, Profile } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { TabSwitch } from '@/components/tab-switch'
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.ReactNode; title: string; description?: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -66,26 +66,7 @@ export function DiscoverView() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title="发现" description="社区公开分享的表情包与合集" />
-      <div role="tablist" aria-label="内容类型" className="inline-flex self-start rounded-lg border bg-card p-0.5">
-        {(
-          [
-            ['memes', '热门表情包', memes.data?.total],
-            ['folders', '公开合集', folders.data?.length],
-          ] as const
-        ).map(([id, label, n]) => (
-          <button
-            key={id}
-            role="tab"
-            type="button"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={cn('flex h-9 items-center gap-1.5 rounded-md px-3.5 text-sm transition-colors', tab === id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')}
-          >
-            {label}
-            <span className="text-xs tabular-nums opacity-70">{n ?? ''}</span>
-          </button>
-        ))}
-      </div>
+      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包', memes.data?.total], ['folders', '公开合集', folders.data?.length]] as const} />
       <div role="tabpanel">
         {tab === 'memes' ? (
           <Loadable result={memes} loading={<MemeGridSkeleton />}>

@@ -48,6 +48,7 @@ import { FolderPickerDialog, type PickerMode } from './folder-picker-dialog'
 import { UploadDialog } from './upload-dialog'
 import { api, qs, refresh } from '@/lib/api'
 import { toMs } from '@/lib/format'
+import { isProcessing } from '@/lib/media'
 import { downloadMany } from '@/lib/meme-transfer'
 import type { Entry, Folder, LibraryView as Library } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -57,13 +58,11 @@ const SORT_LABELS: Record<Sort, string> = { newest: '最新添加', oldest: '最
 type Item = { type: 'folder'; folder: Folder } | { type: 'entry'; entry: Entry }
 const nodeOf = (i: Item) => (i.type === 'folder' ? i.folder : i.entry)
 
-const inProgress = (lib?: Library) => lib?.entries.some((e) => e.meme?.status === 'pending' || e.meme?.status === 'processing')
-
 export function LibraryView() {
   const params = useSearchParams()
   const folderId = params.get('folder')
   const library = useSWR<Library>(`/library${qs({ folder_id: folderId })}`, {
-    refreshInterval: (lib) => (inProgress(lib) ? 3000 : 0),
+    refreshInterval: (lib) => (lib?.entries.some((e) => isProcessing(e.meme)) ? 3000 : 0),
   })
   return (
     <Loadable result={library} loading={<PageLoading />} notFound={{ title: '文件夹不存在', description: '它可能已被删除或移动。' }}>
