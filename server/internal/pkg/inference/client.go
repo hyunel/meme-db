@@ -6,6 +6,7 @@ import (
 
 	pb "github.com/hyunel/MemeDB/internal/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -45,6 +46,15 @@ func NewClient(addr string) (*Client, error) {
 
 func (c *Client) Close() error {
 	return c.conn.Close()
+}
+
+// Health reports whether the connection to the inference service is usable, and its state.
+func (c *Client) Health() (bool, string) {
+	state := c.conn.GetState()
+	if state == connectivity.Idle {
+		c.conn.Connect() // Connections are lazy; start one so the next check is meaningful
+	}
+	return state != connectivity.TransientFailure && state != connectivity.Shutdown, state.String()
 }
 
 // WithPriority returns a client sharing the same connection whose requests carry the given priority.

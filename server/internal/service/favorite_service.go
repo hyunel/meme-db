@@ -2,159 +2,103 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-type FavoriteService struct {
-	repo         *repository.Provider
-	memeService  *MemeService
-	assetService *AssetService
-}
-
-func NewFavoriteService(repo *repository.Provider, memeService *MemeService, assetService *AssetService) *FavoriteService {
-	return &FavoriteService{
-		repo:         repo,
-		memeService:  memeService,
-		assetService: assetService,
-	}
-}
-
-type FavoriteTargetType string
-
 const (
-	FavoriteTargetMeme   FavoriteTargetType = "MEME"
-	FavoriteTargetFolder FavoriteTargetType = "FOLDER"
+	FavoriteMeme   = "meme"
+	FavoriteFolder = "folder"
 )
 
-type FavoriteToggleItem struct {
-	TargetID   string             `json:"id" validate:"required"`
-	TargetType FavoriteTargetType `json:"type" validate:"required,oneof=MEME FOLDER"`
-	IsFavorite bool               `json:"favorite"`
+type FavoriteService struct {
+	repo    *repository.Provider
+	memes   *MemeService
+	library *LibraryService
 }
 
-func (s *FavoriteService) ToggleFavorite(ctx context.Context, userID string, items []FavoriteToggleItem) error {
-	if len(items) == 0 {
-		return nil
-	}
+func NewFavoriteService(repo *repository.Provider, memes *MemeService, library *LibraryService) *FavoriteService {
+	return &FavoriteService{repo: repo, memes: memes, library: library}
+}
 
-	r, release, err := s.repo.Conn(ctx, userID)
+type Favorites struct {
+	Memes   []*model.Meme   `json:"memes"`
+	Folders []*model.Folder `json:"folders"`
+	// Favorites the viewer can no longer see, e.g. because they were made private
+	StaleMemes   []string `json:"stale_memes"`
+	StaleFolders []string `json:"stale_folders"`
+}
+
+// List returns the viewer's favorites, newest first.
+func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Favorites, error) {
+	assetIDs, nodeIDs, err := s.repo.Favorite.List(ctx, viewer.UserID)
+	if err != nil {
+		return nil, err
+	}
+	memes, err := s.memes.Memes(ctx, viewer, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	folders, err := s.visibleFolders(ctx, viewer, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	return &Favorites{
+		Memes:        memes,
+		Folders:      folders,
+		StaleMemes:   missing(assetIDs, memes, func(m *model.Meme) string { return m.ID }),
+		StaleFolders: missing(nodeIDs, folders, func(f *model.Folder) string { return f.ID }),
+	}, nil
+}
+
+// Add favorites a meme or folder the viewer can see.
+func (s *FavoriteService) Add(ctx context.Context, viewer *rbac.Identity, kind, id string) error {
+	if kind == FavoriteMeme {
+		if _, err := s.memes.Get(ctx, viewer, id); err != nil {
+			return err
+		}
+		return s.repo.Favorite.Add(ctx, viewer.UserID, &id, nil)
+	}
+	folders, err := s.visibleFolders(ctx, viewer, []string{id})
 	if err != nil {
 		return err
 	}
-	defer release()
-
-	type key struct {
-		TargetType FavoriteTargetType
-		IsFavorite bool
+	if len(folders) == 0 {
+		return apperror.NotFound("合集不存在或未公开")
 	}
-	groups := make(map[key][]string)
-	for _, item := range items {
-		k := key{item.TargetType, item.IsFavorite}
-		groups[k] = append(groups[k], item.TargetID)
-	}
-
-	for k, targetIDs := range groups {
-		switch k.TargetType {
-		case FavoriteTargetMeme:
-			for _, id := range targetIDs {
-				exists, err := r.Asset.HasAccess(ctx, id)
-				if err != nil {
-					return err
-				}
-				if !exists {
-					return apperror.Forbidden(fmt.Sprintf("you do not have access to meme %s", id))
-				}
-			}
-
-			if k.IsFavorite {
-				if err := r.Favorite.AddAssets(ctx, targetIDs); err != nil {
-					return err
-				}
-			} else {
-				if err := r.Favorite.RemoveAssets(ctx, targetIDs); err != nil {
-					return err
-				}
-			}
-
-		case FavoriteTargetFolder:
-			for _, id := range targetIDs {
-				node, err := r.Node.Get(ctx, id)
-				if err != nil {
-					return apperror.NotFound(fmt.Sprintf("folder %s not found", id))
-				}
-				if node.Type != model.NodeTypeFolder {
-					return apperror.BadRequest(fmt.Sprintf("node %s is not a folder", id))
-				}
-			}
-
-			if k.IsFavorite {
-				if err := r.Favorite.AddNodes(ctx, targetIDs); err != nil {
-					return err
-				}
-			} else {
-				if err := r.Favorite.RemoveNodes(ctx, targetIDs); err != nil {
-					return err
-				}
-			}
-
-		default:
-			return apperror.BadRequest("invalid favorite target type")
-		}
-	}
-
-	return nil
+	return s.repo.Favorite.Add(ctx, viewer.UserID, nil, &id)
 }
 
-type ListFavoritesResponse struct {
-	Memes   []*model.MemeView `json:"memes"`
-	Folders []*model.NodeView `json:"folders"`
+func (s *FavoriteService) Remove(ctx context.Context, viewer *rbac.Identity, kind, id string) error {
+	if kind == FavoriteMeme {
+		return s.repo.Favorite.Remove(ctx, viewer.UserID, []string{id}, nil)
+	}
+	return s.repo.Favorite.Remove(ctx, viewer.UserID, nil, []string{id})
 }
 
-func (s *FavoriteService) ListFavorites(ctx context.Context, userID string) (*ListFavoritesResponse, error) {
-	r, release, err := s.repo.Conn(ctx, userID)
+// ClearStale removes the favorites the viewer can no longer see.
+func (s *FavoriteService) ClearStale(ctx context.Context, viewer *rbac.Identity) error {
+	favs, err := s.List(ctx, viewer)
+	if err != nil {
+		return err
+	}
+	return s.repo.Favorite.Remove(ctx, viewer.UserID, favs.StaleMemes, favs.StaleFolders)
+}
+
+// visibleFolders returns the folders among ids that are public or the viewer's own.
+func (s *FavoriteService) visibleFolders(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Folder, error) {
+	folders, err := s.library.Folders(ctx, viewer, ids)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
-
-	assetIDs, nodeIDs, err := r.Favorite.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	res := &ListFavoritesResponse{
-		Memes:   []*model.MemeView{},
-		Folders: []*model.NodeView{},
-	}
-
-	if len(assetIDs) > 0 {
-		memes, err := s.memeService.getMemeViews(ctx, r, assetIDs)
-		if err != nil {
-			return nil, err
-		}
-		for _, id := range assetIDs {
-			if m, ok := memes[id]; ok {
-				res.Memes = append(res.Memes, m)
-			}
+	visible := folders[:0]
+	for _, f := range folders {
+		if f.Visibility != model.VisibilityPrivate || f.Owner.ID == viewer.UserID {
+			visible = append(visible, f)
 		}
 	}
-
-	if len(nodeIDs) > 0 {
-		nodes, err := r.Node.GetMany(ctx, nodeIDs)
-		if err != nil {
-			return nil, err
-		}
-		for _, n := range nodes {
-			res.Folders = append(res.Folders, &model.NodeView{
-				Node:       n,
-				IsFavorite: true,
-			})
-		}
-	}
-
-	return res, nil
+	return visible, nil
 }

@@ -1,0 +1,362 @@
+package handler
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/logger"
+	"github.com/hyunel/MemeDB/internal/service"
+	"github.com/labstack/echo/v4"
+)
+
+// AdminHandler serves the admin console: users, content, tags, statistics and logs.
+type AdminHandler struct {
+	userService  *service.UserService
+	memeService  *service.MemeService
+	tagService   *service.TagService
+	statsService *service.StatsService
+	logs         *logger.Buffer
+}
+
+func NewAdminHandler(
+	userService *service.UserService,
+	memeService *service.MemeService,
+	tagService *service.TagService,
+	statsService *service.StatsService,
+	logs *logger.Buffer,
+) *AdminHandler {
+	return &AdminHandler{
+		userService:  userService,
+		memeService:  memeService,
+		tagService:   tagService,
+		statsService: statsService,
+		logs:         logs,
+	}
+}
+
+type CountResponse struct {
+	Count int `json:"count"`
+}
+
+// ==============================================================================
+// Users
+// ==============================================================================
+
+type ListUsersRequest struct {
+	PageQuery
+	RangeQuery
+	Query  string `query:"q" validate:"max=100"`
+	Role   string `query:"role" validate:"omitempty,oneof=user admin"`
+	Status string `query:"status" validate:"omitempty,oneof=active disabled"`
+	Sort   string `query:"sort" validate:"omitempty,oneof=newest oldest name"`
+}
+
+func (h *AdminHandler) ListUsers(c echo.Context) error {
+	var req ListUsersRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	page, err := h.userService.List(c.Request().Context(), service.UserFilter{
+		Query:   strings.TrimSpace(req.Query),
+		Role:    req.Role,
+		Status:  req.Status,
+		Created: req.timeRange(),
+		Sort:    req.Sort,
+	}, req.page())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, page)
+}
+
+type UserRequest struct {
+	ID string `param:"id" validate:"required,uuid"`
+}
+
+func (h *AdminHandler) GetUser(c echo.Context) error {
+	var req UserRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	user, err := h.userService.Get(c.Request().Context(), Viewer(c), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, user)
+}
+
+type CreateUserRequest struct {
+	RegisterRequest
+	Role string `json:"role" validate:"required,oneof=user admin"`
+}
+
+func (h *AdminHandler) CreateUser(c echo.Context) error {
+	var req CreateUserRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	user, err := h.userService.Create(c.Request().Context(), req.Username, req.Email, req.Password, req.Role)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, user)
+}
+
+type UpdateUserRequest struct {
+	ID     string  `param:"id" validate:"required,uuid"`
+	Role   *string `json:"role" validate:"omitempty,oneof=user admin"`
+	Status *string `json:"status" validate:"omitempty,oneof=active disabled"`
+}
+
+func (h *AdminHandler) UpdateUser(c echo.Context) error {
+	var req UpdateUserRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.userService.Update(c.Request().Context(), Viewer(c), req.ID, req.Role, req.Status); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+type ResetPasswordRequest struct {
+	ID       string `param:"id" validate:"required,uuid"`
+	Password string `json:"password" validate:"required,min=6"`
+}
+
+func (h *AdminHandler) ResetPassword(c echo.Context) error {
+	var req ResetPasswordRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.userService.ResetPassword(c.Request().Context(), req.ID, req.Password); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *AdminHandler) DeleteUser(c echo.Context) error {
+	var req UserRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.userService.Delete(c.Request().Context(), Viewer(c), req.ID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ==============================================================================
+// Content
+// ==============================================================================
+
+type MemeFilterParams struct {
+	RangeQuery
+	Query      string `query:"q" json:"q" validate:"max=100"`
+	Status     string `query:"status" json:"status" validate:"omitempty,oneof=pending processing success failed"`
+	Visibility string `query:"visibility" json:"visibility" validate:"omitempty,oneof=public private"`
+	Kind       string `query:"kind" json:"kind" validate:"omitempty,oneof=image gif video lottie"`
+}
+
+func (p MemeFilterParams) filter() service.MemeFilter {
+	return service.MemeFilter{
+		Query:      strings.TrimSpace(p.Query),
+		Status:     p.Status,
+		Visibility: p.Visibility,
+		Kind:       p.Kind,
+		Created:    p.timeRange(),
+	}
+}
+
+type ListMemesAdminRequest struct {
+	PageQuery
+	MemeFilterParams
+}
+
+func (h *AdminHandler) ListMemes(c echo.Context) error {
+	var req ListMemesAdminRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	page, err := h.memeService.List(c.Request().Context(), Viewer(c), req.filter(), req.page())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, page)
+}
+
+// ReprocessMemesRequest selects memes by IDs, or by a filter (an empty filter selects all).
+type ReprocessMemesRequest struct {
+	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
+	Filter *MemeFilterParams `json:"filter"`
+}
+
+func (h *AdminHandler) ReprocessMemes(c echo.Context) error {
+	var req ReprocessMemesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	var n int
+	var err error
+	switch {
+	case len(req.IDs) > 0:
+		n, err = h.memeService.Reprocess(c.Request().Context(), req.IDs)
+	case req.Filter != nil:
+		if err := c.Validate(req.Filter); err != nil {
+			return apperror.BadRequest("请求参数无效：" + err.Error())
+		}
+		n, err = h.memeService.ReprocessMatching(c.Request().Context(), req.Filter.filter())
+	default:
+		return apperror.BadRequest("请指定要重新处理的表情包")
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, CountResponse{Count: n})
+}
+
+type IDsRequest struct {
+	IDs []string `json:"ids" validate:"required,min=1,max=1000,dive,uuid"`
+}
+
+func (h *AdminHandler) DeleteMemes(c echo.Context) error {
+	var req IDsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	n, err := h.memeService.Delete(c.Request().Context(), req.IDs)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, CountResponse{Count: n})
+}
+
+// ==============================================================================
+// Tags
+// ==============================================================================
+
+type ListTagsRequest struct {
+	PageQuery
+	Query string `query:"q" validate:"max=100"`
+	Sort  string `query:"sort" validate:"omitempty,oneof=usage name created"`
+}
+
+func (h *AdminHandler) ListTags(c echo.Context) error {
+	var req ListTagsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	page, err := h.tagService.List(c.Request().Context(), strings.TrimSpace(req.Query), req.Sort, req.page())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, page)
+}
+
+type RenameTagRequest struct {
+	ID   string `param:"id" validate:"required,uuid"`
+	Name string `json:"name"`
+}
+
+func (h *AdminHandler) RenameTag(c echo.Context) error {
+	var req RenameTagRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || len([]rune(name)) > 50 {
+		return apperror.BadRequest("标签需为 1–50 个字符")
+	}
+
+	if err := h.tagService.Rename(c.Request().Context(), req.ID, name); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+type MergeTagsRequest struct {
+	SourceIDs []string `json:"source_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	TargetID  string   `json:"target_id" validate:"required,uuid"`
+}
+
+func (h *AdminHandler) MergeTags(c echo.Context) error {
+	var req MergeTagsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.tagService.Merge(c.Request().Context(), req.SourceIDs, req.TargetID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *AdminHandler) DeleteTags(c echo.Context) error {
+	var req IDsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.tagService.Delete(c.Request().Context(), req.IDs); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ==============================================================================
+// Statistics & logs
+// ==============================================================================
+
+type StatsRequest struct {
+	RangeQuery
+	TimeZone string `query:"tz" validate:"max=64"` // IANA name for the daily trend buckets
+}
+
+func (h *AdminHandler) Stats(c echo.Context) error {
+	var req StatsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	r := req.timeRange()
+	if r.To.IsZero() {
+		r.To = time.Now()
+	}
+	if r.From.IsZero() || r.From.After(r.To) {
+		r.From = r.To.AddDate(0, 0, -7)
+	}
+	tz := "UTC"
+	if _, err := time.LoadLocation(req.TimeZone); req.TimeZone != "" && err == nil {
+		tz = req.TimeZone
+	}
+
+	overview, err := h.statsService.Overview(c.Request().Context(), r.From, r.To, tz)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, overview)
+}
+
+type LogsRequest struct {
+	After int64 `query:"after" validate:"min=0"`
+}
+
+// Logs returns the kept log entries newer than the given entry ID, oldest first.
+func (h *AdminHandler) Logs(c echo.Context) error {
+	var req LogsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, h.logs.After(req.After))
+}

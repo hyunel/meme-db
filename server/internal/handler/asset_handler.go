@@ -2,46 +2,47 @@ package handler
 
 import (
 	"net/http"
-	"path/filepath"
 
-	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
 type AssetHandler struct {
-	cfg       *config.Config
-	fsService *service.FileSystemService
+	assetService *service.AssetService
 }
 
-func NewAssetHandler(cfg *config.Config, fsService *service.FileSystemService) *AssetHandler {
-	return &AssetHandler{
-		cfg:       cfg,
-		fsService: fsService,
-	}
+func NewAssetHandler(assetService *service.AssetService) *AssetHandler {
+	return &AssetHandler{assetService: assetService}
+}
+
+type GetAssetContentRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Token string `query:"token" validate:"required"`
 }
 
 func (h *AssetHandler) GetAssetContent(c echo.Context) error {
-	id := c.Param("id")
-	token := c.QueryParam("token")
+	var req GetAssetContentRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
 
-	asset, err := h.fsService.GetAssetForContent(c.Request().Context(), id, token)
+	asset, path, err := h.assetService.Content(c.Request().Context(), req.ID, req.Token)
 	if err != nil {
 		return err
 	}
 
-	// Support ETag using the pre-calculated file hash from database
+	// Assets are immutable and content-addressed, so the hash is a strong ETag.
 	etag := `"` + asset.FileHash + `"`
 	if c.Request().Header.Get("If-None-Match") == etag {
 		return c.NoContent(http.StatusNotModified)
 	}
-
-	absPath := filepath.Join(h.cfg.Server.StoragePath, asset.StoragePath)
-
-	// Set cache headers for better performance since assets are immutable
 	c.Response().Header().Set("ETag", etag)
-	c.Response().Header().Set("Cache-Control", "public, max-age=31536000") // 1 year
+	c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	c.Response().Header().Set("Content-Type", asset.MimeType)
+	return c.File(path)
+}
 
-	return c.File(absPath)
+// GetConfig returns the settings clients need, such as upload limits.
+func (h *AssetHandler) GetConfig(c echo.Context) error {
+	return c.JSON(http.StatusOK, echo.Map{"upload": h.assetService.UploadConfig()})
 }

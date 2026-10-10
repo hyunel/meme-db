@@ -1,37 +1,36 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/labstack/echo/v4"
 )
 
+// HTTPErrorHandler renders errors as JSON {"error": message, "field"?: name}.
+// Errors other than AppError and echo.HTTPError are internal and not exposed.
 func HTTPErrorHandler(err error, c echo.Context) {
-	code := http.StatusInternalServerError
-	var msg string = "internal server error"
-
-	if he, ok := err.(*echo.HTTPError); ok {
-		code = he.Code
-		msg = fmtMsg(he.Message)
-	} else if ae, ok := err.(*apperror.AppError); ok {
-		code = ae.Code
-		msg = ae.Message
+	if c.Response().Committed {
+		return
 	}
 
-	// Send response
-	if !c.Response().Committed {
-		if c.Request().Method == http.MethodHead {
-			err = c.NoContent(code)
-		} else {
-			err = c.String(code, msg)
+	appErr := apperror.New(http.StatusInternalServerError, "服务器内部错误，请稍后重试", nil)
+	var ae *apperror.AppError
+	var he *echo.HTTPError
+	switch {
+	case errors.As(err, &ae):
+		appErr = ae
+	case errors.As(err, &he):
+		appErr = apperror.New(he.Code, http.StatusText(he.Code), nil)
+		if msg, ok := he.Message.(string); ok {
+			appErr.Message = msg
 		}
 	}
-}
 
-func fmtMsg(msg interface{}) string {
-	if s, ok := msg.(string); ok {
-		return s
+	if c.Request().Method == http.MethodHead {
+		_ = c.NoContent(appErr.Code)
+	} else {
+		_ = c.JSON(appErr.Code, appErr)
 	}
-	return "unknown error"
 }

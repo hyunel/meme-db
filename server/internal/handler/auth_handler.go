@@ -11,10 +11,11 @@ import (
 
 type AuthHandler struct {
 	authService *service.AuthService
+	userService *service.UserService
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *service.AuthService, userService *service.UserService) *AuthHandler {
+	return &AuthHandler{authService: authService, userService: userService}
 }
 
 type RegisterRequest struct {
@@ -38,11 +39,7 @@ func (h *AuthHandler) Register(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
-	return c.JSON(http.StatusCreated, AuthResponse{
-		Token: token,
-		User:  user,
-	})
+	return c.JSON(http.StatusCreated, AuthResponse{Token: token, User: user})
 }
 
 type LoginRequest struct {
@@ -60,22 +57,41 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
-	return c.JSON(http.StatusOK, AuthResponse{
-		Token: token,
-		User:  user,
-	})
+	return c.JSON(http.StatusOK, AuthResponse{Token: token, User: user})
 }
 
 func (h *AuthHandler) GetMe(c echo.Context) error {
-	userID := MustGetUserID(c)
-
-	user, err := h.authService.GetUser(c.Request().Context(), userID)
+	user, err := h.authService.GetUser(c.Request().Context(), Viewer(c).UserID)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, user)
+}
+
+func (h *AuthHandler) GetMyStats(c echo.Context) error {
+	stats, err := h.userService.Stats(c.Request().Context(), Viewer(c).UserID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, stats)
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required"`
+	NewPassword     string `json:"new_password" validate:"required,min=6"`
+}
+
+func (h *AuthHandler) ChangePassword(c echo.Context) error {
+	var req ChangePasswordRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	err := h.authService.ChangePassword(c.Request().Context(), Viewer(c).UserID, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // IdentityProvider returns the AuthService as an rbac.IdentityProvider.

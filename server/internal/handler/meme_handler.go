@@ -1,160 +1,207 @@
 package handler
 
 import (
+	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strings"
 
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
+const maxSearchImageBytes = 10 << 20
+
 type MemeHandler struct {
-	memeService  *service.MemeService
-	assetService *service.AssetService
-	fsService    *service.FileSystemService
+	memeService *service.MemeService
+	tagService  *service.TagService
 }
 
-func NewMemeHandler(memeService *service.MemeService, assetService *service.AssetService, fsService *service.FileSystemService) *MemeHandler {
-	return &MemeHandler{
-		memeService:  memeService,
-		assetService: assetService,
-		fsService:    fsService,
-	}
+func NewMemeHandler(memeService *service.MemeService, tagService *service.TagService) *MemeHandler {
+	return &MemeHandler{memeService: memeService, tagService: tagService}
 }
 
 type SearchRequest struct {
-	Query    string `form:"q" validate:"omitempty"`
-	Scope    string `form:"scope" validate:"omitempty,oneof=global my"`
-	FolderID string `form:"folder_id" validate:"omitempty,uuid"`
-	Limit    int    `form:"limit" validate:"omitempty,min=1"`
+	Query    string                `form:"q" validate:"max=200"`
+	Scope    string                `form:"scope" validate:"omitempty,oneof=public mine"`
+	FolderID string                `form:"folder_id" validate:"omitempty,uuid"`
+	Limit    int                   `form:"limit" validate:"omitempty,min=1,max=100"`
+	Image    *multipart.FileHeader `form:"image"`
 }
 
 func (h *MemeHandler) Search(c echo.Context) error {
 	var req SearchRequest
-
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
-
-	ownerID := GetUserID(c)
-
-	// If user is not logged in, scope must be global
-	if ownerID == "" {
-		req.Scope = "global"
+	req.Query = strings.TrimSpace(req.Query)
+	if req.Query == "" && req.Image == nil {
+		return apperror.BadRequest("请输入关键词或添加图片")
 	}
 
-	var imgInput *inference.ImageInput
-	file, err := c.FormFile("image")
-	if err == nil {
-		if _, err := h.assetService.ValidateUpload(file); err != nil {
-			return err
-		}
-
-		src, err := file.Open()
+	params := service.SearchParams{
+		Viewer:   Viewer(c),
+		Query:    req.Query,
+		Mine:     req.Scope == "mine",
+		FolderID: req.FolderID,
+		Limit:    req.Limit,
+	}
+	if req.Image != nil {
+		image, err := readSearchImage(req.Image)
 		if err != nil {
 			return err
 		}
-		defer src.Close()
-
-		data := make([]byte, file.Size)
-		if _, err := src.Read(data); err != nil {
-			return err
-		}
-
-		imgInput = &inference.ImageInput{
-			Data:   data,
-			Format: filepath.Ext(file.Filename),
-		}
+		params.Image = image
 	}
 
-	results, err := h.memeService.Search(c.Request().Context(), service.SearchParams{
-		Query:    req.Query,
-		Image:    imgInput,
-		Limit:    req.Limit,
-		Scope:    req.Scope,
-		UserID:   ownerID,
-		FolderID: req.FolderID,
-	})
+	results, err := h.memeService.Search(c.Request().Context(), params)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, results)
 }
 
-type GetMemeRequest struct {
+func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, error) {
+	if fileHeader.Size > maxSearchImageBytes {
+		return nil, apperror.BadRequest("图片不能超过 10 MB")
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxSearchImageBytes))
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(http.DetectContentType(data), "image/") {
+		return nil, apperror.BadRequest("仅支持按图片搜索")
+	}
+	return &inference.ImageInput{Data: data, Format: filepath.Ext(fileHeader.Filename)}, nil
+}
+
+type ListMemesRequest struct {
+	Tag   string `query:"tag" validate:"max=100"`
+	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+// List lists public memes, most popular first.
+func (h *MemeHandler) List(c echo.Context) error {
+	var req ListMemesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	page, err := h.memeService.Popular(c.Request().Context(), Viewer(c), req.Tag, limitOr(req.Limit, 40))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, page)
+}
+
+type MemeRequest struct {
 	ID string `param:"id" validate:"required,uuid"`
 }
 
-func (h *MemeHandler) GetMeme(c echo.Context) error {
-	var req GetMemeRequest
+func (h *MemeHandler) Get(c echo.Context) error {
+	var req MemeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	userID := GetUserID(c)
-
-	meme, err := h.memeService.GetMemeView(c.Request().Context(), userID, req.ID)
+	meme, err := h.memeService.Get(c.Request().Context(), Viewer(c), req.ID)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, meme)
 }
 
-type GetSimilarMemesRequest struct {
+type SimilarMemesRequest struct {
 	ID    string `param:"id" validate:"required,uuid"`
-	Limit int    `query:"limit" validate:"omitempty,min=1"`
+	Limit int    `query:"limit" validate:"omitempty,min=1,max=50"`
 }
 
-func (h *MemeHandler) GetSimilar(c echo.Context) error {
-	var req GetSimilarMemesRequest
+func (h *MemeHandler) Similar(c echo.Context) error {
+	var req SimilarMemesRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	userID := GetUserID(c)
-
-	results, err := h.memeService.GetSimilarMemes(c.Request().Context(), userID, req.ID, req.Limit)
+	memes, err := h.memeService.Similar(c.Request().Context(), Viewer(c), req.ID, limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}
-
-	return c.JSON(http.StatusOK, results)
+	return c.JSON(http.StatusOK, memes)
 }
 
-type BatchRetryRequest struct {
-	IDs []string `json:"ids" validate:"required,min=1,dive,uuid"`
-}
-
-func (h *MemeHandler) BatchRetry(c echo.Context) error {
-	var req BatchRetryRequest
+func (h *MemeHandler) Retry(c echo.Context) error {
+	var req MemeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	userID := MustGetUserID(c)
-
-	if err := h.memeService.RetryProcessing(c.Request().Context(), userID, req.IDs); err != nil {
+	if err := h.memeService.Retry(c.Request().Context(), Viewer(c), req.ID); err != nil {
 		return err
 	}
-
-	return c.NoContent(http.StatusOK)
+	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *MemeHandler) Add(c echo.Context) error {
-	var req GetMemeRequest
+type AddTagRequest struct {
+	MemeID string `param:"id" validate:"required,uuid"`
+	Name   string `json:"name" validate:"required"`
+}
+
+func (h *MemeHandler) AddTag(c echo.Context) error {
+	var req AddTagRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
+	name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(req.Name), "#"))
+	if name == "" || len([]rune(name)) > 50 {
+		return apperror.BadRequest("标签需为 1–50 个字符")
+	}
 
-	userID := MustGetUserID(c)
-
-	node, err := h.fsService.AddAssetToRoot(c.Request().Context(), userID, req.ID)
+	tag, err := h.tagService.AddToMeme(c.Request().Context(), Viewer(c), req.MemeID, name)
 	if err != nil {
 		return err
 	}
+	return c.JSON(http.StatusCreated, tag)
+}
 
-	return c.JSON(http.StatusCreated, node)
+type RemoveTagRequest struct {
+	MemeID string `param:"id" validate:"required,uuid"`
+	TagID  string `param:"tagId" validate:"required,uuid"`
+}
+
+func (h *MemeHandler) RemoveTag(c echo.Context) error {
+	var req RemoveTagRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.tagService.RemoveFromMeme(c.Request().Context(), Viewer(c), req.MemeID, req.TagID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+type HotTagsRequest struct {
+	Limit int `query:"limit" validate:"omitempty,min=1,max=50"`
+}
+
+func (h *MemeHandler) HotTags(c echo.Context) error {
+	var req HotTagsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	tags, err := h.tagService.Hot(c.Request().Context(), limitOr(req.Limit, 10))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, tags)
 }

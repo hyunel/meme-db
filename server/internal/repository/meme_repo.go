@@ -2,190 +2,39 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/db"
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/pgvector/pgvector-go"
 )
+
+// Predicates on core.meme_info aliased m.
+const (
+	// A meme stays listed while it is re-analyzed, so "analyzed once" rather than the current status.
+	memeAnalyzed = `m.analyzed_at IS NOT NULL`
+	memeInPublic = `EXISTS (SELECT 1 FROM library.public_files pf WHERE pf.asset_id = m.asset_id)`
+	memePublic   = `(` + memeAnalyzed + ` AND ` + memeInPublic + `)`
+)
+
+// memeOwnedBy matches memes in the library of the user bound to placeholder viewer.
+func memeOwnedBy(viewer string) string {
+	return fmt.Sprintf(`EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = %s::uuid)`, viewer)
+}
 
 type MemeRepository struct {
 	db db.DBTX
 }
 
 // ==============================================================================
-// Search
+// Analysis state
 // ==============================================================================
 
-type searchCandidateRow struct {
-	AssetID    string     `db:"asset_id"`
-	VLMJSON    []byte     `db:"vlm_json"`
-	Width      int        `db:"width"`
-	Height     int        `db:"height"`
-	AnalyzedAt *time.Time `db:"analyzed_at"`
-	Similarity float32    `db:"similarity"`
-	RecallType string     `db:"recall_type"`
-}
-
-func (row *searchCandidateRow) ToModel() *model.SearchCandidate {
-	return &model.SearchCandidate{
-		MemeInfo: model.MemeInfo{
-			AssetID:    row.AssetID,
-			VLMJSON:    row.VLMJSON,
-			Width:      row.Width,
-			Height:     row.Height,
-			AnalyzedAt: row.AnalyzedAt,
-		},
-		Similarity: row.Similarity,
-		RecallType: row.RecallType,
-	}
-}
-
-func (r *MemeRepository) buildRecallQuery(subqueries []string) string {
-	if len(subqueries) == 0 {
-		return ""
-	}
-	query := "SELECT DISTINCT ON (asset_id) asset_id, vlm_json, width, height, analyzed_at, similarity, recall_type FROM ("
-	for i, sub := range subqueries {
-		if i > 0 {
-			query += " UNION ALL "
-		}
-		query += sub
-	}
-	query += ") AS combined ORDER BY asset_id, similarity DESC"
-	return query
-}
-
-// SearchSimilar finds similar memes based on vectors from a source asset.
-func (r *MemeRepository) SearchSimilar(ctx context.Context, params SearchSimilarParams) ([]*model.SearchCandidate, error) {
-	var args []interface{}
-	args = append(args, params.SourceAssetID) // $1
-
-	// Use core.meme_view which already handles access control via RLS
-	buildSubquery := func(recallType, vectorCol string, threshold float32, limit int) string {
-		sourceVec := fmt.Sprintf("(SELECT %s FROM core.meme_view WHERE asset_id = $1::uuid)", vectorCol)
-		similarity := fmt.Sprintf("1 - (m.%s <=> %s)", vectorCol, sourceVec)
-		where := fmt.Sprintf("WHERE m.asset_id != $1::uuid AND m.%s IS NOT NULL", vectorCol)
-		if threshold > 0 {
-			where += fmt.Sprintf(" AND %s >= %f", similarity, threshold)
-		}
-		return fmt.Sprintf(`
-			(SELECT m.asset_id, m.vlm_json, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
-			 FROM core.meme_view m %s ORDER BY similarity DESC LIMIT %d)`,
-			similarity, recallType, where, limit)
-	}
-
-	var subqueries []string
-	if params.Metaphor.Enabled {
-		subqueries = append(subqueries, buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Threshold, params.Metaphor.Limit))
-	}
-	if params.Semantic.Enabled {
-		subqueries = append(subqueries, buildSubquery("semantic", "semantic_vector", params.Semantic.Threshold, params.Semantic.Limit))
-	}
-	if params.Clip.Enabled {
-		subqueries = append(subqueries, buildSubquery("clip", "clip_vector", params.Clip.Threshold, params.Clip.Limit))
-	}
-
-	query := r.buildRecallQuery(subqueries)
-	if query == "" {
-		return nil, nil
-	}
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	candidates, err := pgx.CollectRows(rows, pgx.RowToStructByName[searchCandidateRow])
-	if err != nil {
-		return nil, err
-	}
-	result := make([]*model.SearchCandidate, len(candidates))
-	for i, c := range candidates {
-		result[i] = c.ToModel()
-	}
-	return result, nil
-}
-
-// SearchCombined performs multi-channel search with text/image vectors.
-func (r *MemeRepository) SearchCombined(ctx context.Context, params SearchCombinedParams) ([]*model.SearchCandidate, error) {
-	var args []interface{}
-	var scopeFilter string
-
-	// Build scope filter - core.meme_view already handles base access control
-	if params.FolderPath != nil {
-		args = append(args, *params.FolderPath) // $1
-		scopeFilter = "AND EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND n.path <@ $1::ltree)"
-	} else if params.Scope == "my" {
-		scopeFilter = "AND m.in_library = true"
-	}
-	// Global scope: no additional filter needed, meme_view handles it
-
-	buildSubquery := func(recallType, vectorCol string, value interface{}, threshold float32, limit int) string {
-		paramIdx := len(args) + 1
-		args = append(args, value)
-
-		where := fmt.Sprintf("WHERE m.%s IS NOT NULL", vectorCol)
-		var similarity string
-		if vectorCol == "ocr_text" {
-			similarity = fmt.Sprintf("similarity(m.ocr_text, $%d)", paramIdx)
-			if threshold > 0 {
-				where += fmt.Sprintf(" AND similarity(m.ocr_text, $%d) >= %f", paramIdx, threshold)
-			}
-		} else {
-			similarity = fmt.Sprintf("1 - (m.%s <=> $%d)", vectorCol, paramIdx)
-			if threshold > 0 {
-				where += fmt.Sprintf(" AND 1 - (m.%s <=> $%d) >= %f", vectorCol, paramIdx, threshold)
-			}
-		}
-
-		return fmt.Sprintf(`
-			(SELECT m.asset_id, m.vlm_json, m.width, m.height, m.analyzed_at, %s as similarity, '%s' as recall_type
-			 FROM core.meme_view m %s %s ORDER BY similarity DESC LIMIT %d)`,
-			similarity, recallType, where, scopeFilter, limit)
-	}
-
-	var subqueries []string
-	if params.Metaphor.Enabled {
-		subqueries = append(subqueries, buildSubquery("metaphor", "metaphor_vector", params.Metaphor.Value, params.Metaphor.Threshold, params.Metaphor.Limit))
-	}
-	if params.Semantic.Enabled {
-		subqueries = append(subqueries, buildSubquery("semantic", "semantic_vector", params.Semantic.Value, params.Semantic.Threshold, params.Semantic.Limit))
-	}
-	if params.ClipText.Enabled {
-		subqueries = append(subqueries, buildSubquery("clip_text", "clip_vector", params.ClipText.Value, params.ClipText.Threshold, params.ClipText.Limit))
-	}
-	if params.OCR.Enabled {
-		subqueries = append(subqueries, buildSubquery("ocr", "ocr_text", params.OCR.Value, params.OCR.Threshold, params.OCR.Limit))
-	}
-	if params.ClipImage.Enabled {
-		subqueries = append(subqueries, buildSubquery("clip_image", "clip_vector", params.ClipImage.Value, params.ClipImage.Threshold, params.ClipImage.Limit))
-	}
-
-	query := r.buildRecallQuery(subqueries)
-	if query == "" {
-		return nil, nil
-	}
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	candidates, err := pgx.CollectRows(rows, pgx.RowToStructByName[searchCandidateRow])
-	if err != nil {
-		return nil, err
-	}
-	result := make([]*model.SearchCandidate, len(candidates))
-	for i, c := range candidates {
-		result[i] = c.ToModel()
-	}
-	return result, nil
-}
-
-// ==============================================================================
-// CRUD
-// ==============================================================================
-
+// Create inserts or replaces the analysis of an asset.
 func (r *MemeRepository) Create(ctx context.Context, meme *model.MemeInfo) error {
 	query := `
 		INSERT INTO core.meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height, processing_status, analyzed_at)
@@ -194,7 +43,7 @@ func (r *MemeRepository) Create(ctx context.Context, meme *model.MemeInfo) error
 			vlm_json = EXCLUDED.vlm_json, ocr_text = EXCLUDED.ocr_text,
 			metaphor_vector = EXCLUDED.metaphor_vector, semantic_vector = EXCLUDED.semantic_vector, clip_vector = EXCLUDED.clip_vector,
 			width = EXCLUDED.width, height = EXCLUDED.height,
-			processing_status = EXCLUDED.processing_status, analyzed_at = EXCLUDED.analyzed_at
+			processing_status = EXCLUDED.processing_status, fail_reason = NULL, analyzed_at = EXCLUDED.analyzed_at
 	`
 	_, err := r.db.Exec(ctx, query,
 		meme.AssetID, meme.VLMJSON, meme.OCRText,
@@ -207,84 +56,251 @@ func (r *MemeRepository) Create(ctx context.Context, meme *model.MemeInfo) error
 	return nil
 }
 
-func (r *MemeRepository) UpdateStatus(ctx context.Context, assetID string, status string) error {
-	_, err := r.db.Exec(ctx, `UPDATE core.meme_info SET processing_status = $2 WHERE asset_id = $1::uuid`, assetID, status)
+func (r *MemeRepository) SetStatus(ctx context.Context, assetID, status string, failReason *string) error {
+	query := `UPDATE core.meme_info SET processing_status = $2, fail_reason = $3 WHERE asset_id = $1::uuid`
+	_, err := r.db.Exec(ctx, query, assetID, status, failReason)
 	return err
+}
+
+// ResetForAnalysis moves the memes whose status is in from back to pending and returns
+// the IDs actually reset.
+func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string, from []string) ([]string, error) {
+	query := `
+		UPDATE core.meme_info SET processing_status = 'pending', fail_reason = NULL
+		WHERE asset_id = ANY($1::uuid[]) AND processing_status = ANY($2)
+		RETURNING asset_id::text
+	`
+	return collectScalars[string](r.db.Query(ctx, query, assetIDs, from))
 }
 
 // ==============================================================================
 // Views
 // ==============================================================================
 
-type memeViewRow struct {
-	AssetID          string     `db:"asset_id"`
-	Width            int        `db:"width"`
-	Height           int        `db:"height"`
-	AnalyzedAt       *time.Time `db:"analyzed_at"`
-	FileSize         int64      `db:"file_size"`
-	MimeType         string     `db:"mime_type"`
-	Extension        string     `db:"extension"`
-	CreatedAt        time.Time  `db:"created_at"`
-	ProcessingStatus string     `db:"processing_status"`
-	InLibrary        bool       `db:"in_library"`
+type memeRow struct {
+	ID            string          `db:"id"`
+	MimeType      string          `db:"mime_type"`
+	FileSize      int64           `db:"file_size"`
+	CreatedAt     time.Time       `db:"created_at"`
+	Width         int             `db:"width"`
+	Height        int             `db:"height"`
+	Status        string          `db:"status"`
+	FailReason    *string         `db:"fail_reason"`
+	OCRText       string          `db:"ocr_text"`
+	VLMJSON       []byte          `db:"vlm_json"`
+	AnalyzedAt    *time.Time      `db:"analyzed_at"`
+	IsPublic      bool            `db:"is_public"`
+	FavoriteCount int             `db:"favorite_count"`
+	LibraryCount  int             `db:"library_count"`
+	IsFavorite    bool            `db:"is_favorite"`
+	Entry         *model.EntryRef `db:"entry"`
+	Tags          []model.MemeTag `db:"tags"`
 }
 
-func (row *memeViewRow) ToModel() *model.MemeView {
-	return &model.MemeView{
-		AssetID:          row.AssetID,
-		Width:            row.Width,
-		Height:           row.Height,
-		AnalyzedAt:       row.AnalyzedAt,
-		FileSize:         row.FileSize,
-		MimeType:         row.MimeType,
-		Extension:        row.Extension,
-		CreatedAt:        row.CreatedAt,
-		ProcessingStatus: row.ProcessingStatus,
-		InLibrary:        row.InLibrary,
-		Tags:             make([]*model.Tag, 0),
+func (row *memeRow) toModel() *model.Meme {
+	var vlm struct {
+		ImpliedMeaning []string `json:"implied_meaning"`
+	}
+	_ = json.Unmarshal(row.VLMJSON, &vlm) // Keywords are best effort; the VLM output is free-form
+	if vlm.ImpliedMeaning == nil {
+		vlm.ImpliedMeaning = []string{}
+	}
+	return &model.Meme{
+		ID:            row.ID,
+		MimeType:      row.MimeType,
+		FileSize:      row.FileSize,
+		Width:         row.Width,
+		Height:        row.Height,
+		Status:        row.Status,
+		FailReason:    row.FailReason,
+		OCRText:       row.OCRText,
+		Keywords:      vlm.ImpliedMeaning,
+		Tags:          row.Tags,
+		IsPublic:      row.IsPublic,
+		FavoriteCount: row.FavoriteCount,
+		LibraryCount:  row.LibraryCount,
+		IsFavorite:    row.IsFavorite,
+		Entry:         row.Entry,
+		CreatedAt:     row.CreatedAt,
+		AnalyzedAt:    row.AnalyzedAt,
 	}
 }
 
-// GetViews returns enriched meme views for the given asset IDs.
-// Uses meme_view which handles access control via RLS.
-func (r *MemeRepository) GetViews(ctx context.Context, assetIDs []string) (map[string]*model.MemeView, error) {
-	if len(assetIDs) == 0 {
-		return make(map[string]*model.MemeView), nil
+// Memes returns the memes among ids that viewerID may see (all of them for admins),
+// in no particular order. URLs are left empty.
+func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool, ids []string) ([]*model.Meme, error) {
+	if len(ids) == 0 {
+		return []*model.Meme{}, nil
 	}
+	query := fmt.Sprintf(`
+		SELECT a.id, a.mime_type, a.file_size, a.created_at,
+			COALESCE(m.width, 0) AS width, COALESCE(m.height, 0) AS height,
+			m.processing_status AS status, m.fail_reason, COALESCE(m.ocr_text, '') AS ocr_text,
+			m.vlm_json, m.analyzed_at,
+			%[1]s AS is_public,
+			(SELECT count(*) FROM library.favorites f WHERE f.asset_id = a.id) AS favorite_count,
+			(SELECT count(*) FROM library.nodes n WHERE n.asset_id = a.id) AS library_count,
+			EXISTS (SELECT 1 FROM library.favorites f WHERE f.asset_id = a.id AND f.user_id = $2::uuid) AS is_favorite,
+			(SELECT jsonb_build_object('id', n.id, 'folder_id', n.parent_id) FROM library.nodes n
+			 WHERE n.asset_id = a.id AND n.owner_id = $2::uuid ORDER BY n.created_at LIMIT 1) AS entry,
+			COALESCE((
+				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', at.user_id IS NOT NULL)
+					ORDER BY at.user_id NULLS FIRST, t.name)
+				FROM library.asset_tags at JOIN library.tags t ON t.id = at.tag_id
+				WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
+			), '[]') AS tags
+		FROM core.assets a
+		JOIN core.meme_info m ON m.asset_id = a.id
+		WHERE a.id = ANY($1::uuid[]) AND ($3 OR %[2]s OR %[3]s)
+	`, memeInPublic, memePublic, memeOwnedBy("$2"))
 
-	query := `
-		SELECT asset_id, width, height, analyzed_at, file_size, mime_type, extension, created_at, processing_status, in_library
-		FROM core.meme_view
-		WHERE asset_id = ANY($1::uuid[])
-	`
-
-	rows, err := r.db.Query(ctx, query, assetIDs)
+	rows, err := collectAll[memeRow](r.db.Query(ctx, query, ids, nullable(viewerID), admin))
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch memes: %w", err)
+		return nil, err
 	}
-	viewRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[memeViewRow])
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan meme rows: %w", err)
-	}
-
-	memes := make(map[string]*model.MemeView)
-	for _, row := range viewRows {
-		memes[row.AssetID] = row.ToModel()
+	memes := make([]*model.Meme, len(rows))
+	for i, row := range rows {
+		memes[i] = row.toModel()
 	}
 	return memes, nil
 }
 
-// ResetFailed moves failed memes back to pending and returns the IDs actually reset;
-// memes in any other status are left untouched.
-func (r *MemeRepository) ResetFailed(ctx context.Context, assetIDs []string) ([]string, error) {
-	query := `
-		UPDATE core.meme_info SET processing_status = 'pending', analyzed_at = NULL
-		WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'failed'
-		RETURNING asset_id::text
-	`
-	rows, err := r.db.Query(ctx, query, assetIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reset meme status: %w", err)
+// PublicIDs lists public memes, most favorited and collected first. A non-empty tag keeps
+// memes carrying it as a system tag or as one of viewerID's tags.
+func (r *MemeRepository) PublicIDs(ctx context.Context, viewerID, tag string, limit int) ([]string, int, error) {
+	var w filter
+	w.where(memePublic)
+	if tag != "" {
+		w.where(fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM library.asset_tags at JOIN library.tags t ON t.id = at.tag_id
+			WHERE at.asset_id = m.asset_id AND t.name = %s AND (at.user_id IS NULL OR at.user_id = %s::uuid))`,
+			w.arg(tag), w.arg(nullable(viewerID))))
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
+	query := fmt.Sprintf(`
+		SELECT m.asset_id::text, count(*) OVER () FROM core.meme_info m %s
+		ORDER BY (SELECT count(*) FROM library.favorites f WHERE f.asset_id = m.asset_id) * 3
+			+ (SELECT count(*) FROM library.nodes n WHERE n.asset_id = m.asset_id) DESC, m.asset_id DESC
+		LIMIT %d
+	`, w.clause(), limit)
+	return collectIDsWithTotal(r.db.Query(ctx, query, w.args...))
+}
+
+type MemeFilter struct {
+	Query      string // Matches the meme ID
+	Status     string
+	Visibility string // public | private
+	Kind       string // image | gif | video | lottie
+	Created    TimeRange
+}
+
+var memeKinds = map[string]string{
+	"gif":    `a.mime_type = 'image/gif'`,
+	"image":  `a.mime_type LIKE 'image/%' AND a.mime_type <> 'image/gif'`,
+	"video":  `a.mime_type LIKE 'video/%'`,
+	"lottie": `a.mime_type IN ('application/json', 'application/x-gzip', 'application/gzip', 'application/zip')`,
+}
+
+// FilterIDs lists all memes matching f, newest first. A nil page returns every match
+// without counting.
+func (r *MemeRepository) FilterIDs(ctx context.Context, f MemeFilter, page *Page) ([]string, int, error) {
+	var w filter
+	if f.Query != "" {
+		w.where("a.id::text ILIKE " + w.arg("%"+f.Query+"%"))
+	}
+	if f.Status != "" {
+		w.where("m.processing_status = " + w.arg(f.Status))
+	}
+	switch f.Visibility {
+	case "public":
+		w.where(memeInPublic)
+	case "private":
+		w.where("NOT " + memeInPublic)
+	}
+	if cond, ok := memeKinds[f.Kind]; ok {
+		w.where(cond)
+	}
+	w.timeRange("a.created_at", f.Created)
+
+	from := "FROM core.assets a JOIN core.meme_info m ON m.asset_id = a.id " + w.clause()
+	if page == nil {
+		ids, err := collectScalars[string](r.db.Query(ctx, "SELECT a.id::text "+from, w.args...))
+		return ids, len(ids), err
+	}
+	total, err := count(ctx, r.db, "SELECT count(*) "+from, w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	query := fmt.Sprintf("SELECT a.id::text %s ORDER BY a.created_at DESC %s", from, page.clause())
+	ids, err := collectScalars[string](r.db.Query(ctx, query, w.args...))
+	return ids, total, err
+}
+
+// ==============================================================================
+// Recall
+// ==============================================================================
+
+// Recall is one retrieval channel of a search.
+type Recall struct {
+	Type   string // Reported as recall_type
+	Column string // Vector column of core.meme_info, or "ocr_text" for trigram matching
+	Value  any    // pgvector.Vector, or the query text for ocr_text
+	Limit  int
+}
+
+// RecallScope selects the memes a recall may return.
+type RecallScope struct {
+	ViewerID   string
+	Public     bool    // Public memes
+	Owned      bool    // Memes in the viewer's library
+	FolderPath *string // Restricts owned memes to a folder subtree
+	Exclude    string  // An asset to leave out
+}
+
+// Recall runs the channels and keeps each meme's best similarity.
+func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope) ([]*model.SearchCandidate, error) {
+	var w filter
+	var scopes []string
+	if scope.Public {
+		scopes = append(scopes, memePublic)
+	}
+	if scope.Owned && scope.ViewerID != "" {
+		cond := "n.owner_id = " + w.arg(scope.ViewerID) + "::uuid"
+		if scope.FolderPath != nil {
+			cond += " AND n.path <@ " + w.arg(*scope.FolderPath) + "::ltree"
+		}
+		scopes = append(scopes, "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND "+cond+")")
+	}
+	if len(scopes) == 0 || len(recalls) == 0 {
+		return nil, nil
+	}
+	scopeCond := "(" + strings.Join(scopes, " OR ") + ")"
+	if scope.Exclude != "" {
+		scopeCond += " AND m.asset_id <> " + w.arg(scope.Exclude) + "::uuid"
+	}
+
+	subqueries := make([]string, len(recalls))
+	for i, rc := range recalls {
+		v := w.arg(rc.Value)
+		// Ordering by the distance operator itself lets the HNSW / trigram indexes serve the LIMIT.
+		similarity, cond, order := "1 - (m."+rc.Column+" <=> "+v+")", "m."+rc.Column+" IS NOT NULL", "m."+rc.Column+" <=> "+v
+		if rc.Column == "ocr_text" {
+			similarity, cond, order = "word_similarity("+v+", m.ocr_text)", v+" <% m.ocr_text", "similarity DESC"
+		}
+		subqueries[i] = fmt.Sprintf(`(SELECT m.asset_id, m.vlm_json, %s AS similarity, '%s' AS recall_type
+			FROM core.meme_info m WHERE %s AND %s ORDER BY %s LIMIT %d)`,
+			similarity, rc.Type, cond, scopeCond, order, rc.Limit)
+	}
+	query := `SELECT DISTINCT ON (asset_id) asset_id, vlm_json, similarity, recall_type FROM (` +
+		strings.Join(subqueries, " UNION ALL ") + `) c ORDER BY asset_id, similarity DESC`
+	return collectAll[model.SearchCandidate](r.db.Query(ctx, query, w.args...))
+}
+
+// Vectors returns the embeddings of an analyzed meme; nil vectors mean it is not analyzed.
+func (r *MemeRepository) Vectors(ctx context.Context, assetID string) (metaphor, semantic, clip *pgvector.Vector, err error) {
+	query := `SELECT metaphor_vector, semantic_vector, clip_vector FROM core.meme_info WHERE asset_id = $1::uuid`
+	err = r.db.QueryRow(ctx, query, assetID).Scan(&metaphor, &semantic, &clip)
+	if err == pgx.ErrNoRows {
+		err = nil
+	}
+	return
 }

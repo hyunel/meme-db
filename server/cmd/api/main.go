@@ -31,7 +31,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
 	flag.Parse()
 
-	logger.Setup()
+	logs := logger.Setup()
 
 	// 1. Load Config
 	cfg, err := config.LoadConfig(*configPath)
@@ -86,9 +86,12 @@ func main() {
 		RetrievalPrompt: cfg.Prompt.Retrieval,
 	}, repo, inferClient.WithPriority(inference.PriorityBackground))
 
-	fsService := service.NewFileSystemService(repo, memeService, assetService)
-	favService := service.NewFavoriteService(repo, memeService, assetService)
+	libraryService := service.NewLibraryService(repo, memeService, assetService)
+	favService := service.NewFavoriteService(repo, memeService, libraryService)
 	tagService := service.NewTagService(repo, memeService)
+	userService := service.NewUserService(repo, memeService)
+	taskService := service.NewTaskService(repo, taskWorker)
+	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
 
 	// 6. Start Task Worker
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
@@ -100,12 +103,15 @@ func main() {
 	}()
 
 	// 7. Setup Handlers
-	authHandler := handler.NewAuthHandler(authService)
-	memeHandler := handler.NewMemeHandler(memeService, assetService, fsService)
-	fsHandler := handler.NewFileSystemHandler(fsService)
-	assetHandler := handler.NewAssetHandler(cfg, fsService)
-	favHandler := handler.NewFavoriteHandler(favService)
-	tagHandler := handler.NewTagHandler(tagService)
+	h := handlers{
+		auth:     handler.NewAuthHandler(authService, userService),
+		asset:    handler.NewAssetHandler(assetService),
+		meme:     handler.NewMemeHandler(memeService, tagService),
+		library:  handler.NewLibraryHandler(libraryService),
+		favorite: handler.NewFavoriteHandler(favService),
+		admin:    handler.NewAdminHandler(userService, memeService, tagService, statsService, logs),
+		task:     handler.NewTaskHandler(taskService),
+	}
 
 	// 8. Setup Echo
 	e := echo.New()
@@ -114,6 +120,8 @@ func main() {
 	e.HideBanner = true
 	e.HTTPErrorHandler = handler.HTTPErrorHandler
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		// The log viewer polls; logging those requests would feed it its own traffic.
+		Skipper:     func(c echo.Context) bool { return c.Path() == "/api/admin/logs" },
 		LogStatus:   true,
 		LogURI:      true,
 		LogMethod:   true,
@@ -132,10 +140,10 @@ func main() {
 	e.Use(middleware.CORS())
 
 	// Global identity middleware - sets identity for all requests
-	e.Use(rbac.IdentityMiddleware(authHandler.IdentityProvider()))
+	e.Use(rbac.IdentityMiddleware(h.auth.IdentityProvider()))
 
 	// 9. Setup Routes
-	setupRoutes(e, authHandler, memeHandler, fsHandler, assetHandler, favHandler, tagHandler)
+	setupRoutes(e, h)
 
 	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -159,61 +167,91 @@ func main() {
 	<-workerDone
 }
 
-func setupRoutes(
-	e *echo.Echo,
-	auth *handler.AuthHandler,
-	meme *handler.MemeHandler,
-	fs *handler.FileSystemHandler,
-	asset *handler.AssetHandler,
-	fav *handler.FavoriteHandler,
-	tag *handler.TagHandler,
-) {
+type handlers struct {
+	auth     *handler.AuthHandler
+	asset    *handler.AssetHandler
+	meme     *handler.MemeHandler
+	library  *handler.LibraryHandler
+	favorite *handler.FavoriteHandler
+	admin    *handler.AdminHandler
+	task     *handler.TaskHandler
+}
+
+func setupRoutes(e *echo.Echo, h handlers) {
 	api := e.Group("/api")
 
-	// Health
+	// ===== Public Routes (guest readable) =====
 	api.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
+	api.GET("/config", h.asset.GetConfig)
+	api.GET("/assets/:id", h.asset.GetAssetContent)
 
-	// Auth (public)
-	api.POST("/auth/register", auth.Register)
-	api.POST("/auth/login", auth.Login)
-	api.GET("/auth/me", auth.GetMe, rbac.RequireAuth())
+	api.POST("/auth/register", h.auth.Register)
+	api.POST("/auth/login", h.auth.Login)
 
-	// ===== Public Routes (guest readable) =====
-	api.POST("/search", meme.Search)
-	api.GET("/assets/:id", asset.GetAssetContent)
-
-	// Memes
-	api.GET("/memes/:id", meme.GetMeme)
-	api.GET("/memes/:id/similar", meme.GetSimilar)
-	api.GET("/memes/:id/tags", tag.GetMemeTags)
-
-	// Tags
-	api.GET("/tags", tag.SearchTags)
-	api.GET("/tags/:id/memes", tag.GetTagMemes)
+	api.POST("/search", h.meme.Search)
+	api.GET("/memes", h.meme.List)
+	api.GET("/memes/:id", h.meme.Get)
+	api.GET("/memes/:id/similar", h.meme.Similar)
+	api.GET("/tags/hot", h.meme.HotTags)
+	api.GET("/folders", h.library.PublicFolders)
+	api.GET("/folders/:id", h.library.PublicFolder)
+	api.GET("/users/:username", h.library.Profile)
 
 	// ===== Protected Routes (authenticated) =====
 	priv := api.Group("", rbac.RequireAuth())
 
-	// Meme operations
-	priv.POST("/memes/retry", meme.BatchRetry)
-	priv.POST("/memes/:id/save", meme.Add)
-	priv.POST("/memes/:id/tags", tag.AddTag)
-	priv.DELETE("/memes/:id/tags/:tagId", tag.RemoveTag)
+	priv.GET("/auth/me", h.auth.GetMe)
+	priv.GET("/auth/me/stats", h.auth.GetMyStats)
+	priv.PUT("/auth/password", h.auth.ChangePassword)
 
-	// Library (FileSystem)
+	priv.POST("/memes/:id/retry", h.meme.Retry)
+	priv.POST("/memes/:id/tags", h.meme.AddTag)
+	priv.DELETE("/memes/:id/tags/:tagId", h.meme.RemoveTag)
+
+	priv.GET("/favorites", h.favorite.List)
+	priv.DELETE("/favorites/stale", h.favorite.ClearStale)
+	priv.PUT("/favorites/:kind/:id", h.favorite.Add)
+	priv.DELETE("/favorites/:kind/:id", h.favorite.Remove)
+
 	lib := priv.Group("/library")
-	lib.GET("", fs.GetNode)
-	lib.GET("/:id", fs.GetNode)
-	lib.POST("/folders", fs.CreateNode)
-	lib.POST("/upload", fs.UploadMeme)
-	lib.PATCH("/nodes", fs.BulkUpdateNodes)
-	lib.DELETE("/nodes", fs.BulkDelete)
-	lib.POST("/nodes/move", fs.BulkMove)
-	lib.POST("/nodes/copy", fs.BulkCopy)
+	lib.GET("", h.library.Get)
+	lib.POST("/folders", h.library.CreateFolder)
+	lib.POST("/upload", h.library.Upload)
+	lib.POST("/entries", h.library.AddEntry)
+	lib.PATCH("/nodes", h.library.SetPublic)
+	lib.PATCH("/nodes/:id", h.library.Rename)
+	lib.DELETE("/nodes", h.library.Delete)
+	lib.POST("/nodes/move", h.library.Move)
+	lib.POST("/nodes/copy", h.library.Copy)
 
-	// Favorites
-	priv.GET("/favorites", fav.List)
-	priv.POST("/favorites", fav.Toggle)
+	// ===== Admin Routes =====
+	admin := priv.Group("/admin", rbac.RequireAdmin())
+
+	admin.GET("/stats", h.admin.Stats)
+	admin.GET("/logs", h.admin.Logs)
+
+	admin.GET("/users", h.admin.ListUsers)
+	admin.POST("/users", h.admin.CreateUser)
+	admin.GET("/users/:id", h.admin.GetUser)
+	admin.PATCH("/users/:id", h.admin.UpdateUser)
+	admin.PUT("/users/:id/password", h.admin.ResetPassword)
+	admin.DELETE("/users/:id", h.admin.DeleteUser)
+
+	admin.GET("/memes", h.admin.ListMemes)
+	admin.POST("/memes/reprocess", h.admin.ReprocessMemes)
+	admin.DELETE("/memes", h.admin.DeleteMemes)
+
+	admin.GET("/tags", h.admin.ListTags)
+	admin.POST("/tags/merge", h.admin.MergeTags)
+	admin.PATCH("/tags/:id", h.admin.RenameTag)
+	admin.DELETE("/tags", h.admin.DeleteTags)
+
+	admin.GET("/tasks", h.task.List)
+	admin.GET("/tasks/summary", h.task.Summary)
+	admin.GET("/tasks/:id", h.task.Get)
+	admin.POST("/tasks/retry", h.task.Retry)
+	admin.POST("/tasks/:id/run", h.task.RunNow)
+	admin.POST("/tasks/:id/cancel", h.task.Cancel)
 }
