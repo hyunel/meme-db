@@ -63,6 +63,13 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// LockActiveAdmins locks the active admins until the end of the transaction and
+// returns how many there are.
+func (r *UserRepository) LockActiveAdmins(ctx context.Context) (int, error) {
+	ids, err := collectScalars[string](r.db.Query(ctx, `SELECT id::text FROM iam.users WHERE role = 'admin' AND status = 'active' FOR UPDATE`))
+	return len(ids), err
+}
+
 func (r *UserRepository) Stats(ctx context.Context, id string) (*model.UserStats, error) {
 	query := fmt.Sprintf(`SELECT %s FROM iam.users u WHERE u.id = $1::uuid`, userStatsColumns)
 	return collectOne[model.UserStats](r.db.Query(ctx, query, id))

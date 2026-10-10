@@ -65,16 +65,25 @@ func (s *UserService) Create(ctx context.Context, username, email, password, rol
 }
 
 // Update changes the role and/or status of another user (nil leaves it unchanged).
-// Admins cannot demote or disable themselves, so at least one active admin always remains.
 func (s *UserService) Update(ctx context.Context, actor *rbac.Identity, id string, role, status *string) error {
-	if err := s.checkTarget(ctx, actor, id); err != nil {
-		return err
-	}
-	return s.repo.User.Update(ctx, id, role, status)
+	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		target, err := checkTarget(ctx, r, actor, id)
+		if err != nil {
+			return err
+		}
+		demoted := role != nil && *role != rbac.RoleAdmin
+		disabled := status != nil && *status != model.UserStatusActive
+		if demoted || disabled {
+			if err := keepAnAdmin(ctx, r, target); err != nil {
+				return err
+			}
+		}
+		return r.User.Update(ctx, id, role, status)
+	})
 }
 
 func (s *UserService) ResetPassword(ctx context.Context, id, password string) error {
-	if _, err := s.find(ctx, id); err != nil {
+	if _, err := find(ctx, s.repo.Repos, id); err != nil {
 		return err
 	}
 	return setPassword(ctx, s.repo.Repos, id, password)
@@ -82,22 +91,41 @@ func (s *UserService) ResetPassword(ctx context.Context, id, password string) er
 
 // Delete deletes another user with their library, favorites and tags.
 func (s *UserService) Delete(ctx context.Context, actor *rbac.Identity, id string) error {
-	if err := s.checkTarget(ctx, actor, id); err != nil {
-		return err
-	}
-	return s.repo.User.Delete(ctx, id)
+	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		target, err := checkTarget(ctx, r, actor, id)
+		if err != nil {
+			return err
+		}
+		if err := keepAnAdmin(ctx, r, target); err != nil {
+			return err
+		}
+		return r.User.Delete(ctx, id)
+	})
 }
 
-func (s *UserService) checkTarget(ctx context.Context, actor *rbac.Identity, id string) error {
+// checkTarget loads a user an admin may change: anyone but themselves.
+func checkTarget(ctx context.Context, r *repository.Repos, actor *rbac.Identity, id string) (*model.User, error) {
 	if id == actor.UserID {
-		return apperror.Forbidden("不能修改或删除自己的账号")
+		return nil, apperror.Forbidden("不能修改或删除自己的账号")
 	}
-	_, err := s.find(ctx, id)
+	return find(ctx, r, id)
+}
+
+// keepAnAdmin refuses to take away the last active admin. It locks the active admins,
+// so concurrent demotions cannot remove them all.
+func keepAnAdmin(ctx context.Context, r *repository.Repos, target *model.User) error {
+	if target.Role != rbac.RoleAdmin || target.Status != model.UserStatusActive {
+		return nil
+	}
+	n, err := r.User.LockActiveAdmins(ctx)
+	if err == nil && n <= 1 {
+		err = apperror.Forbidden("不能移除最后一个管理员")
+	}
 	return err
 }
 
-func (s *UserService) find(ctx context.Context, id string) (*model.User, error) {
-	user, err := s.repo.User.Get(ctx, id)
+func find(ctx context.Context, r *repository.Repos, id string) (*model.User, error) {
+	user, err := r.User.Get(ctx, id)
 	if err == nil && user == nil {
 		err = apperror.NotFound("用户不存在")
 	}
