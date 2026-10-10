@@ -119,16 +119,6 @@ func (r *NodeRepository) Delete(ctx context.Context, ownerID string, ids []strin
 	return err
 }
 
-// RecentFileAssets returns the assets most recently added to a user's library.
-func (r *NodeRepository) RecentFileAssets(ctx context.Context, ownerID string, limit int) ([]string, error) {
-	query := `
-		SELECT asset_id::text FROM library.nodes
-		WHERE owner_id = $1::uuid AND type = 'FILE'
-		ORDER BY created_at DESC LIMIT $2
-	`
-	return collectScalars[string](r.db.Query(ctx, query, ownerID, limit))
-}
-
 // ==============================================================================
 // Folder views
 // ==============================================================================

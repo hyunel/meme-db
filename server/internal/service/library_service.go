@@ -130,7 +130,7 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 
 // Upload stores a file and adds it to the viewer's library.
 func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, file *multipart.FileHeader) (*model.EntryRef, error) {
-	asset, err := s.assets.CreateAsset(ctx, file)
+	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
 	if err != nil {
 		return nil, err
 	}

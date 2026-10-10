@@ -111,9 +111,9 @@ func matchesType(rule, mime, ext string) bool {
 	})
 }
 
-// CreateAsset stores an uploaded file, deduplicated by content, and queues new content
-// for analysis.
-func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.FileHeader) (*model.Asset, error) {
+// CreateAsset stores a file uploaded by uploaderID, deduplicated by content, and queues
+// new content for analysis.
+func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileHeader *multipart.FileHeader) (*model.Asset, error) {
 	mimeType, err := s.ValidateUpload(fileHeader)
 	if err != nil {
 		return nil, err
@@ -168,6 +168,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 			MimeType:    mimeType,
 			Extension:   ext,
 			StoragePath: relPath,
+			UploadedBy:  &uploaderID,
 		})
 		if err != nil || !created {
 			return err

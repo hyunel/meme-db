@@ -29,7 +29,7 @@ func (s *UserService) List(ctx context.Context, f repository.UserFilter, page re
 
 type UserDetail struct {
 	model.AdminUser
-	Recent []*model.Meme `json:"recent"` // Latest files added to the user's library
+	Recent []*model.Meme `json:"recent"` // The user's latest uploads
 }
 
 func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string) (*UserDetail, error) {
@@ -44,7 +44,7 @@ func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	if err != nil {
 		return nil, err
 	}
-	assetIDs, err := s.repo.Node.RecentFileAssets(ctx, id, 12)
+	assetIDs, err := s.repo.Asset.RecentUploads(ctx, id, 12)
 	if err != nil {
 		return nil, err
 	}

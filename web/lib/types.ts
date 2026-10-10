@@ -141,6 +141,7 @@ export interface UploadConfig {
 export interface AdminUser extends User, UserStats {}
 
 export interface UserDetail extends AdminUser {
+  /** The user's latest uploads. */
   recent: Meme[]
 }
 
