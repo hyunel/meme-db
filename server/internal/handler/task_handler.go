@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -17,14 +18,29 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 	return &TaskHandler{taskService: taskService}
 }
 
+type TaskFilterParams struct {
+	RangeQuery
+	States    []string `query:"state" json:"state" validate:"max=5,dive,oneof=pending retrying running completed failed"`
+	JobType   string   `query:"type" json:"type" validate:"max=50"`
+	Query     string   `query:"q" json:"q" validate:"max=100"`
+	Recurring bool     `query:"recurring" json:"recurring"`
+	Sort      string   `query:"sort" json:"sort" validate:"omitempty,oneof=due created finished"`
+}
+
+func (p TaskFilterParams) filter() service.TaskFilter {
+	return service.TaskFilter{
+		States:    p.States,
+		JobType:   p.JobType,
+		Query:     strings.TrimSpace(p.Query),
+		Created:   p.timeRange(),
+		Recurring: p.Recurring,
+		Sort:      p.Sort,
+	}
+}
+
 type ListTasksRequest struct {
 	PageQuery
-	RangeQuery
-	States    []string `query:"state" validate:"max=5,dive,oneof=pending retrying running completed failed"`
-	JobType   string   `query:"type" validate:"max=50"`
-	Query     string   `query:"q" validate:"max=100"`
-	Recurring bool     `query:"recurring"`
-	Sort      string   `query:"sort" validate:"omitempty,oneof=due created finished"`
+	TaskFilterParams
 }
 
 func (h *TaskHandler) List(c echo.Context) error {
@@ -33,14 +49,7 @@ func (h *TaskHandler) List(c echo.Context) error {
 		return err
 	}
 
-	page, err := h.taskService.List(c.Request().Context(), service.TaskFilter{
-		States:    req.States,
-		JobType:   req.JobType,
-		Query:     strings.TrimSpace(req.Query),
-		Created:   req.timeRange(),
-		Recurring: req.Recurring,
-		Sort:      req.Sort,
-	}, req.page())
+	page, err := h.taskService.List(c.Request().Context(), req.filter(), req.page())
 	if err != nil {
 		return err
 	}
@@ -79,14 +88,32 @@ func (h *TaskHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, task)
 }
 
-// Retry requeues the failed tasks among the given IDs.
+// RetryTasksRequest selects tasks by IDs, or all failed tasks matching a filter.
+type RetryTasksRequest struct {
+	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
+	Filter *TaskFilterParams `json:"filter"`
+}
+
+// Retry requeues the selected failed tasks.
 func (h *TaskHandler) Retry(c echo.Context) error {
-	var req IDsRequest
+	var req RetryTasksRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	n, err := h.taskService.Retry(c.Request().Context(), req.IDs)
+	var n int
+	var err error
+	switch {
+	case len(req.IDs) > 0:
+		n, err = h.taskService.Retry(c.Request().Context(), req.IDs)
+	case req.Filter != nil:
+		if err := c.Validate(req.Filter); err != nil {
+			return apperror.BadRequest("请求参数无效：" + err.Error())
+		}
+		n, err = h.taskService.RetryMatching(c.Request().Context(), req.Filter.filter())
+	default:
+		return apperror.BadRequest("请指定要重试的任务")
+	}
 	if err != nil {
 		return err
 	}

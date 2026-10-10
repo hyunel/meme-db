@@ -50,7 +50,8 @@ const isQueued = (t: Task) => t.status === 'pending'
 const canRunNow = (t: Task, now: number) => isQueued(t) && toMs(t.run_at) > now
 const assetOf = (t: Task) => (typeof t.payload.asset_id === 'string' ? t.payload.asset_id : null)
 
-type Pending = { kind: 'retry'; tasks: Task[]; scope: string } | { kind: 'cancel'; task: Task } | null
+type RetryTarget = { ids: string[] } | { filter: Record<string, unknown> }
+type Pending = { kind: 'retry'; target: RetryTarget; count: number; scope: string } | { kind: 'cancel'; task: Task } | null
 
 function useTaskActions() {
   const [pending, setPending] = useState<Pending>(null)
@@ -71,11 +72,11 @@ function useTaskActions() {
         open={pending?.kind === 'retry'}
         onOpenChange={(o) => !o && setPending(null)}
         title="重试任务"
-        description={pending?.kind === 'retry' ? `将重试${pending.scope}共 ${pending.tasks.length} 个失败任务。任务会重新排队，已尝试次数清零。` : ''}
+        description={pending?.kind === 'retry' ? `将重试${pending.scope}共 ${pending.count} 个失败任务。任务会重新排队，已尝试次数清零。` : ''}
         confirmLabel="重试"
         onConfirm={async () => {
           if (pending?.kind !== 'retry') return
-          const { count } = await api<{ count: number }>('/admin/tasks/retry', { method: 'POST', json: { ids: pending.tasks.map((t) => t.id) } })
+          const { count } = await api<{ count: number }>('/admin/tasks/retry', { method: 'POST', json: pending.target })
           await refresh()
           toast.success(`已重新排队 ${count} 个任务`)
         }}
@@ -100,7 +101,8 @@ function useTaskActions() {
   return {
     dialogs,
     runNow,
-    retry: (tasks: Task[], scope = '') => setPending({ kind: 'retry', tasks, scope }),
+    retry: (tasks: Task[], scope = '') => setPending({ kind: 'retry', target: { ids: tasks.map((t) => t.id) }, count: tasks.length, scope }),
+    retryAll: (filter: Record<string, unknown>, count: number) => setPending({ kind: 'retry', target: { filter }, count, scope: '当前筛选下的全部' }),
     cancel: (task: Task) => setPending({ kind: 'cancel', task }),
   }
 }
@@ -189,7 +191,10 @@ export function AdminTasks() {
   const rows = tasks.data?.items ?? []
   const sel = useSelection(paging.pageKey)
   const selectedFailed = rows.filter((t) => sel.ids.has(t.id) && t.status === 'failed')
-  const failedOnPage = rows.filter((t) => t.status === 'failed' && !t.parent_task_id)
+  // Failed tasks anywhere in the current filter, for retrying them all at once.
+  const failedFilter = { ...filter, state: ['failed'] }
+  const canRetryAll = view === 'history' && filter.state.includes('failed')
+  const { data: failedInFilter } = useSWR<Page<Task>>(canRetryAll ? `/admin/tasks${qs({ ...failedFilter, page_size: 1 })}` : null, { refreshInterval })
 
   const count = (st: TaskState) => summary.reduce((n, r) => n + r[st], 0)
   const backlog = count('pending') + count('retrying')
@@ -312,10 +317,10 @@ export function AdminTasks() {
               </button>
             )
           })}
-          {view === 'history' && failedOnPage.length > 0 && (
-            <Button variant="outline" className="ml-auto h-9" onClick={() => actions.retry(failedOnPage, '本页')}>
+          {canRetryAll && !!failedInFilter?.total && (
+            <Button variant="outline" className="ml-auto h-9" onClick={() => actions.retryAll(failedFilter, failedInFilter.total)}>
               <RotateCw aria-hidden />
-              重试本页失败（{failedOnPage.length}）
+              重试全部失败（{failedInFilter.total}）
             </Button>
           )}
         </div>
@@ -366,13 +371,20 @@ export function AdminTaskDetail({ id }: { id: string }) {
       <Loadable result={detail} notFound={{ title: '任务不存在', description: '该任务可能已被清理。' }}>
         {(task) => {
           const asset = assetOf(task)
-          const timeline = [
-            { at: task.created_at, label: '创建', tone: 'muted' as const },
-            ...(task.started_at ? [{ at: task.started_at, label: `第 ${task.attempts} 次尝试开始`, tone: 'muted' as const }] : []),
+          const timeline: TimelineEvent[] = [
+            { at: task.created_at, label: '创建', tone: 'muted' },
+            ...task.history.map((h, i): TimelineEvent => ({
+              at: h.at,
+              label: `第 ${i + 1} 次尝试${h.ok ? '成功' : '失败'}`,
+              tone: h.ok ? 'ok' : 'fail',
+              message: h.error ?? undefined,
+            })),
+            ...(task.status === 'running' && task.started_at ? [{ at: task.started_at, label: `第 ${task.history.length + 1} 次尝试执行中`, tone: 'muted' as const }] : []),
             ...(task.finished_at
               ? [{ at: task.finished_at, label: task.status === 'completed' ? '结束：成功' : '结束：失败', tone: task.status === 'completed' ? ('ok' as const) : ('fail' as const), message: task.error_message ?? undefined }]
               : []),
           ]
+          timeline.sort((a, b) => toMs(a.at) - toMs(b.at))
           const info: [string, React.ReactNode][] = [
             ['任务标识', <CopyId key="id" value={task.id} />],
             ['类型', jobLabel(task.job_type)],
@@ -499,7 +511,9 @@ export function AdminTaskDetail({ id }: { id: string }) {
   )
 }
 
-function Timeline({ events }: { events: { at: string; label: string; tone: 'muted' | 'ok' | 'fail'; message?: string }[] }) {
+type TimelineEvent = { at: string; label: string; tone: 'muted' | 'ok' | 'fail'; message?: string }
+
+function Timeline({ events }: { events: TimelineEvent[] }) {
   return (
     <ol className="relative flex flex-col gap-4 border-l pl-5">
       {events.map((e, i) => (
