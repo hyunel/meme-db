@@ -57,6 +57,18 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         await self.gpu_res.stop()
         await self.cpu_res.stop()
 
+    async def _load_frames(self, image: inference_pb2.Image, context: grpc.aio.ServicerContext):
+        """Decodes the request image, aborting the call with INVALID_ARGUMENT if it cannot be read."""
+        loop = asyncio.get_running_loop()
+        try:
+            frames = await loop.run_in_executor(None, load_image_from_bytes, image.data, image.file_format)
+        except Exception as e:
+            logger.warning(f"Failed to decode {image.file_format or 'image'}: {e}")
+            frames = []
+        if not frames:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Unreadable image")
+        return frames
+
     # --- RPC Methods ---
 
     async def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
@@ -71,11 +83,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         )
 
     async def ClipImageEmbedding(self, request: inference_pb2.ClipImageEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipImageEmbeddingResponse:
-        loop = asyncio.get_running_loop()
-        frames = await loop.run_in_executor(None, load_image_from_bytes, request.image.data, request.image.file_format)
-        if not frames:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No frames extracted from image")
-
+        frames = await self._load_frames(request.image, context)
         image = frames[len(frames) // 2]
 
         priority = request.options.priority
@@ -110,12 +118,9 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
     async def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
         if ModelType.VLM not in self.schedulers:
-            context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
-        loop = asyncio.get_running_loop()
-        frames = await loop.run_in_executor(None, load_image_from_bytes, request.image.data, request.image.file_format)
-        if not frames:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No frames extracted from image")
+        frames = await self._load_frames(request.image, context)
 
         # Prepare inputs
         clip_image = frames[len(frames) // 2]
