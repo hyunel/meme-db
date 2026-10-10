@@ -65,7 +65,7 @@ def generate_webm_frames(f: BinaryIO) -> List[Image.Image]:
             frames.append(frame.to_image())
 
     if not frames:
-        raise ValueError(f"No frames extracted")
+        raise ValueError("No frames extracted")
 
     # Extract key frames
     indices = generate_frame_indices(len(frames))
@@ -80,7 +80,7 @@ def generate_tgs_frames(f: BinaryIO) -> List[Image.Image]:
 
     total_frames = int(animation.out_point - animation.in_point)
     if total_frames < 1:
-        raise ValueError(f"Invalid animation")
+        raise ValueError("Invalid animation")
 
     indices = generate_frame_indices(total_frames)
     key_frames = []

@@ -92,7 +92,7 @@ def perform_request(stub, args, text, image, task_type):
             raise ValueError(f"Unknown task type: {task_type}")
 
         return (time.perf_counter() - start) * 1000, False
-    except Exception as e:
+    except Exception:
         # print(f"Request failed: {e}") # Reduce noise in progress bar
         return 0, True
 
@@ -168,7 +168,7 @@ def run_benchmark(args):
         p99 = statistics.quantiles(total_stats.latencies, n=100)[98] if len(total_stats.latencies) >= 100 else max(total_stats.latencies)
         max_lat = max(total_stats.latencies)
 
-        print(f"\nPerformance:")
+        print("\nPerformance:")
         print(f"  Throughput: {throughput:.2f} tasks/s")
         print(f"  Latency (ms): avg={avg_lat:.2f}, p50={p50:.2f}, p90={p90:.2f}, p99={p99:.2f}, max={max_lat:.2f}")
     else:

@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Any, Type
+from typing import Dict, Any, Type
 import logging
 from accelerate import Accelerator
 from .config import ModelConfig, ModelType
