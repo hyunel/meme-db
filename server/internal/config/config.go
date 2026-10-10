@@ -3,8 +3,8 @@ package config
 import (
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -19,7 +19,6 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
 	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
-	VLM       VLMConfig       `yaml:"vlm"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
 }
@@ -55,30 +54,34 @@ type WorkerConfig struct {
 	PollInterval time.Duration `yaml:"poll_interval" validate:"required,gt=0"`
 }
 
-type VLMConfig struct {
-	BaseURL string `yaml:"base_url"`
-	APIKey  string `yaml:"api_key"`
-	Model   string `yaml:"model"`
+var envPlaceholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expandEnv replaces ${VAR} placeholders with environment variables; unset ones are kept.
+func expandEnv(data []byte) []byte {
+	return envPlaceholder.ReplaceAllFunc(data, func(m []byte) []byte {
+		if v, ok := os.LookupEnv(string(m[2 : len(m)-1])); ok {
+			return []byte(v)
+		}
+		return m
+	})
 }
 
+// LoadConfig loads the embedded defaults overridden by the file at path, in which
+// ${VAR} placeholders are taken from the environment.
 func LoadConfig(path string) (*Config, error) {
 	var cfg Config
 
 	// 1. Load embedded default config
 	if err := yaml.Unmarshal(defaultConfig, &cfg); err != nil {
-		slog.Error("Failed to unmarshal default config", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to decode default config: %w", err)
 	}
 
 	// 2. Load external config file
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open config file: %w", err)
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	defer f.Close()
-
-	decoder := yaml.NewDecoder(f)
-	if err := decoder.Decode(&cfg); err != nil {
+	if err := yaml.Unmarshal(expandEnv(data), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}
 
