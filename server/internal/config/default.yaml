@@ -7,7 +7,12 @@ database:
 
 inference:
   grpc_addr: "localhost:50051"
-  batch_size: 8
+
+worker:
+  concurrency: 8      # Tasks in flight; keep >= inference vlm concurrency/batch size so batches fill up
+  max_attempts: 3     # Retries back off 1m, 4m, 16m, 64m (+ jitter)
+  job_timeout: 5m     # Per-attempt deadline; the claim lease is twice this
+  poll_interval: 5s   # Fallback wake-up for due retries and expired leases
 
 prompt:
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"

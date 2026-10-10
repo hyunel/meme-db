@@ -212,30 +212,6 @@ func (r *MemeRepository) UpdateStatus(ctx context.Context, assetID string, statu
 	return err
 }
 
-func (r *MemeRepository) GetPending(ctx context.Context, startID string, limit int) ([]*model.MemeInfo, error) {
-	query := `
-		WITH candidates AS (
-			SELECT asset_id, vlm_json, analyzed_at
-			FROM core.meme_info
-			WHERE ($1 = '' OR asset_id >= $1::uuid) AND processing_status = 'pending'
-			ORDER BY asset_id ASC LIMIT $2 + 1 FOR UPDATE SKIP LOCKED
-		),
-		to_update AS (
-			UPDATE core.meme_info SET processing_status = 'processing', analyzed_at = NOW()
-			WHERE asset_id IN (SELECT asset_id FROM candidates LIMIT $2)
-			RETURNING asset_id
-		)
-		SELECT c.asset_id, c.vlm_json, c.analyzed_at
-		FROM candidates c LEFT JOIN to_update tu ON c.asset_id = tu.asset_id
-		ORDER BY c.asset_id ASC
-	`
-	rows, err := r.db.Query(ctx, query, startID, limit)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByNameLax[model.MemeInfo])
-}
-
 // ==============================================================================
 // Views
 // ==============================================================================
@@ -298,7 +274,17 @@ func (r *MemeRepository) GetViews(ctx context.Context, assetIDs []string) (map[s
 	return memes, nil
 }
 
-func (r *MemeRepository) ResetStatus(ctx context.Context, assetIDs []string) error {
-	_, err := r.db.Exec(ctx, `UPDATE core.meme_info SET processing_status = 'pending', analyzed_at = NULL WHERE asset_id = ANY($1::uuid[])`, assetIDs)
-	return err
+// ResetFailed moves failed memes back to pending and returns the IDs actually reset;
+// memes in any other status are left untouched.
+func (r *MemeRepository) ResetFailed(ctx context.Context, assetIDs []string) ([]string, error) {
+	query := `
+		UPDATE core.meme_info SET processing_status = 'pending', analyzed_at = NULL
+		WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'failed'
+		RETURNING asset_id::text
+	`
+	rows, err := r.db.Query(ctx, query, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset meme status: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

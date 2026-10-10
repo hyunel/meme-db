@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/db"
@@ -36,6 +40,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// 2. Connect DB
 	pool, err := db.NewDB(cfg.Database.URL)
 	if err != nil {
@@ -55,7 +62,9 @@ func main() {
 	}
 	defer inferClient.Close()
 
-	// 5. Setup Services
+	// 5. Setup Task Worker & Services
+	taskWorker := worker.NewWorker(cfg.Worker, repo.Task)
+
 	authService := service.NewAuthService(service.AuthServiceConfig{
 		JWTSecret: cfg.Server.JWTSecret,
 	}, repo)
@@ -65,29 +74,30 @@ func main() {
 		JWTSecret:    cfg.Server.JWTSecret,
 		MaxSizeMB:    cfg.Upload.MaxSizeMB,
 		AllowedTypes: cfg.Upload.AllowedTypes,
-		BatchSize:    cfg.Inference.BatchSize,
-	}, repo)
+	}, repo, taskWorker)
 
 	memeService := service.NewMemeService(service.MemeServiceConfig{
 		RetrievalPrompt: cfg.Prompt.Retrieval,
-		BatchSize:       cfg.Inference.BatchSize,
-	}, repo, assetService, inferClient)
+	}, repo, assetService, inferClient.WithPriority(inference.PriorityInteractive), taskWorker)
+
+	ingestService := service.NewIngestService(service.IngestServiceConfig{
+		StoragePath:     cfg.Server.StoragePath,
+		CaptionPrompt:   cfg.Prompt.Caption,
+		RetrievalPrompt: cfg.Prompt.Retrieval,
+	}, repo, inferClient.WithPriority(inference.PriorityBackground))
 
 	fsService := service.NewFileSystemService(repo, memeService, assetService)
 	favService := service.NewFavoriteService(repo, memeService, assetService)
 	tagService := service.NewTagService(repo, memeService)
 
-	// 6. Setup Task Worker
-	taskWorker, err := worker.NewWorker(cfg, repo)
-	if err != nil {
-		slog.Error("Failed to initialize worker", "error", err)
-		os.Exit(1)
-	}
+	// 6. Start Task Worker
+	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 
-	processMemesTask := worker.NewProcessMemesHandler(cfg, repo, inferClient)
-	taskWorker.RegisterHandler(model.JobProcessMemes, processMemesTask)
-
-	go taskWorker.Start(context.Background())
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		taskWorker.Run(ctx)
+	}()
 
 	// 7. Setup Handlers
 	authHandler := handler.NewAuthHandler(authService)
@@ -129,10 +139,24 @@ func main() {
 
 	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	slog.Info("Starting server", "addr", addr)
-	if err := e.Start(addr); err != nil {
-		slog.Error("Server failed", "error", err)
+	go func() {
+		slog.Info("Starting server", "addr", addr)
+		if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Server failed", "error", err)
+			stop()
+		}
+	}()
+
+	// Graceful shutdown: stop HTTP first, then let the worker release in-flight tasks
+	// before the deferred inference client and DB pool closes run.
+	<-ctx.Done()
+	slog.Info("Shutting down...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Server shutdown failed", "error", err)
 	}
+	<-workerDone
 }
 
 func setupRoutes(

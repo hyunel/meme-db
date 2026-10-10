@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS core.meme_info (
     analyzed_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_meme_pending ON core.meme_info(asset_id) WHERE processing_status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_meme_sem ON core.meme_info USING hnsw (semantic_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_meta ON core.meme_info USING hnsw (metaphor_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_clip ON core.meme_info USING hnsw (clip_vector vector_cosine_ops);
@@ -136,12 +135,13 @@ CREATE TABLE IF NOT EXISTS jobs.tasks (
     parent_task_id UUID,
     job_type VARCHAR(50) NOT NULL,
     payload JSONB NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending',
+    status VARCHAR(20) DEFAULT 'pending',     -- pending -> running -> completed | failed
     error_message TEXT,
     priority INT DEFAULT 0,
     cron VARCHAR(50),
+    attempts INT NOT NULL DEFAULT 0,          -- Incremented on each claim; doubles as fencing token
     run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMPTZ,
+    started_at TIMESTAMPTZ,                   -- Lease start of the current attempt
     finished_at TIMESTAMPTZ,
     context JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS jobs.tasks (
     PRIMARY KEY (id, status)
 ) PARTITION BY LIST (status);
 
-CREATE TABLE IF NOT EXISTS jobs.tasks_active PARTITION OF jobs.tasks FOR VALUES IN ('pending');
+CREATE TABLE IF NOT EXISTS jobs.tasks_active PARTITION OF jobs.tasks FOR VALUES IN ('pending', 'running');
 CREATE TABLE IF NOT EXISTS jobs.tasks_history PARTITION OF jobs.tasks FOR VALUES IN ('completed', 'failed');
 
 CREATE INDEX IF NOT EXISTS idx_tasks_queue ON jobs.tasks_active(priority DESC, run_at ASC);
@@ -301,11 +301,7 @@ SELECT
     mi.metaphor_vector,
     mi.semantic_vector,
     mi.clip_vector,
-    CASE
-        WHEN mi.processing_status = 'processing' AND mi.analyzed_at < NOW() - INTERVAL '30 minutes'
-        THEN 'failed'
-        ELSE COALESCE(mi.processing_status, 'pending')
-    END as processing_status,
+    COALESCE(mi.processing_status, 'pending') as processing_status,
     EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = a.id) as in_library
 FROM core.accessible_assets a
 LEFT JOIN core.meme_info mi ON a.id = mi.asset_id;

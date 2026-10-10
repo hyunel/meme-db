@@ -45,6 +45,7 @@ const (
 
 const (
 	TaskStatusPending   = "pending"
+	TaskStatusRunning   = "running"
 	TaskStatusCompleted = "completed"
 	TaskStatusFailed    = "failed"
 )
@@ -54,14 +55,5 @@ const (
 // ==============================================================================
 
 const (
-	JobProcessMemes = "process_memes"
-)
-
-// ==============================================================================
-// Timeouts (in minutes)
-// ==============================================================================
-
-const (
-	MemeProcessingTimeout = 30
-	TaskProcessingTimeout = 10
+	JobAnalyzeMeme = "analyze_meme"
 )
