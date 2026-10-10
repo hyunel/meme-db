@@ -14,7 +14,7 @@ import { ApiError, api } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { logout, useSession } from '@/lib/session'
 import type { Favorites, UserStats } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { TabSwitch } from '@/components/tab-switch'
 
 export function FavoritesView() {
   const [tab, setTab] = useState<'meme' | 'folder'>('meme')
@@ -38,26 +38,7 @@ export function FavoritesView() {
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的收藏</h1>
         <p className="text-sm text-muted-foreground">收藏的内容不会进入你的库，可随时加入。</p>
       </header>
-      <div role="tablist" aria-label="收藏类型" className="inline-flex self-start rounded-lg border bg-card p-0.5">
-        {(
-          [
-            ['meme', '表情包', data?.memes.length],
-            ['folder', '合集', data?.folders.length],
-          ] as const
-        ).map(([id, label, n]) => (
-          <button
-            key={id}
-            role="tab"
-            type="button"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={cn('flex h-9 items-center gap-1.5 rounded-md px-3.5 text-sm transition-colors', tab === id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')}
-          >
-            {label}
-            <span className="text-xs tabular-nums opacity-70">{n ?? ''}</span>
-          </button>
-        ))}
-      </div>
+      <TabSwitch label="收藏类型" value={tab} onChange={setTab} tabs={[['meme', '表情包', data?.memes.length], ['folder', '合集', data?.folders.length]] as const} />
 
       {stale > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-4 py-3 text-sm">

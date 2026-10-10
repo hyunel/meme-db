@@ -15,19 +15,17 @@ import { DownloadDialog } from './download-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
 import { ApiError, api } from '@/lib/api'
-import { kindOf, memeTitle } from '@/lib/media'
+import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { shareMeme } from '@/lib/meme-transfer'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { Meme, MemeTag } from '@/lib/types'
 
-const inProgress = (m?: Meme) => m?.status === 'pending' || m?.status === 'processing'
-
 export function MemeDetail({ id }: { id: string }) {
   const router = useRouter()
   const { user } = useSession()
   const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}`, {
-    refreshInterval: (m) => (inProgress(m) ? 3000 : 0),
+    refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
   const { data: related } = useSWR<Meme[]>(meme?.status === 'success' ? `/memes/${id}/similar?limit=10` : null)
   const [downloadOpen, setDownloadOpen] = useState(false)

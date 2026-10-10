@@ -7,6 +7,9 @@ export function kindOf(mime: string): MediaKind {
   return 'lottie'
 }
 
+/** Whether the meme is still queued for or undergoing analysis. */
+export const isProcessing = (meme?: Pick<Meme, 'status'> | null) => meme?.status === 'pending' || meme?.status === 'processing'
+
 export function memeTitle(meme: Meme) {
   return meme.keywords.slice(0, 3).join(' · ') || '未命名表情包'
 }
