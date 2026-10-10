@@ -78,6 +78,7 @@ type Task struct {
 
 	Priority   int        `json:"priority" db:"priority"`
 	Cron       *string    `json:"cron" db:"cron"`
+	Attempts   int        `json:"attempts" db:"attempts"`
 	RunAt      time.Time  `json:"run_at" db:"run_at"`
 	StartedAt  *time.Time `json:"started_at" db:"started_at"`
 	FinishedAt *time.Time `json:"finished_at" db:"finished_at"`

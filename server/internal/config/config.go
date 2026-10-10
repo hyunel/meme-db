@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/goccy/go-yaml"
 	"github.com/hyunel/MemeDB/internal/pkg/validator"
@@ -17,6 +18,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server" validate:"required"`
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
+	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
 	VLM       VLMConfig       `yaml:"vlm"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
@@ -43,8 +45,14 @@ type DatabaseConfig struct {
 }
 
 type InferenceConfig struct {
-	GRPCAddr  string `yaml:"grpc_addr" validate:"required"`
-	BatchSize int    `yaml:"batch_size" validate:"required,gt=0"`
+	GRPCAddr string `yaml:"grpc_addr" validate:"required"`
+}
+
+type WorkerConfig struct {
+	Concurrency  int           `yaml:"concurrency" validate:"required,gt=0"`
+	MaxAttempts  int           `yaml:"max_attempts" validate:"required,gt=0"`
+	JobTimeout   time.Duration `yaml:"job_timeout" validate:"required,gt=0"`
+	PollInterval time.Duration `yaml:"poll_interval" validate:"required,gt=0"`
 }
 
 type VLMConfig struct {

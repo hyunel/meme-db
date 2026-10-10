@@ -9,9 +9,16 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// Request priorities for the inference service's schedulers; higher runs first.
+const (
+	PriorityBackground  int32 = 0
+	PriorityInteractive int32 = 10
+)
+
 type Client struct {
-	conn   *grpc.ClientConn
-	client pb.InferenceServiceClient
+	conn     *grpc.ClientConn
+	client   pb.InferenceServiceClient
+	priority int32
 }
 
 type ImageInput struct {
@@ -40,8 +47,20 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+// WithPriority returns a client sharing the same connection whose requests carry the given priority.
+func (c *Client) WithPriority(priority int32) *Client {
+	clone := *c
+	clone.priority = priority
+	return &clone
+}
+
+func (c *Client) options() *pb.TaskOptions {
+	return &pb.TaskOptions{Priority: c.priority}
+}
+
 func (c *Client) TextEmbedding(ctx context.Context, text string, task string) ([]float32, error) {
 	resp, err := c.client.TextEmbedding(ctx, &pb.TextEmbeddingRequest{
+		Options:         c.options(),
 		Text:            text,
 		TaskDescription: task,
 	})
@@ -54,6 +73,7 @@ func (c *Client) TextEmbedding(ctx context.Context, text string, task string) ([
 
 func (c *Client) ClipImageEmbedding(ctx context.Context, image ImageInput) ([]float32, error) {
 	resp, err := c.client.ClipImageEmbedding(ctx, &pb.ClipImageEmbeddingRequest{
+		Options: c.options(),
 		Image: &pb.Image{
 			Data:       image.Data,
 			FileFormat: image.Format,
@@ -68,7 +88,8 @@ func (c *Client) ClipImageEmbedding(ctx context.Context, image ImageInput) ([]fl
 
 func (c *Client) ClipTextEmbedding(ctx context.Context, text string) ([]float32, error) {
 	resp, err := c.client.ClipTextEmbedding(ctx, &pb.ClipTextEmbeddingRequest{
-		Text: text,
+		Options: c.options(),
+		Text:    text,
 	})
 	if err != nil {
 		return nil, err
@@ -79,6 +100,7 @@ func (c *Client) ClipTextEmbedding(ctx context.Context, text string) ([]float32,
 
 func (c *Client) Rerank(ctx context.Context, query string, document string, task string) (float32, error) {
 	resp, err := c.client.Rerank(ctx, &pb.RerankRequest{
+		Options:         c.options(),
 		Query:           query,
 		Document:        document,
 		TaskDescription: task,
@@ -90,14 +112,17 @@ func (c *Client) Rerank(ctx context.Context, query string, document string, task
 	return resp.Score, nil
 }
 
+// ImageCaption waits for the connection to become ready instead of failing fast, so an
+// inference service restart does not burn ingestion retry attempts. Bound it with ctx.
 func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInput) (*ImageCaptionResult, error) {
 	resp, err := c.client.ImageCaption(ctx, &pb.ImageCaptionRequest{
-		Prompt: prompt,
+		Options: c.options(),
+		Prompt:  prompt,
 		Image: &pb.Image{
 			Data:       image.Data,
 			FileFormat: image.Format,
 		},
-	})
+	}, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, err
 	}

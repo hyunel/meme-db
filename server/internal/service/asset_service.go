@@ -24,16 +24,16 @@ type AssetServiceConfig struct {
 	JWTSecret    string
 	MaxSizeMB    float64
 	AllowedTypes []string
-	BatchSize    int
 }
 
 type AssetService struct {
-	cfg  AssetServiceConfig
-	repo *repository.Provider
+	cfg      AssetServiceConfig
+	repo     *repository.Provider
+	notifier Notifier
 }
 
-func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider) *AssetService {
-	return &AssetService{cfg: cfg, repo: repo}
+func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider, notifier Notifier) *AssetService {
+	return &AssetService{cfg: cfg, repo: repo, notifier: notifier}
 }
 
 func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
@@ -158,15 +158,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 			return fmt.Errorf("failed to create meme info stub: %w", err)
 		}
 
-		_, err = txR.Task.CreateWithOpts(ctx, model.JobProcessMemes, map[string]any{
-			"start_id":   asset.ID,
-			"batch_size": s.cfg.BatchSize,
-		}, &repository.TaskOpts{Priority: model.PriorityHigh})
-		if err != nil {
-			return fmt.Errorf("failed to create processing task: %w", err)
-		}
-
-		return nil
+		return enqueueAnalysis(ctx, txR, model.PriorityHigh, asset.ID)
 	})
 
 	if err != nil {
@@ -174,6 +166,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, fileHeader *multipart.Fi
 		return nil, err
 	}
 
+	s.notifier.Notify()
 	return asset, nil
 }
 

@@ -16,7 +16,6 @@ import (
 
 type MemeServiceConfig struct {
 	RetrievalPrompt string
-	BatchSize       int
 }
 
 type MemeService struct {
@@ -24,6 +23,7 @@ type MemeService struct {
 	repo         *repository.Provider
 	assetService *AssetService
 	inferClient  inference.InferenceService
+	notifier     Notifier
 }
 
 func NewMemeService(
@@ -31,12 +31,14 @@ func NewMemeService(
 	repo *repository.Provider,
 	assetService *AssetService,
 	inferClient inference.InferenceService,
+	notifier Notifier,
 ) *MemeService {
 	return &MemeService{
 		cfg:          cfg,
 		repo:         repo,
 		assetService: assetService,
 		inferClient:  inferClient,
+		notifier:     notifier,
 	}
 }
 
@@ -309,36 +311,24 @@ func (s *MemeService) RetryProcessing(ctx context.Context, userID string, assetI
 		return err
 	}
 
-	var validIDs []string
 	for _, id := range assetIDs {
-		meme, ok := memes[id]
-		if !ok {
+		if _, ok := memes[id]; !ok {
 			return apperror.NotFound(fmt.Sprintf("meme not found: %s", id))
 		}
-		if meme.ProcessingStatus != model.ProcessingStatusFailed {
-			continue
-		}
-		validIDs = append(validIDs, id)
 	}
 
-	if len(validIDs) == 0 {
-		return nil
-	}
-
-	return s.repo.TxNoRLS(ctx, func(r *repository.Repos) error {
-		if err := r.Meme.ResetStatus(ctx, validIDs); err != nil {
-			return fmt.Errorf("failed to reset meme status: %w", err)
+	// Only failed memes are reset and re-enqueued; the rest are left untouched.
+	err = s.repo.TxNoRLS(ctx, func(r *repository.Repos) error {
+		resetIDs, err := r.Meme.ResetFailed(ctx, assetIDs)
+		if err != nil {
+			return err
 		}
-
-		for _, id := range validIDs {
-			_, err = r.Task.CreateWithOpts(ctx, model.JobProcessMemes, map[string]any{
-				"start_id":   id,
-				"batch_size": s.cfg.BatchSize,
-			}, &repository.TaskOpts{Priority: model.PriorityNormal})
-			if err != nil {
-				return fmt.Errorf("failed to create retry task for %s: %w", id, err)
-			}
-		}
-		return nil
+		return enqueueAnalysis(ctx, r, model.PriorityNormal, resetIDs...)
 	})
+	if err != nil {
+		return err
+	}
+
+	s.notifier.Notify()
+	return nil
 }
