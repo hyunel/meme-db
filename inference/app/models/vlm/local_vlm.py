@@ -9,6 +9,13 @@ from ...config import ModelConfig
 logger = logging.getLogger(__name__)
 
 
+def as_input_image(img: Image.Image) -> outlines.inputs.Image:
+    """Wraps a frame for outlines, which encodes images in their format; frames decoded or
+    stitched in memory have none, so they are sent as PNG."""
+    img.format = img.format or "PNG"
+    return outlines.inputs.Image(img)
+
+
 class LocalVLM(VLMModel):
     """
     Local transformers-based VLM implementation.
@@ -50,12 +57,12 @@ class LocalVLM(VLMModel):
         # Prepare batch of messages
         messages = []
         for img, prompt in items:
-            messages.append([
+            messages.append(outlines.inputs.Chat([
                 {"role": "user", "content": [
                     { "type": "text", "text": prompt },
-                    { "type": "image", "image": outlines.inputs.Image(img) }
+                    { "type": "image", "image": as_input_image(img) }
                 ]}
-            ])
+            ]))
 
         # Batch process all images at once
         return self.model.generate_batch(
