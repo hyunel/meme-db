@@ -59,8 +59,12 @@ export function useDragMove({ current, selected, onMove }: { current: string; se
 
 /** Shows up to three of the dragged items as a stack, with a count badge for several. */
 function setDragPreview(dt: DataTransfer, ids: string[]) {
+  // The pointer sits at the top-left corner; the transparent padding keeps the stack clear of it.
+  const preview = document.createElement('div')
+  preview.className = 'pointer-events-none fixed -top-[1000px] left-0 pt-5 pl-4'
   const stack = document.createElement('div')
-  stack.className = 'pointer-events-none fixed -top-[1000px] left-0 size-[84px]'
+  stack.className = 'relative size-[84px]'
+  preview.append(stack)
   ids.slice(0, 3).forEach((id, i) => {
     const thumb = document.querySelector<HTMLElement>(`[data-node-id="${id}"] [data-thumb]`)
     if (!thumb) return
@@ -77,9 +81,9 @@ function setDragPreview(dt: DataTransfer, ids: string[]) {
     badge.textContent = String(ids.length)
     stack.append(badge)
   }
-  document.body.append(stack)
-  dt.setDragImage(stack, 32, 32)
-  setTimeout(() => stack.remove()) // The browser has captured the image by then
+  document.body.append(preview)
+  dt.setDragImage(preview, 0, 0)
+  setTimeout(() => preview.remove()) // The browser has captured the image by then
 }
 
 /** Clones a thumbnail, with videos as their current frame (a cloned video shows nothing yet). */
