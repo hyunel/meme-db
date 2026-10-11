@@ -13,7 +13,11 @@ The system consists of three main components:
 
 2.  **Inference Service (Python)**:
     - **Communication**: gRPC
-    - **Role**: Provides embedding generation (CLIP, Text) and Reranking services.
+    - **Role**: Provides VLM captioning, embedding generation (CLIP, Text) and Reranking services.
+
+3.  **Web (Next.js)**:
+    - **Stack**: Next.js 16 (App Router), React 19, SWR, Tailwind v4, shadcn components on Base UI.
+    - **Role**: The site and the admin console; reaches the server through the `/api` rewrite.
 
 ## Directory Structure
 
@@ -36,8 +40,12 @@ MemeDB/
 
 ## Development Standards
 
-### Go Server
+### General
 - **Surgical Changes**: Do NOT make any changes outside the explicit scope of the task. ALWAYS clean up obsolete code (e.g., unused functions, structs) resulting from the refactoring required by the task.
+- **Concise Code**: Inline one-line or single-use logic instead of wrapping it in a helper; extract functions only for real logic or genuine duplication.
+- **Comments**: Add brief inline comments only where the code alone is unclear (a reason, a contract, a unit). No doc blocks that restate a name, step-by-step narration or section banners.
+
+### Go Server
 - **Architecture**: Follow Clean Architecture (Handlers -> Services -> Repositories).
   - **Handlers**:
     - Place handler-specific request/response models directly in the handler file, near the methods that use them.
@@ -71,6 +79,15 @@ MemeDB/
 ### Error Handling
 - **Service Layer**: Services should return `apperror` types (from `server/internal/pkg/apperror`) for expected errors (e.g., `apperror.NotFound`, `apperror.BadRequest`). Unexpected internal errors should be returned as raw `error`, which will default to an Internal Server Error (500) in the handler.
 - **Handler Layer**: Handlers should simply return the error from the service layer. Avoid manual `c.JSON` or `c.String` for error responses.
+
+### Web
+- Read `web/AGENTS.md` first: this Next.js version differs from what you may know.
+- Build UI from `components/ui` and the theme tokens in `app/globals.css`; fetch with SWR through `lib/api`, calling `refresh()` after mutations.
+- Keep `lib/types.ts` in sync with the server's JSON.
+
+### Inference Service
+- Models subclass `BaseModel` and expose `inference_methods`. GPU models are batched by `BatchScheduler`; the others run on `SimpleScheduler` executor threads, so their code must be thread-safe.
+- The VLM in `models.yaml` may be a paid API: anything that triggers ingestion (uploads, reprocessing) costs money.
 
 ## Key Features
 - **4-Way Recall**: Combines Metaphor (VLM), Semantic (VLM), CLIP (Visual), and OCR search results.
