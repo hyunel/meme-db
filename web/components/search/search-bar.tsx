@@ -6,6 +6,7 @@ import { ImageIcon, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useImageInput } from './use-image-input'
 import { putImageQuery, validateQueryImage } from '@/lib/image-query'
 import { pushRecentSearch } from '@/lib/recent-searches'
 import { cn } from '@/lib/utils'
@@ -27,7 +28,6 @@ export function SearchBar({
 }) {
   const router = useRouter()
   const [value, setValue] = useState(defaultValue)
-  const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const buildParams = (extra: Record<string, string>) => {
@@ -55,13 +55,8 @@ export function SearchBar({
     router.push(`/search?${buildParams({ img: q.id })}`)
   }
 
-  const onPaste = (e: React.ClipboardEvent) => {
-    const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
-    if (file) {
-      e.preventDefault()
-      searchByImage(file)
-    }
-  }
+  const imageInput = useImageInput(searchByImage)
+  const dragging = imageInput.dragging
 
   const lg = size === 'lg'
 
@@ -69,18 +64,7 @@ export function SearchBar({
     <form
       role="search"
       onSubmit={submit}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault()
-          setDragging(true)
-        }
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        searchByImage(e.dataTransfer.files[0])
-      }}
+      {...imageInput.dropProps}
       className={cn(
         'flex w-full items-center gap-1 rounded-xl border bg-card shadow-xs transition focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20',
         lg ? 'h-14 pl-4 pr-2' : 'h-9 pl-3 pr-1',
@@ -96,7 +80,7 @@ export function SearchBar({
         id={`search-${size}`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onPaste={onPaste}
+        onPaste={imageInput.onPaste}
         autoFocus={autoFocus}
         autoComplete="off"
         placeholder={dragging ? '松开以按图片搜索' : scope === 'mine' ? '在我的库中搜索…' : '输入关键词，或拖入/粘贴图片搜索'}

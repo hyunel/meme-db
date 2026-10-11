@@ -75,14 +75,7 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 	if err != nil {
 		return nil, err
 	}
-	var folderIDs, assetIDs []string
-	for _, n := range children {
-		if n.Type == model.NodeTypeFolder {
-			folderIDs = append(folderIDs, n.ID)
-		} else {
-			assetIDs = append(assetIDs, *n.AssetID)
-		}
-	}
+	folderIDs, assetIDs := splitChildren(children)
 	if view.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
 		return nil, err
 	}
@@ -321,6 +314,18 @@ func (s *LibraryService) takenNames(ctx context.Context, ownerID string, parentI
 	return taken, err
 }
 
+// splitChildren returns the IDs of the folders among nodes and the asset IDs of the files.
+func splitChildren(nodes []*model.Node) (folderIDs, assetIDs []string) {
+	for _, n := range nodes {
+		if n.Type == model.NodeTypeFolder {
+			folderIDs = append(folderIDs, n.ID)
+		} else {
+			assetIDs = append(assetIDs, *n.AssetID)
+		}
+	}
+	return folderIDs, assetIDs
+}
+
 // uniqueName returns name, or "base (n).ext" with the smallest n not yet taken.
 func uniqueName(taken map[string]bool, name string) string {
 	if !taken[name] {
@@ -421,14 +426,7 @@ func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity
 	if err != nil {
 		return nil, err
 	}
-	var folderIDs, assetIDs []string
-	for _, n := range children {
-		if n.Type == model.NodeTypeFolder {
-			folderIDs = append(folderIDs, n.ID)
-		} else {
-			assetIDs = append(assetIDs, *n.AssetID)
-		}
-	}
+	folderIDs, assetIDs := splitChildren(children)
 	if page.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
 		return nil, err
 	}
