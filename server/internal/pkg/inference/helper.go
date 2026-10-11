@@ -9,15 +9,16 @@ import (
 var ocrNoiseRegex = regexp.MustCompile(`(?i)(?:key\s+)?frame\s+\d+/\d+\n?`)
 
 type VLMOutput struct {
-	OCRText          string
-	VisualSubject    []string
-	SpecificEntities []string
-	VisualStyle      []string
-	ImpliedMeaning   []string
-	SyntheticQueries []string
+	OCRText          string   `json:"ocr_text"`
+	VisualSubject    []string `json:"visual_subject"`
+	SpecificEntities []string `json:"specific_entities"`
+	VisualStyle      []string `json:"visual_style"`
+	ImpliedMeaning   []string `json:"implied_meaning"`
+	SyntheticQueries []string `json:"synthetic_queries"`
 
-	MetaphorText string
-	SemanticText string
+	// Optional texts to embed; GetMetaphorText and GetSemanticText derive them otherwise.
+	MetaphorText string `json:"-"`
+	SemanticText string `json:"-"`
 }
 
 func toStringSlice(v any) []string {
