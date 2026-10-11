@@ -3,10 +3,10 @@ package inference
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pb "github.com/hyunel/MemeDB/internal/pb"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -45,14 +45,6 @@ func NewClient(addr string) (*Client, error) {
 
 func (c *Client) Close() error {
 	return c.conn.Close()
-}
-
-func (c *Client) Health() (bool, string) {
-	state := c.conn.GetState()
-	if state == connectivity.Idle {
-		c.conn.Connect() // Connections are lazy; start one so the next check is meaningful
-	}
-	return state != connectivity.TransientFailure && state != connectivity.Shutdown, state.String()
 }
 
 func (c *Client) WithPriority(priority int32) *Client {
@@ -143,4 +135,13 @@ func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInp
 		Height:        int(resp.Height),
 		ClipEmbedding: clipEmbedding,
 	}, nil
+}
+
+// Metrics returns the service's dashboard snapshot as JSON; unlike requests, it fails fast while the service is down.
+func (c *Client) Metrics(ctx context.Context, span, step time.Duration) ([]byte, error) {
+	resp, err := c.client.Metrics(ctx, &pb.MetricsRequest{SpanSeconds: int32(span.Seconds()), StepSeconds: int32(step.Seconds())})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Json, nil
 }

@@ -121,8 +121,8 @@ func main() {
 	e.HideBanner = true
 	e.HTTPErrorHandler = handler.HTTPErrorHandler
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		// The log viewer polls; logging those requests would feed it its own traffic.
-		Skipper:     func(c echo.Context) bool { return c.Path() == "/api/admin/logs" },
+		// Pages that poll; logging their requests would bury everything else (and feed the log viewer its own traffic).
+		Skipper:     func(c echo.Context) bool { return c.Path() == "/api/admin/logs" || c.Path() == "/api/admin/inference" },
 		LogStatus:   true,
 		LogURI:      true,
 		LogMethod:   true,
@@ -230,6 +230,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 
 	admin.GET("/stats", h.admin.Stats)
 	admin.GET("/logs", h.admin.Logs)
+	admin.GET("/inference", h.admin.InferenceMetrics)
 
 	admin.GET("/users", h.admin.ListUsers)
 	admin.POST("/users", h.admin.CreateUser)

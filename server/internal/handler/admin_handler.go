@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"cmp"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -345,6 +346,23 @@ func (h *AdminHandler) DeleteTags(c echo.Context) error {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+type InferenceMetricsRequest struct {
+	Range string `query:"range" validate:"omitempty,oneof=15m 1h 6h 24h"`
+}
+
+func (h *AdminHandler) InferenceMetrics(c echo.Context) error {
+	var req InferenceMetricsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	data, err := h.statsService.Inference(c.Request().Context(), cmp.Or(req.Range, "1h"))
+	if err != nil {
+		return err
+	}
+	return c.JSONBlob(http.StatusOK, data)
 }
 
 type StatsRequest struct {
