@@ -16,6 +16,15 @@ const nav = [
   { href: '/admin/tags', label: '标签', icon: Tags },
 ]
 
+function AdminBrand({ className }: { className?: string }) {
+  return (
+    <div className={cn('flex items-center gap-2', className)}>
+      <Logo href="/admin" />
+      <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background">后台</span>
+    </div>
+  )
+}
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const active = (href: string) => (href === '/admin' ? path === '/admin' : path.startsWith(href))
@@ -24,10 +33,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <RequireAuth admin>
       <div className="flex min-h-dvh flex-col bg-muted/30 md:flex-row">
         <aside className="hidden w-56 shrink-0 flex-col gap-6 border-r bg-background p-4 md:sticky md:top-0 md:flex md:h-dvh">
-          <div className="flex items-center gap-2 px-2">
-            <Logo href="/admin" />
-            <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background">后台</span>
-          </div>
+          <AdminBrand className="px-2" />
           <nav aria-label="后台导航" className="flex flex-col gap-0.5">
             {nav.map((n) => (
               <Link
@@ -49,10 +55,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
         <header className="sticky top-0 z-40 border-b bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
           <div className="flex h-12 items-center justify-between px-4">
-            <div className="flex items-center gap-2">
-              <Logo href="/admin" />
-              <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background">后台</span>
-            </div>
+            <AdminBrand />
             <Link href="/" className="flex h-10 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground">
               <ArrowLeft className="size-4" aria-hidden />
               前台
