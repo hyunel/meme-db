@@ -2,29 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Compass, Heart, House, Library, LogIn, Search } from 'lucide-react'
+import { House, LogIn } from 'lucide-react'
 import { useSession } from '@/lib/session'
-import { isActive } from '@/components/site-header'
+import { isActive, useMainNav } from '@/components/site-header'
 import { cn } from '@/lib/utils'
 
 export function MobileTabBar() {
   const { user } = useSession()
   const pathname = usePathname()
-
-  const tabs = user
-    ? [
-        { href: '/', label: '首页', icon: House },
-        { href: '/search', label: '搜索', icon: Search },
-        { href: '/discover', label: '发现', icon: Compass },
-        { href: '/library', label: '我的库', icon: Library },
-        { href: '/favorites', label: '收藏', icon: Heart },
-      ]
-    : [
-        { href: '/', label: '首页', icon: House },
-        { href: '/search', label: '搜索', icon: Search },
-        { href: '/discover', label: '发现', icon: Compass },
-        { href: '/login', label: '登录', icon: LogIn },
-      ]
+  const tabs = [{ href: '/', label: '首页', icon: House }, ...useMainNav(), ...(user ? [] : [{ href: '/login', label: '登录', icon: LogIn }])]
 
   return (
     <nav
