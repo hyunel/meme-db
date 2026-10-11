@@ -101,3 +101,10 @@
     @apply bg-background text-foreground font-sans;
   }
 }
+
+/* A scroll container clips at its padding box, so the padding gives focus rings room. */
+@utility scroll-row {
+  overflow-x: auto;
+  padding-block: 0.25rem;
+  margin-block: -0.25rem;
+}

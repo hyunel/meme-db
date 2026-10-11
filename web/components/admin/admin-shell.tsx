@@ -61,7 +61,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               前台
             </Link>
           </div>
-          <nav aria-label="后台导航" className="overflow-x-auto [scrollbar-width:none]">
+          <nav aria-label="后台导航" className="scroll-row [scrollbar-width:none]">
             <ul className="flex w-max gap-1 px-3 pb-2">
               {nav.map((n) => (
                 <li key={n.href}>

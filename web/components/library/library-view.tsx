@@ -145,8 +145,7 @@ function LibraryContent({ lib }: { lib: Library }) {
     selected,
     onMove: (nodeIds, target) => transfer('move', nodeIds, target || null).catch((e: Error) => toast.error(e.message)),
   })
-  // Inset, as the scrolling breadcrumb bar clips anything drawn outside a crumb.
-  const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-inset ring-foreground/20'
+  const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-foreground/20'
 
   const setPublic = (sel: Item[], isPublic: boolean) =>
     run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
@@ -208,7 +207,7 @@ function LibraryContent({ lib }: { lib: Library }) {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
-      <nav aria-label="文件夹路径" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      <nav aria-label="文件夹路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
         <ol className="flex w-max items-center gap-0.5 text-sm text-muted-foreground">
           <li>
             <Link href="/library" {...drag.target(ROOT)} className={cn('flex h-8 items-center gap-1 rounded-md px-1.5 hover:bg-muted hover:text-foreground', dropHighlight(ROOT))}>

@@ -38,7 +38,7 @@ export function TagView({ tag }: { tag: string }) {
         description={memes.data ? `${memes.data.total} 个表情包` : undefined}
       />
       {others.length > 0 && (
-        <nav aria-label="其他标签" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <nav aria-label="其他标签" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
           <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
             {others.map((t) => (
               <li key={t}>
@@ -123,7 +123,7 @@ export function PublicFolderView({ id }: { id: string }) {
     <Loadable result={page} notFound={{ title: '合集不存在', description: '它可能已被删除，或已设为私有。' }}>
       {({ folder, ancestors, folders, memes }) => (
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-          <nav aria-label="合集路径" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <nav aria-label="合集路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
             <ol className="flex w-max items-center gap-1 text-sm text-muted-foreground">
               <li>
                 <Link href={`/u/${folder.owner.username}`} className="inline-flex items-center gap-1 hover:text-foreground">
