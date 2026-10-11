@@ -11,7 +11,7 @@ CREATE TYPE node_type AS ENUM ('FOLDER', 'FILE');
 -- SCHEMAS
 -- ============================================================================
 -- core    : Core data (assets, meme analysis)
--- iam     : Identity & Access Management (users, roles)
+-- iam     : Identity & Access Management (users, roles, API tokens)
 -- library : User content (nodes, favorites, tags)
 -- jobs    : Background task queue
 -- ops     : Operational data (service logs)
@@ -37,6 +37,21 @@ CREATE TABLE IF NOT EXISTS iam.users (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Personal tokens for calling the API as their user.
+CREATE TABLE IF NOT EXISTS iam.api_tokens (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES iam.users(id) ON DELETE CASCADE,
+    name VARCHAR(50) NOT NULL,
+    token_hash CHAR(64) UNIQUE NOT NULL,      -- SHA-256 of the secret, which is shown only once
+    hint VARCHAR(4) NOT NULL,                 -- Last characters of the secret, to tell tokens apart
+    scope VARCHAR(10) NOT NULL,               -- read | write | admin
+    expires_at TIMESTAMPTZ,                   -- NULL = never
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON iam.api_tokens(user_id);
 
 -- ============================================================================
 -- TABLES: Core

@@ -2,8 +2,8 @@
 
 import { useMemo, useSyncExternalStore } from 'react'
 import Link from 'next/link'
-import type { Meme } from '@/lib/types'
-import { kindOf } from '@/lib/media'
+import type { Entry, Meme } from '@/lib/types'
+import { kindOf, memeHref } from '@/lib/media'
 import { MemeMedia } from './meme-media'
 import { FavoriteButton, MemeMoreMenu } from './meme-actions'
 import { ProcessBadge } from '@/components/status-badges'
@@ -12,14 +12,14 @@ import { cn } from '@/lib/utils'
 // Height over width, bounded so panoramas and long screenshots keep a usable card.
 const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)
 
-export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme; similarity?: number; allowAdd?: boolean; className?: string }) {
+export function MemeCard({ meme, entryId, similarity, allowAdd, className }: { meme: Meme; entryId?: string; similarity?: number; allowAdd?: boolean; className?: string }) {
   const kind = kindOf(meme.mime_type)
   const shown = [...new Set(meme.tags.filter((t) => !t.rare).map((t) => t.name))].slice(0, 2)
 
   return (
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
       <Link
-        href={`/m/${meme.id}`}
+        href={memeHref(meme.id, entryId)}
         className="relative block overflow-hidden rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
         style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
@@ -85,10 +85,11 @@ function useColumnCount() {
   )
 }
 
-export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[]; similarity?: Map<string, number>; allowAdd?: boolean }) {
+/** Lays out memes, or the entries of a folder, which open under their names there. */
+export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[] | Entry[]; similarity?: Map<string, number>; allowAdd?: boolean }) {
   const count = useColumnCount()
   const columns = useMemo(() => {
-    const cols: Meme[][] = Array.from({ length: count }, () => [])
+    const cols: (Meme | Entry)[][] = Array.from({ length: count }, () => [])
     memes.forEach((m, i) => cols[i % count].push(m)) // Ranks run left to right, row by row
     return cols
   }, [memes, count])
@@ -97,11 +98,14 @@ export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[]; simil
     <div className="flex items-start gap-3">
       {columns.map((col, i) => (
         <ul key={i} className="flex min-w-0 flex-1 flex-col gap-4">
-          {col.map((m) => (
-            <li key={m.id}>
-              <MemeCard meme={m} similarity={similarity?.get(m.id)} allowAdd={allowAdd} />
-            </li>
-          ))}
+          {col.map((item) => {
+            const [meme, entryId] = 'meme' in item ? [item.meme, item.id] : [item]
+            return (
+              <li key={item.id}>
+                <MemeCard meme={meme} entryId={entryId} similarity={similarity?.get(meme.id)} allowAdd={allowAdd} />
+              </li>
+            )
+          })}
         </ul>
       ))}
     </div>

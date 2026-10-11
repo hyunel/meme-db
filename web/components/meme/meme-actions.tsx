@@ -11,7 +11,7 @@ import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
 import { DownloadDialog } from './download-dialog'
 import { api, refresh } from '@/lib/api'
 import { shareMeme } from '@/lib/meme-transfer'
-import type { EntryRef, Meme } from '@/lib/types'
+import type { Entry, EntryRef, Meme } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type BtnSize = 'default' | 'sm' | 'icon' | 'icon-sm' | 'lg'
@@ -94,7 +94,8 @@ function useAddToLibrary(meme: Meme) {
     if (pending) return
     setPending(true)
     try {
-      setLocal(await api<EntryRef>('/library/entries', { method: 'POST', json: { meme_id: meme.id } }))
+      const added = await api<Entry>('/library/entries', { method: 'POST', json: { meme_id: meme.id } })
+      setLocal({ id: added.id, folder_id: added.parent_id })
       void refresh()
       toast.success('已加入我的库', {
         action: { label: '移动到文件夹', onClick: () => setPickerOpen(true) },

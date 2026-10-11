@@ -205,14 +205,20 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
+	api.GET("/entries/:id", h.library.Entry)
 	api.GET("/users/:username", h.library.Profile)
 
-	// Signed-in users
+	// Signed-in users; read-scoped API tokens may only read
 	priv := api.Group("", rbac.RequireAuth())
 
 	priv.GET("/auth/me", h.auth.GetMe)
 	priv.GET("/auth/me/stats", h.auth.GetMyStats)
-	priv.PUT("/auth/password", h.auth.ChangePassword)
+
+	session := priv.Group("/auth", rbac.RequireSession())
+	session.PUT("/password", h.auth.ChangePassword)
+	session.GET("/tokens", h.auth.ListTokens)
+	session.POST("/tokens", h.auth.CreateToken)
+	session.DELETE("/tokens/:id", h.auth.DeleteToken)
 
 	priv.POST("/memes/:id/retry", h.meme.Retry)
 	priv.POST("/memes/:id/tags", h.meme.AddTag)
@@ -234,7 +240,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	lib.POST("/nodes/move", h.library.Move)
 	lib.POST("/nodes/copy", h.library.Copy)
 
-	// Admins
+	// Admins; API tokens need the admin scope
 	admin := priv.Group("/admin", rbac.RequireAdmin())
 
 	admin.GET("/stats", h.admin.Stats)

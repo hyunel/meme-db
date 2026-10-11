@@ -77,11 +77,11 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 		return err
 	}
 
-	entry, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), req.File)
+	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), req.File)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, entry)
+	return entryResponse(c, entry, created)
 }
 
 type AddEntryRequest struct {
@@ -95,11 +95,19 @@ func (h *LibraryHandler) AddEntry(c echo.Context) error {
 		return err
 	}
 
-	entry, err := h.libraryService.AddMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, optionalID(req.ParentID))
+	entry, created, err := h.libraryService.AddMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, optionalID(req.ParentID))
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, entry)
+	return entryResponse(c, entry, created)
+}
+
+// The entry already in the folder comes back with 200 rather than 201.
+func entryResponse(c echo.Context, entry *service.EntryDetail, created bool) error {
+	if created {
+		return c.JSON(http.StatusCreated, entry)
+	}
+	return c.JSON(http.StatusOK, entry)
 }
 
 type RenameNodeRequest struct {
@@ -202,21 +210,34 @@ func (h *LibraryHandler) PublicFolders(c echo.Context) error {
 	return c.JSON(http.StatusOK, folders)
 }
 
-type PublicFolderRequest struct {
+type NodeRequest struct {
 	ID string `param:"id" validate:"required,uuid"`
 }
 
 func (h *LibraryHandler) PublicFolder(c echo.Context) error {
-	var req PublicFolderRequest
+	var req NodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	page, err := h.libraryService.PublicFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	view, err := h.libraryService.PublicFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, page)
+	return c.JSON(http.StatusOK, view)
+}
+
+func (h *LibraryHandler) Entry(c echo.Context) error {
+	var req NodeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	entry, err := h.libraryService.Entry(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, entry)
 }
 
 type ProfileRequest struct {

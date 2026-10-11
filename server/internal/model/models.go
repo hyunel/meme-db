@@ -42,6 +42,17 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
+type APIToken struct {
+	ID         string     `json:"id" db:"id"`
+	UserID     string     `json:"-" db:"user_id"`
+	Name       string     `json:"name" db:"name"`
+	Hint       string     `json:"hint" db:"hint"` // Last characters of the secret
+	Scope      string     `json:"scope" db:"scope"`
+	ExpiresAt  *time.Time `json:"expires_at" db:"expires_at"`
+	LastUsedAt *time.Time `json:"last_used_at" db:"last_used_at"` // Recorded to the minute
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+}
+
 type Node struct {
 	ID        string    `db:"id"`
 	OwnerID   string    `db:"owner_id"`

@@ -15,6 +15,7 @@ import { formatDate } from '@/lib/format'
 import { logout, useSession } from '@/lib/session'
 import type { Favorites, UserStats } from '@/lib/types'
 import { TabSwitch } from '@/components/tab-switch'
+import { ApiTokens } from '@/components/api-tokens'
 
 export function FavoritesView() {
   const [tab, setTab] = useState<'meme' | 'folder'>('meme')
@@ -150,6 +151,8 @@ export function SettingsView() {
           </Button>
         </form>
       </section>
+
+      <ApiTokens />
 
       <section aria-labelledby="session-h" className="flex flex-col gap-3 rounded-2xl border bg-card p-5">
         <h2 id="session-h" className="font-semibold">
