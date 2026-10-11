@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { DownloadDialog } from './download-dialog'
-import { SaveToLibraryDialog } from './save-to-library-dialog'
+import { LibraryDialog } from './library-dialog'
 import { api, refresh } from '@/lib/api'
 import { shareMeme } from '@/lib/meme-transfer'
 import type { Meme } from '@/lib/types'
@@ -80,19 +80,19 @@ export function FavoriteButton({
 }
 
 /** Opens the dialog choosing where the meme goes in the viewer's library, once they are signed in. */
-function useSaveToLibrary(meme: Meme) {
+function useLibraryDialog(meme: Meme) {
   const requireLogin = useRequireLogin()
   const [open, setOpen] = useState(false)
   return {
     count: meme.entries.length,
     open: () => requireLogin('登录后即可把表情包加入你的私人库。') && setOpen(true),
-    dialog: open && <SaveToLibraryDialog meme={meme} onOpenChange={setOpen} />,
+    dialog: open && <LibraryDialog meme={meme} onOpenChange={setOpen} />,
   }
 }
 
 export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme; className?: string; allowAdd?: boolean }) {
   const [downloadOpen, setDownloadOpen] = useState(false)
-  const lib = useSaveToLibrary(meme)
+  const lib = useLibraryDialog(meme)
   return (
     <>
       <DropdownMenu>
@@ -138,8 +138,8 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
   )
 }
 
-export function SaveToLibraryButton({ meme, className }: { meme: Meme; className?: string }) {
-  const lib = useSaveToLibrary(meme)
+export function LibraryButton({ meme, className }: { meme: Meme; className?: string }) {
+  const lib = useLibraryDialog(meme)
   return (
     <>
       <Button type="button" variant={lib.count ? 'secondary' : 'default'} onClick={lib.open} className={className}>

@@ -33,7 +33,7 @@ function placesOf(folders: FolderRef[]): Place[] {
 }
 
 /** Picks the places in the viewer's library that hold the meme; nothing changes until the choice is saved. */
-export function SaveToLibraryDialog({ meme, onOpenChange }: { meme: Meme; onOpenChange: (open: boolean) => void }) {
+export function LibraryDialog({ meme, onOpenChange }: { meme: Meme; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
   const pathname = usePathname()
   const { data: folders, mutate } = useSWR<FolderRef[]>('/library/folders')

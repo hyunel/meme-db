@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MemeMedia } from './meme-media'
 import { MemeGrid } from './meme-card'
-import { FavoriteButton, SaveToLibraryButton } from './meme-actions'
+import { FavoriteButton, LibraryButton } from './meme-actions'
 import { DownloadDialog } from './download-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
@@ -219,7 +219,7 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <SaveToLibraryButton meme={meme} className="h-11 md:h-9" />
+              <LibraryButton meme={meme} className="h-11 md:h-9" />
               <div className="grid grid-cols-3 gap-2">
                 <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />
                 <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
