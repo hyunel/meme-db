@@ -11,7 +11,6 @@ import (
 
 const nodeSelectColumns = `id, owner_id, parent_id, path::text AS path, name, type, is_public, asset_id, created_at, updated_at`
 
-// visibilityOf computes the effective visibility (model.Visibility*) of the node aliased alias.
 func visibilityOf(alias string) string {
 	return fmt.Sprintf(`CASE WHEN %[1]s.is_public THEN 'public'
 		WHEN EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> %[1]s.path) THEN 'inherited'
@@ -22,8 +21,7 @@ type NodeRepository struct {
 	db db.DBTX
 }
 
-// Create inserts a node under node.ParentID, which must be a folder of node.OwnerID.
-// It returns nil if that parent folder does not exist.
+// Create returns nil if the parent is not one of the owner's folders.
 func (r *NodeRepository) Create(ctx context.Context, node *model.Node) (*model.Node, error) {
 	query := fmt.Sprintf(`
 		INSERT INTO library.nodes (id, owner_id, parent_id, path, name, type, is_public, asset_id)
@@ -37,19 +35,16 @@ func (r *NodeRepository) Create(ctx context.Context, node *model.Node) (*model.N
 		node.OwnerID, node.ParentID, node.Name, node.Type, node.IsPublic, node.AssetID))
 }
 
-// Get returns a node by ID, or nil if it does not exist.
 func (r *NodeRepository) Get(ctx context.Context, id string) (*model.Node, error) {
 	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE id = $1::uuid`, nodeSelectColumns)
 	return collectOne[model.Node](r.db.Query(ctx, query, id))
 }
 
-// GetOwned returns the nodes among ids that belong to ownerID.
 func (r *NodeRepository) GetOwned(ctx context.Context, ownerID string, ids []string) ([]*model.Node, error) {
 	query := fmt.Sprintf(`SELECT %s FROM library.nodes WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid`, nodeSelectColumns)
 	return collectAll[model.Node](r.db.Query(ctx, query, ids, ownerID))
 }
 
-// Children lists the nodes directly under parentID (nil = the owner's root).
 func (r *NodeRepository) Children(ctx context.Context, ownerID string, parentID *string) ([]*model.Node, error) {
 	var w filter
 	w.where("owner_id = " + w.arg(ownerID) + "::uuid")
@@ -62,7 +57,6 @@ func (r *NodeRepository) Children(ctx context.Context, ownerID string, parentID 
 	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
 }
 
-// ChildNames lists the names used directly under parentID (nil = the owner's root).
 func (r *NodeRepository) ChildNames(ctx context.Context, ownerID string, parentID *string) ([]string, error) {
 	nodes, err := r.Children(ctx, ownerID, parentID)
 	names := make([]string, len(nodes))
@@ -72,7 +66,6 @@ func (r *NodeRepository) ChildNames(ctx context.Context, ownerID string, parentI
 	return names, err
 }
 
-// Ancestors returns the strict ancestors of path, root first.
 func (r *NodeRepository) Ancestors(ctx context.Context, path string) ([]*model.Node, error) {
 	query := fmt.Sprintf(`
 		SELECT %s FROM library.nodes WHERE path @> $1::ltree AND path <> $1::ltree ORDER BY nlevel(path)
@@ -94,7 +87,6 @@ func (r *NodeRepository) SetPublic(ctx context.Context, ownerID string, ids []st
 	return err
 }
 
-// Move moves a node and its subtree under a new parent, renaming it to name.
 func (r *NodeRepository) Move(ctx context.Context, id string, newParentID *string, newPath, name string) error {
 	query := `
 		UPDATE library.nodes
@@ -113,15 +105,10 @@ func (r *NodeRepository) Move(ctx context.Context, id string, newParentID *strin
 	return nil
 }
 
-// Delete deletes the owner's nodes and their subtrees.
 func (r *NodeRepository) Delete(ctx context.Context, ownerID string, ids []string) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM library.nodes WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid`, ids, ownerID)
 	return err
 }
-
-// ==============================================================================
-// Folder views
-// ==============================================================================
 
 type folderRow struct {
 	ID            string            `db:"id"`
@@ -137,8 +124,6 @@ type folderRow struct {
 	CreatedAt     time.Time         `db:"created_at"`
 }
 
-// Folders returns folder views for ids (in no particular order), resolved for viewerID.
-// Preview URLs are left empty.
 func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []string) ([]*model.Folder, error) {
 	if len(ids) == 0 {
 		return []*model.Folder{}, nil
@@ -187,8 +172,6 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 	return folders, nil
 }
 
-// PublicRootFolders lists the topmost public folders of active users (optionally of one
-// owner), most favorited first.
 func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, limit int) ([]string, error) {
 	query := `
 		SELECT f.id::text FROM library.nodes f

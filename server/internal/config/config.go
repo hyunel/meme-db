@@ -61,36 +61,28 @@ type WorkerConfig struct {
 
 var envPlaceholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// expandEnv replaces ${VAR} placeholders with environment variables; unset ones are kept.
-func expandEnv(data []byte) []byte {
-	return envPlaceholder.ReplaceAllFunc(data, func(m []byte) []byte {
+func LoadConfig(path string) (*Config, error) {
+	var cfg Config
+
+	if err := yaml.Unmarshal(defaultConfig, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to decode default config: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	// ${VAR} placeholders come from the environment; unset ones are kept.
+	data = envPlaceholder.ReplaceAllFunc(data, func(m []byte) []byte {
 		if v, ok := os.LookupEnv(string(m[2 : len(m)-1])); ok {
 			return []byte(v)
 		}
 		return m
 	})
-}
-
-// LoadConfig loads the embedded defaults overridden by the file at path, in which
-// ${VAR} placeholders are taken from the environment.
-func LoadConfig(path string) (*Config, error) {
-	var cfg Config
-
-	// 1. Load embedded default config
-	if err := yaml.Unmarshal(defaultConfig, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to decode default config: %w", err)
-	}
-
-	// 2. Load external config file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	if err := yaml.Unmarshal(expandEnv(data), &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}
 
-	// 3. Validate config
 	v := validator.New()
 	if err := v.Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to validate config: %w", err)

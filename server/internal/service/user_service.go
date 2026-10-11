@@ -9,7 +9,6 @@ import (
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-// UserService administers user accounts.
 type UserService struct {
 	repo  *repository.Provider
 	memes *MemeService
@@ -55,7 +54,6 @@ func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	return &UserDetail{AdminUser: model.AdminUser{User: *user, UserStats: *stats}, Recent: recent}, nil
 }
 
-// Stats counts a user's library items and favorites.
 func (s *UserService) Stats(ctx context.Context, id string) (*model.UserStats, error) {
 	return s.repo.User.Stats(ctx, id)
 }
@@ -64,7 +62,6 @@ func (s *UserService) Create(ctx context.Context, username, email, password, rol
 	return createUser(ctx, s.repo, username, email, password, role)
 }
 
-// Update changes the role and/or status of another user (nil leaves it unchanged).
 func (s *UserService) Update(ctx context.Context, actor *rbac.Identity, id string, role, status *string) error {
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
 		target, err := checkTarget(ctx, r, actor, id)
@@ -89,7 +86,6 @@ func (s *UserService) ResetPassword(ctx context.Context, id, password string) er
 	return setPassword(ctx, s.repo.Repos, id, password)
 }
 
-// Delete deletes another user with their library, favorites and tags.
 func (s *UserService) Delete(ctx context.Context, actor *rbac.Identity, id string) error {
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
 		target, err := checkTarget(ctx, r, actor, id)
@@ -103,7 +99,6 @@ func (s *UserService) Delete(ctx context.Context, actor *rbac.Identity, id strin
 	})
 }
 
-// checkTarget loads a user an admin may change: anyone but themselves.
 func checkTarget(ctx context.Context, r *repository.Repos, actor *rbac.Identity, id string) (*model.User, error) {
 	if id == actor.UserID {
 		return nil, apperror.Forbidden("不能修改或删除自己的账号")
@@ -111,13 +106,11 @@ func checkTarget(ctx context.Context, r *repository.Repos, actor *rbac.Identity,
 	return find(ctx, r, id)
 }
 
-// keepAnAdmin refuses to take away the last active admin. It locks the active admins,
-// so concurrent demotions cannot remove them all.
 func keepAnAdmin(ctx context.Context, r *repository.Repos, target *model.User) error {
 	if target.Role != rbac.RoleAdmin || target.Status != model.UserStatusActive {
 		return nil
 	}
-	n, err := r.User.LockActiveAdmins(ctx)
+	n, err := r.User.LockActiveAdmins(ctx) // Serializes concurrent demotions
 	if err == nil && n <= 1 {
 		err = apperror.Forbidden("不能移除最后一个管理员")
 	}

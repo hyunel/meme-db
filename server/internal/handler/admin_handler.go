@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
-// AdminHandler serves the admin console: users, content, tags, statistics and logs.
 type AdminHandler struct {
 	userService  *service.UserService
 	memeService  *service.MemeService
@@ -38,10 +38,6 @@ func NewAdminHandler(
 type CountResponse struct {
 	Count int `json:"count"`
 }
-
-// ==============================================================================
-// Users
-// ==============================================================================
 
 type ListUsersRequest struct {
 	PageQuery
@@ -81,7 +77,7 @@ func (h *AdminHandler) GetUser(c echo.Context) error {
 		return err
 	}
 
-	user, err := h.userService.Get(c.Request().Context(), Viewer(c), req.ID)
+	user, err := h.userService.Get(c.Request().Context(), rbac.GetIdentity(c), req.ID)
 	if err != nil {
 		return err
 	}
@@ -118,7 +114,7 @@ func (h *AdminHandler) UpdateUser(c echo.Context) error {
 		return err
 	}
 
-	if err := h.userService.Update(c.Request().Context(), Viewer(c), req.ID, req.Role, req.Status); err != nil {
+	if err := h.userService.Update(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Role, req.Status); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -147,15 +143,11 @@ func (h *AdminHandler) DeleteUser(c echo.Context) error {
 		return err
 	}
 
-	if err := h.userService.Delete(c.Request().Context(), Viewer(c), req.ID); err != nil {
+	if err := h.userService.Delete(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
 }
-
-// ==============================================================================
-// Content
-// ==============================================================================
 
 type MemeFilterParams struct {
 	RangeQuery
@@ -186,14 +178,13 @@ func (h *AdminHandler) ListMemes(c echo.Context) error {
 		return err
 	}
 
-	page, err := h.memeService.List(c.Request().Context(), Viewer(c), req.filter(), req.page())
+	page, err := h.memeService.List(c.Request().Context(), rbac.GetIdentity(c), req.filter(), req.page())
 	if err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, page)
 }
 
-// ReprocessMemesRequest selects memes by IDs, or by a filter (an empty filter selects all).
 type ReprocessMemesRequest struct {
 	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
 	Filter *MemeFilterParams `json:"filter"`
@@ -240,10 +231,6 @@ func (h *AdminHandler) DeleteMemes(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, CountResponse{Count: n})
 }
-
-// ==============================================================================
-// Tags
-// ==============================================================================
 
 type ListTagsRequest struct {
 	PageQuery
@@ -314,10 +301,6 @@ func (h *AdminHandler) DeleteTags(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// ==============================================================================
-// Statistics & logs
-// ==============================================================================
-
 type StatsRequest struct {
 	RangeQuery
 	TimeZone string `query:"tz" validate:"max=64"` // IANA name for the daily trend buckets
@@ -357,8 +340,6 @@ type LogsRequest struct {
 	Attrs      []string `query:"attr" validate:"max=10"` // key=value
 }
 
-// Logs returns stored log entries matching the filters: those newer than After, oldest
-// first, or else a page older than Before (0 = the latest), newest first.
 func (h *AdminHandler) Logs(c echo.Context) error {
 	var req LogsRequest
 	if err := BindAndValidate(c, &req); err != nil {

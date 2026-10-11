@@ -13,7 +13,6 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-// Predicates on core.meme_info aliased m.
 const (
 	// A meme stays listed while it is re-analyzed, so "analyzed once" rather than the current status.
 	memeAnalyzed = `m.analyzed_at IS NOT NULL`
@@ -21,13 +20,10 @@ const (
 	memePublic   = `(` + memeAnalyzed + ` AND ` + memeInPublic + `)`
 )
 
-// memeOwnedBy matches memes in the library of the user bound to placeholder viewer.
 func memeOwnedBy(viewer string) string {
 	return fmt.Sprintf(`EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = %s::uuid)`, viewer)
 }
 
-// memeListed matches the analyzed memes viewerID may see: public ones and those in their
-// library, or all of them for admins.
 func memeListed(w *filter, viewerID string, admin bool) string {
 	switch {
 	case admin:
@@ -42,11 +38,6 @@ type MemeRepository struct {
 	db db.DBTX
 }
 
-// ==============================================================================
-// Analysis state
-// ==============================================================================
-
-// Create inserts or replaces the analysis of an asset.
 func (r *MemeRepository) Create(ctx context.Context, meme *model.MemeInfo) error {
 	query := `
 		INSERT INTO core.meme_info (asset_id, vlm_json, ocr_text, metaphor_vector, semantic_vector, clip_vector, width, height, processing_status, analyzed_at)
@@ -74,8 +65,6 @@ func (r *MemeRepository) SetStatus(ctx context.Context, assetID, status string, 
 	return err
 }
 
-// ResetForAnalysis moves the memes whose status is in from back to pending and returns
-// the IDs actually reset.
 func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string, from []string) ([]string, error) {
 	query := `
 		UPDATE core.meme_info SET processing_status = 'pending', fail_reason = NULL
@@ -84,10 +73,6 @@ func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string
 	`
 	return collectScalars[string](r.db.Query(ctx, query, assetIDs, from))
 }
-
-// ==============================================================================
-// Views
-// ==============================================================================
 
 type memeRow struct {
 	ID            string          `db:"id"`
@@ -138,8 +123,6 @@ func (row *memeRow) toModel() *model.Meme {
 	}
 }
 
-// Memes returns the memes among ids that viewerID may see (all of them for admins),
-// in no particular order. URLs are left empty.
 func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool, ids []string) ([]*model.Meme, error) {
 	if len(ids) == 0 {
 		return []*model.Meme{}, nil
@@ -177,8 +160,6 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 	return memes, nil
 }
 
-// PopularIDs lists the memes viewerID may see, most favorited and collected first. A
-// non-empty tag keeps memes carrying it as a system tag or as one of viewerID's tags.
 func (r *MemeRepository) PopularIDs(ctx context.Context, viewerID string, admin bool, tag string, limit int) ([]string, int, error) {
 	var w filter
 	w.where(memeListed(&w, viewerID, admin))
@@ -212,8 +193,6 @@ var memeKinds = map[string]string{
 	"lottie": `a.mime_type IN ('application/json', 'application/x-gzip', 'application/gzip', 'application/zip')`,
 }
 
-// FilterIDs lists all memes matching f, newest first. A nil page returns every match
-// without counting.
 func (r *MemeRepository) FilterIDs(ctx context.Context, f MemeFilter, page *Page) ([]string, int, error) {
 	var w filter
 	if f.Query != "" {
@@ -234,7 +213,7 @@ func (r *MemeRepository) FilterIDs(ctx context.Context, f MemeFilter, page *Page
 	w.timeRange("a.created_at", f.Created)
 
 	from := "FROM core.assets a JOIN core.meme_info m ON m.asset_id = a.id " + w.clause()
-	if page == nil {
+	if page == nil { // Every match, uncounted
 		ids, err := collectScalars[string](r.db.Query(ctx, "SELECT a.id::text "+from, w.args...))
 		return ids, len(ids), err
 	}
@@ -247,11 +226,6 @@ func (r *MemeRepository) FilterIDs(ctx context.Context, f MemeFilter, page *Page
 	return ids, total, err
 }
 
-// ==============================================================================
-// Recall
-// ==============================================================================
-
-// Recall is one retrieval channel of a search.
 type Recall struct {
 	Type   string // Reported as recall_type
 	Column string // Vector column of core.meme_info, or "ocr_text" for trigram matching
@@ -259,8 +233,6 @@ type Recall struct {
 	Limit  int
 }
 
-// RecallScope selects the memes a recall may return: every meme the viewer may see, or
-// only those in their library.
 type RecallScope struct {
 	ViewerID   string
 	Admin      bool
@@ -269,7 +241,6 @@ type RecallScope struct {
 	Exclude    string  // An asset to leave out
 }
 
-// Recall runs the channels and keeps each meme's best similarity.
 func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope) ([]*model.SearchCandidate, error) {
 	if len(recalls) == 0 {
 		return nil, nil
@@ -306,7 +277,6 @@ func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope Rec
 	return collectAll[model.SearchCandidate](r.db.Query(ctx, query, w.args...))
 }
 
-// Vectors returns the embeddings of an analyzed meme; nil vectors mean it is not analyzed.
 func (r *MemeRepository) Vectors(ctx context.Context, assetID string) (metaphor, semantic, clip *pgvector.Vector, err error) {
 	query := `SELECT metaphor_vector, semantic_vector, clip_vector FROM core.meme_info WHERE asset_id = $1::uuid`
 	err = r.db.QueryRow(ctx, query, assetID).Scan(&metaphor, &semantic, &clip)

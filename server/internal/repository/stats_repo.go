@@ -13,7 +13,6 @@ type StatsRepository struct {
 	db db.DBTX
 }
 
-// Counts returns site-wide totals; "new" users are those created within [from, to].
 func (r *StatsRepository) Counts(ctx context.Context, from, to time.Time) (*model.Overview, error) {
 	query := fmt.Sprintf(`
 		SELECT
@@ -41,7 +40,6 @@ func (r *StatsRepository) Counts(ctx context.Context, from, to time.Time) (*mode
 	return &o, err
 }
 
-// Trend counts uploads, sign-ups and finished tasks per day of [from, to] in time zone tz.
 func (r *StatsRepository) Trend(ctx context.Context, from, to time.Time, tz string) ([]*model.TrendPoint, error) {
 	query := `
 		WITH days AS (

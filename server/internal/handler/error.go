@@ -8,8 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// HTTPErrorHandler renders errors as JSON {"error": message, "field"?: name}.
-// Errors other than AppError and echo.HTTPError are internal and not exposed.
+// HTTPErrorHandler renders errors as JSON; only AppError and echo.HTTPError messages reach clients.
 func HTTPErrorHandler(err error, c echo.Context) {
 	if c.Response().Committed {
 		return

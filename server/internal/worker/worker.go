@@ -14,8 +14,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-// Store persists task state. Transitions out of 'running' are guarded by the attempts
-// value returned from Claim, so they are no-ops once the lease was taken over.
+// Store transitions out of 'running' are fenced by the attempts value from Claim, so they are no-ops once the lease is taken over.
 type Store interface {
 	Claim(ctx context.Context, limit int, lease time.Duration) ([]*model.Task, error)
 	Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error
@@ -32,8 +31,6 @@ var (
 	errCancelled      = errors.New("已被管理员取消")
 )
 
-// Worker runs queued tasks, keeping up to cfg.Concurrency in flight and claiming
-// more as slots free up.
 type Worker struct {
 	cfg      config.WorkerConfig
 	store    Store
@@ -50,12 +47,10 @@ func NewWorker(cfg config.WorkerConfig, store Store) *Worker {
 	}
 }
 
-// RegisterHandler must be called before Run.
 func (w *Worker) RegisterHandler(jobType string, handler TaskHandler) {
 	w.handlers[jobType] = handler
 }
 
-// Notify wakes the worker without blocking; call it after enqueued tasks are committed.
 func (w *Worker) Notify() {
 	select {
 	case w.wake <- struct{}{}:
@@ -63,7 +58,6 @@ func (w *Worker) Notify() {
 	}
 }
 
-// Requeue gives failed tasks a fresh attempt budget and returns how many were requeued.
 func (w *Worker) Requeue(ctx context.Context, ids []string) (int, error) {
 	tasks, err := w.store.Requeue(ctx, ids)
 	if err != nil {
@@ -80,7 +74,6 @@ func (w *Worker) Requeue(ctx context.Context, ids []string) (int, error) {
 	return len(tasks), nil
 }
 
-// Cancel fails a pending task without running it; it reports false if the task is not pending.
 func (w *Worker) Cancel(ctx context.Context, id string) (bool, error) {
 	task, err := w.store.Cancel(ctx, id, errCancelled.Error())
 	if err != nil || task == nil {
@@ -94,7 +87,6 @@ func (w *Worker) Cancel(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-// RunNow makes a pending task due immediately; it reports false if the task is not pending.
 func (w *Worker) RunNow(ctx context.Context, id string) (bool, error) {
 	ok, err := w.store.RunNow(ctx, id)
 	if ok {
@@ -103,7 +95,6 @@ func (w *Worker) RunNow(ctx context.Context, id string) (bool, error) {
 	return ok, err
 }
 
-// Run blocks until ctx is cancelled and every in-flight task has been settled.
 func (w *Worker) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -186,9 +177,8 @@ func (w *Worker) handle(ctx context.Context, handler TaskHandler, task *model.Ta
 	return handler.Handle(ctx, task)
 }
 
-// settle records the outcome of an attempt. It must persist even when ctx is cancelled by shutdown.
 func (w *Worker) settle(ctx context.Context, handler TaskHandler, task *model.Task, cause error) error {
-	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second) // Outcomes persist through shutdown
 	defer cancel()
 
 	log := slog.With("id", task.ID, "type", task.JobType, "attempt", task.Attempts)
@@ -199,7 +189,7 @@ func (w *Worker) settle(ctx context.Context, handler TaskHandler, task *model.Ta
 	case ctx.Err() != nil:
 		log.Info("Task interrupted by shutdown, releasing", "error", cause)
 		return w.store.Release(dbCtx, task.ID, task.Attempts)
-	case !isPermanent(cause) && task.Attempts < w.cfg.MaxAttempts:
+	case !errors.As(cause, new(*permanentError)) && task.Attempts < w.cfg.MaxAttempts:
 		runAt := time.Now().Add(retryBackoff(task.Attempts))
 		log.Warn("Task failed, will retry", "retry_at", runAt, "error", cause)
 		return w.store.Retry(dbCtx, task.ID, task.Attempts, runAt, cause.Error())
@@ -214,8 +204,6 @@ func (w *Worker) settle(ctx context.Context, handler TaskHandler, task *model.Ta
 	return w.finish(dbCtx, task, model.TaskStatusFailed, cause)
 }
 
-// finish ends a task with a terminal status. Recurring (cron) tasks are instead
-// recorded in history and rescheduled for their next tick.
 func (w *Worker) finish(ctx context.Context, task *model.Task, status string, cause error) error {
 	var errMsg *string
 	if cause != nil {
@@ -233,8 +221,7 @@ func (w *Worker) finish(ctx context.Context, task *model.Task, status string, ca
 	return w.store.Finish(ctx, task.ID, task.Attempts, status, errMsg)
 }
 
-// retryBackoff grows 1m, 4m, 16m, 64m with up to 25% jitter, so a recovered
-// dependency is not hit by every failed task at once.
+// retryBackoff grows 1m, 4m, 16m, 64m with up to 25% jitter, so a recovered dependency is not hit all at once.
 func retryBackoff(attempt int) time.Duration {
 	d := time.Minute << (2 * min(attempt-1, 3))
 	return d + rand.N(d/4)

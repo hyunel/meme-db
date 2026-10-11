@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// ANSI color codes
 const (
 	Reset  = "\033[0m"
 	Red    = "\033[31m"
@@ -75,17 +74,14 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 		return err
 	}
 
-	// Helper to print attributes
 	printAttr := func(a slog.Attr) {
 		fmt.Fprintf(h.w, " %s=%v", a.Key, a.Value.Any())
 	}
 
-	// Print stored attributes
 	for _, a := range h.attrs {
 		printAttr(a)
 	}
 
-	// Print record attributes
 	r.Attrs(func(a slog.Attr) bool {
 		printAttr(a)
 		return true
@@ -126,7 +122,7 @@ func (h *ColorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 func (h *ColorHandler) WithGroup(name string) slog.Handler {
-	// Simple implementation: just append to groups (not used in display for now but preserving structure)
+	// Groups are kept but not displayed
 	newGroups := make([]string, len(h.groups)+1)
 	copy(newGroups, h.groups)
 	newGroups[len(h.groups)] = name
@@ -141,7 +137,6 @@ func (h *ColorHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// Entry is a copy of a log record, for storage.
 type Entry struct {
 	Time    time.Time
 	Level   string // debug | info | warn | error
@@ -149,8 +144,6 @@ type Entry struct {
 	Attrs   map[string]string
 }
 
-// Setup configures the default slog logger with ColorHandler and returns a channel
-// receiving a copy of every record; records are dropped while it is full.
 func Setup() <-chan Entry {
 	handler := NewColorHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,

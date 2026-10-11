@@ -11,7 +11,6 @@ type FavoriteRepository struct {
 	db db.DBTX
 }
 
-// Add favorites one target: an asset or a node.
 func (r *FavoriteRepository) Add(ctx context.Context, userID string, assetID, nodeID *string) error {
 	query := `
 		INSERT INTO library.favorites (user_id, asset_id, node_id) VALUES ($1::uuid, $2::uuid, $3::uuid)
@@ -21,7 +20,6 @@ func (r *FavoriteRepository) Add(ctx context.Context, userID string, assetID, no
 	return err
 }
 
-// Remove unfavorites targets: assets or nodes.
 func (r *FavoriteRepository) Remove(ctx context.Context, userID string, assetIDs, nodeIDs []string) error {
 	query := `
 		DELETE FROM library.favorites
@@ -31,7 +29,6 @@ func (r *FavoriteRepository) Remove(ctx context.Context, userID string, assetIDs
 	return err
 }
 
-// List returns a user's favorite asset and node IDs, newest first.
 func (r *FavoriteRepository) List(ctx context.Context, userID string) (assetIDs, nodeIDs []string, err error) {
 	query := `SELECT asset_id::text, node_id::text FROM library.favorites WHERE user_id = $1::uuid ORDER BY created_at DESC`
 	rows, err := r.db.Query(ctx, query, userID)

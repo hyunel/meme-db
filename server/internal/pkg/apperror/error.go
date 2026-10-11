@@ -5,7 +5,6 @@ import (
 	"net/http"
 )
 
-// AppError is an expected error whose message is shown to the user.
 type AppError struct {
 	Code    int    `json:"-"`
 	Message string `json:"error"`
@@ -20,7 +19,6 @@ func (e *AppError) Error() string {
 	return e.Message
 }
 
-// OnField attributes the error to a request field.
 func (e *AppError) OnField(field string) *AppError {
 	e.Field = field
 	return e

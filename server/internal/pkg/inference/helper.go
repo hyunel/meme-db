@@ -8,10 +8,6 @@ import (
 
 var ocrNoiseRegex = regexp.MustCompile(`(?i)(?:key\s+)?frame\s+\d+/\d+\n?`)
 
-func CleanOCRText(text string) string {
-	return strings.TrimSpace(ocrNoiseRegex.ReplaceAllString(text, ""))
-}
-
 type VLMOutput struct {
 	OCRText          string
 	VisualSubject    []string
@@ -54,7 +50,7 @@ func ParseVLMOutput(caption string) (*VLMOutput, error) {
 
 	out := &VLMOutput{}
 	if ocr, ok := raw["ocr_text"].(string); ok {
-		out.OCRText = CleanOCRText(ocr)
+		out.OCRText = strings.TrimSpace(ocrNoiseRegex.ReplaceAllString(ocr, "")) // Drop the key frame labels drawn on stitched frames
 	}
 	out.VisualSubject = toStringSlice(raw["visual_subject"])
 	out.SpecificEntities = toStringSlice(raw["specific_entities"])

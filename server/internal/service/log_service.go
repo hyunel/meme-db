@@ -15,7 +15,6 @@ type LogFilter = repository.LogFilter
 
 const logBatchSize = 500
 
-// LogService stores service logs for the admin console and serves them back.
 type LogService struct {
 	repo      *repository.Provider
 	retention time.Duration
@@ -25,8 +24,6 @@ func NewLogService(repo *repository.Provider, retention time.Duration) *LogServi
 	return &LogService{repo: repo, retention: retention}
 }
 
-// Run stores logged entries in batches and hourly deletes those older than the
-// retention. Once ctx is done it stores what is still queued and returns.
 func (s *LogService) Run(ctx context.Context, entries <-chan logger.Entry) {
 	flushTicker := time.NewTicker(time.Second)
 	defer flushTicker.Stop()
@@ -82,7 +79,6 @@ func (s *LogService) purge(ctx context.Context) {
 	}
 }
 
-// List returns stored entries matching f; see repository.LogRepository.List.
 func (s *LogService) List(ctx context.Context, f LogFilter, afterID, beforeID int64, limit int) ([]*model.LogEntry, error) {
 	return s.repo.Log.List(ctx, f, afterID, beforeID, limit)
 }

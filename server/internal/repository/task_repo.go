@@ -14,8 +14,6 @@ import (
 const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, run_at, started_at, finished_at, created_at, updated_at,
 	COALESCE(context->'attempts', '[]') AS history`
 
-// withAttempt returns the task context expression ctx with an attempt record (see
-// model.TaskAttempt) appended to its "attempts" list.
 func withAttempt(ctx, ok, errorMessage string) string {
 	return fmt.Sprintf(`jsonb_set(COALESCE(%[1]s, '{}'), '{attempts}',
 		COALESCE(%[1]s->'attempts', '[]') || jsonb_build_object('at', CURRENT_TIMESTAMP, 'ok', %[2]s, 'error', %[3]s))`,
@@ -33,7 +31,6 @@ type TaskOpts struct {
 	Cron     *string
 }
 
-// Enqueue creates one pending task per payload.
 func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads []any, opts TaskOpts) error {
 	if len(payloads) == 0 {
 		return nil
@@ -58,14 +55,6 @@ func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads [
 	return nil
 }
 
-// ==============================================================================
-// Worker transitions
-// ==============================================================================
-
-// Claim leases up to limit due tasks: pending tasks whose run_at has passed, plus
-// running tasks whose lease expired (crashed or stuck workers). Every transition
-// out of 'running' is guarded by the attempts value returned here, so a worker
-// whose lease was taken over cannot overwrite newer state.
 func (r *TaskRepository) Claim(ctx context.Context, limit int, lease time.Duration) ([]*model.Task, error) {
 	query := fmt.Sprintf(`
 		WITH picked AS MATERIALIZED (
@@ -90,7 +79,6 @@ func (r *TaskRepository) Claim(ctx context.Context, limit int, lease time.Durati
 	return tasks, nil
 }
 
-// Finish moves a claimed task to a terminal status (completed or failed).
 func (r *TaskRepository) Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error {
 	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
@@ -103,7 +91,6 @@ func (r *TaskRepository) Finish(ctx context.Context, id string, attempts int, st
 	return nil
 }
 
-// Retry puts a claimed task back into the queue, due at runAt.
 func (r *TaskRepository) Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error {
 	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
@@ -116,7 +103,6 @@ func (r *TaskRepository) Retry(ctx context.Context, id string, attempts int, run
 	return nil
 }
 
-// Release hands a claimed task back without counting the attempt (used on shutdown).
 func (r *TaskRepository) Release(ctx context.Context, id string, attempts int) error {
 	query := `
 		UPDATE jobs.tasks
@@ -129,9 +115,6 @@ func (r *TaskRepository) Release(ctx context.Context, id string, attempts int) e
 	return nil
 }
 
-// Reschedule ends a run of a recurring (cron) task: the run is recorded as a history
-// row with the given terminal status and its attempts, and the task is reset to run
-// again at next.
 func (r *TaskRepository) Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error {
 	query := fmt.Sprintf(`
 		WITH run AS (
@@ -154,12 +137,6 @@ func (r *TaskRepository) Reschedule(ctx context.Context, task *model.Task, statu
 	return nil
 }
 
-// ==============================================================================
-// Administration
-// ==============================================================================
-
-// Requeue moves failed tasks back to pending with a fresh attempt budget and returns them.
-// Run records of recurring tasks are history and stay as they are.
 func (r *TaskRepository) Requeue(ctx context.Context, ids []string) ([]*model.Task, error) {
 	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
@@ -171,7 +148,6 @@ func (r *TaskRepository) Requeue(ctx context.Context, ids []string) ([]*model.Ta
 	return collectAll[model.Task](r.db.Query(ctx, query, ids))
 }
 
-// Cancel fails a pending task and returns it, or nil if it is not pending.
 func (r *TaskRepository) Cancel(ctx context.Context, id, reason string) (*model.Task, error) {
 	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
@@ -182,7 +158,6 @@ func (r *TaskRepository) Cancel(ctx context.Context, id, reason string) (*model.
 	return collectOne[model.Task](r.db.Query(ctx, query, id, reason))
 }
 
-// RunNow makes a pending task due immediately and reports whether it was pending.
 func (r *TaskRepository) RunNow(ctx context.Context, id string) (bool, error) {
 	query := `
 		UPDATE jobs.tasks SET run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -192,19 +167,16 @@ func (r *TaskRepository) RunNow(ctx context.Context, id string) (bool, error) {
 	return tag.RowsAffected() > 0, err
 }
 
-// Get returns a task by ID, or nil if it does not exist.
 func (r *TaskRepository) Get(ctx context.Context, id string) (*model.Task, error) {
 	query := fmt.Sprintf(`SELECT %s FROM jobs.tasks WHERE id = $1::uuid`, taskSelectColumns)
 	return collectOne[model.Task](r.db.Query(ctx, query, id))
 }
 
-// Runs returns the latest run records of a recurring task.
 func (r *TaskRepository) Runs(ctx context.Context, parentID string, limit int) ([]*model.Task, error) {
 	query := fmt.Sprintf(`SELECT %s FROM jobs.tasks WHERE parent_task_id = $1::uuid ORDER BY created_at DESC LIMIT $2`, taskSelectColumns)
 	return collectAll[model.Task](r.db.Query(ctx, query, parentID, limit))
 }
 
-// Task states as the admin sees them; "retrying" is a pending task after a failed attempt.
 var taskStates = map[string]string{
 	"pending":   "(status = 'pending' AND attempts = 0)",
 	"retrying":  "(status = 'pending' AND attempts > 0)",
@@ -263,14 +235,11 @@ func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*
 	return tasks, total, err
 }
 
-// IDs lists every task matching f.
 func (r *TaskRepository) IDs(ctx context.Context, f TaskFilter) ([]string, error) {
 	w := f.where()
 	return collectScalars[string](r.db.Query(ctx, "SELECT id::text FROM jobs.tasks "+w.clause(), w.args...))
 }
 
-// Summary counts tasks per job type and state; the *InRange counts only consider tasks
-// that finished within finished.
 func (r *TaskRepository) Summary(ctx context.Context, finished TimeRange) ([]*model.TaskTypeCounts, error) {
 	var w filter
 	w.where("status IN ('completed', 'failed')")

@@ -78,7 +78,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, current, next 
 	return setPassword(ctx, s.repo.Repos, userID, next)
 }
 
-// GetIdentity loads the identity of an active user.
 func (s *AuthService) GetIdentity(ctx context.Context, userID string) (*rbac.Identity, error) {
 	user, err := s.repo.User.Get(ctx, userID)
 	if err != nil {
@@ -87,7 +86,7 @@ func (s *AuthService) GetIdentity(ctx context.Context, userID string) (*rbac.Ide
 	if user == nil || user.Status != model.UserStatusActive {
 		return nil, apperror.Unauthorized("用户不存在或已被禁用")
 	}
-	return rbac.NewIdentity(userID, user.Role), nil
+	return &rbac.Identity{UserID: userID, Role: user.Role}, nil
 }
 
 func (s *AuthService) generateToken(userID string) (string, error) {
@@ -112,10 +111,8 @@ func (s *AuthService) ParseToken(tokenString string) (string, error) {
 	return token.Claims.(*Claims).UserID, nil
 }
 
-// Ensure AuthService implements rbac.IdentityProvider
 var _ rbac.IdentityProvider = (*AuthService)(nil)
 
-// createUser creates a user after checking that the username and email are free.
 func createUser(ctx context.Context, repo *repository.Provider, username, email, password, role string) (*model.User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if existing, err := repo.User.GetByUsername(ctx, username); err != nil || existing != nil {

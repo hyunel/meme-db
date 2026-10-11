@@ -61,7 +61,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 }
 
 func (h *AuthHandler) GetMe(c echo.Context) error {
-	user, err := h.authService.GetUser(c.Request().Context(), Viewer(c).UserID)
+	user, err := h.authService.GetUser(c.Request().Context(), rbac.GetIdentity(c).UserID)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (h *AuthHandler) GetMe(c echo.Context) error {
 }
 
 func (h *AuthHandler) GetMyStats(c echo.Context) error {
-	stats, err := h.userService.Stats(c.Request().Context(), Viewer(c).UserID)
+	stats, err := h.userService.Stats(c.Request().Context(), rbac.GetIdentity(c).UserID)
 	if err != nil {
 		return err
 	}
@@ -87,15 +87,9 @@ func (h *AuthHandler) ChangePassword(c echo.Context) error {
 		return err
 	}
 
-	err := h.authService.ChangePassword(c.Request().Context(), Viewer(c).UserID, req.CurrentPassword, req.NewPassword)
+	err := h.authService.ChangePassword(c.Request().Context(), rbac.GetIdentity(c).UserID, req.CurrentPassword, req.NewPassword)
 	if err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
-}
-
-// IdentityProvider returns the AuthService as an rbac.IdentityProvider.
-// Used to create the identity middleware.
-func (h *AuthHandler) IdentityProvider() rbac.IdentityProvider {
-	return h.authService
 }

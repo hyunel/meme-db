@@ -11,14 +11,12 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-// LogLevels lists the log levels by increasing severity.
 var LogLevels = []string{"debug", "info", "warn", "error"}
 
 type LogRepository struct {
 	db db.DBTX
 }
 
-// Insert stores log entries; their IDs are assigned by the database.
 func (r *LogRepository) Insert(ctx context.Context, entries []*model.LogEntry) error {
 	times := make([]time.Time, len(entries))
 	levels := make([]string, len(entries))
@@ -39,7 +37,6 @@ func (r *LogRepository) Insert(ctx context.Context, entries []*model.LogEntry) e
 	return err
 }
 
-// DeleteBefore deletes the entries logged before t.
 func (r *LogRepository) DeleteBefore(ctx context.Context, t time.Time) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM ops.logs WHERE time < $1`, t)
 	return err
@@ -52,9 +49,7 @@ type LogFilter struct {
 	Attrs    map[string]string // Attributes that must equal these values (case-insensitive)
 }
 
-// List returns up to limit entries matching f. With afterID > 0 it returns the entries
-// newer than afterID, oldest first; otherwise those older than beforeID (0 = the
-// latest), newest first.
+// List returns entries newer than afterID oldest first, or else older than beforeID (0 = the latest) newest first.
 func (r *LogRepository) List(ctx context.Context, f LogFilter, afterID, beforeID int64, limit int) ([]*model.LogEntry, error) {
 	var w filter
 	if i := slices.Index(LogLevels, f.MinLevel); i > 0 {

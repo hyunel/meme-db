@@ -9,6 +9,7 @@ import (
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -43,7 +44,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 	}
 
 	params := service.SearchParams{
-		Viewer:   Viewer(c),
+		Viewer:   rbac.GetIdentity(c),
 		Query:    req.Query,
 		Mine:     req.Scope == "mine",
 		FolderID: req.FolderID,
@@ -89,14 +90,13 @@ type ListMemesRequest struct {
 	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
-// List lists the memes the viewer may see, most popular first.
 func (h *MemeHandler) List(c echo.Context) error {
 	var req ListMemesRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	page, err := h.memeService.Popular(c.Request().Context(), Viewer(c), req.Tag, limitOr(req.Limit, 40))
+	page, err := h.memeService.Popular(c.Request().Context(), rbac.GetIdentity(c), req.Tag, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (h *MemeHandler) Get(c echo.Context) error {
 		return err
 	}
 
-	meme, err := h.memeService.Get(c.Request().Context(), Viewer(c), req.ID)
+	meme, err := h.memeService.Get(c.Request().Context(), rbac.GetIdentity(c), req.ID)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (h *MemeHandler) Similar(c echo.Context) error {
 		return err
 	}
 
-	memes, err := h.memeService.Similar(c.Request().Context(), Viewer(c), req.ID, limitOr(req.Limit, 10))
+	memes, err := h.memeService.Similar(c.Request().Context(), rbac.GetIdentity(c), req.ID, limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (h *MemeHandler) Retry(c echo.Context) error {
 		return err
 	}
 
-	if err := h.memeService.Retry(c.Request().Context(), Viewer(c), req.ID); err != nil {
+	if err := h.memeService.Retry(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -165,7 +165,7 @@ func (h *MemeHandler) AddTag(c echo.Context) error {
 		return apperror.BadRequest("标签需为 1–50 个字符")
 	}
 
-	tag, err := h.tagService.AddToMeme(c.Request().Context(), Viewer(c), req.MemeID, name)
+	tag, err := h.tagService.AddToMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, name)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func (h *MemeHandler) RemoveTag(c echo.Context) error {
 		return err
 	}
 
-	if err := h.tagService.RemoveFromMeme(c.Request().Context(), Viewer(c), req.MemeID, req.TagID); err != nil {
+	if err := h.tagService.RemoveFromMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, req.TagID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -199,7 +199,7 @@ func (h *MemeHandler) HotTags(c echo.Context) error {
 		return err
 	}
 
-	tags, err := h.tagService.Hot(c.Request().Context(), Viewer(c), limitOr(req.Limit, 10))
+	tags, err := h.tagService.Hot(c.Request().Context(), rbac.GetIdentity(c), limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}
