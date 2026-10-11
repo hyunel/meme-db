@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { MemeGrid } from '@/components/meme/meme-card'
+import { useImageInput } from './use-image-input'
 import { ErrorState, EmptyState, MemeGridSkeleton } from '@/components/states'
 import { api } from '@/lib/api'
 import { getImageQuery, putImageQuery, validateQueryImage, type ImageQuery } from '@/lib/image-query'
@@ -63,7 +64,6 @@ export function SearchView() {
     setLastQ(q)
     setInput(q)
   }
-  const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const folder = folderView?.folder
@@ -107,6 +107,9 @@ export function SearchView() {
     const iq = putImageQuery(file)
     navigate({ img: iq.id, q: input.trim() })
   }
+  const imageInput = useImageInput(attach)
+  const dragging = imageInput.dragging
+
 
   const setScope = (next: Scope) => {
     if (next === scope) return
@@ -120,18 +123,7 @@ export function SearchView() {
       <form
         role="search"
         onSubmit={submit}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('Files')) {
-            e.preventDefault()
-            setDragging(true)
-          }
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          attach(e.dataTransfer.files[0])
-        }}
+        {...imageInput.dropProps}
         className={cn(
           'flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-xs transition focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20',
           dragging && 'border-dashed border-foreground bg-brand/20',
@@ -148,13 +140,7 @@ export function SearchView() {
             enterKeyHint="search"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onPaste={(e) => {
-              const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
-              if (file) {
-                e.preventDefault()
-                attach(file)
-              }
-            }}
+            onPaste={imageInput.onPaste}
             autoComplete="off"
             placeholder={dragging ? '松开以添加图片' : scope === 'mine' ? '在我的库中搜索…' : '关键词，或粘贴/拖入图片'}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
