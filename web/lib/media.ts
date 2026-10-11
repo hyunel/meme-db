@@ -7,6 +7,9 @@ export function kindOf(mime: string): MediaKind {
   return 'lottie'
 }
 
+/** Links a meme, or the entry of it in a folder, which opens it under the entry's name */
+export const memeHref = (id: string, entryId?: string) => (entryId ? `/m/${id}?entry=${entryId}` : `/m/${id}`)
+
 export const isProcessing = (meme?: Pick<Meme, 'status'> | null) => meme?.status === 'pending' || meme?.status === 'processing'
 
 export function memeTitle(meme: Meme) {

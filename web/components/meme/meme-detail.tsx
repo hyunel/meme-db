@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, Download, Loader2, Plus, RotateCw, Share2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Download, FolderOpen, Library, Loader2, Plus, RotateCw, Share2, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,15 +19,50 @@ import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { shareMeme } from '@/lib/meme-transfer'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
-import type { Meme, MemeTag } from '@/lib/types'
+import type { EntryDetail, Meme, MemeTag } from '@/lib/types'
 
-export function MemeDetail({ id }: { id: string }) {
+/** Where an entry the meme was opened from lives, linking back there. */
+function EntrySource({ entry, mine }: { entry: EntryDetail; mine: boolean }) {
+  const folder = entry.ancestors.at(-1)
+  const { icon: Icon, label, name, href } = folder
+    ? {
+        icon: FolderOpen,
+        label: mine ? ['我的库', ...entry.ancestors.slice(0, -1).map((a) => a.name)].join(' / ') : `@${entry.owner.username} 的合集`,
+        name: folder.name,
+        href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}`,
+      }
+    : mine
+      ? { icon: Library, label: '位于', name: '我的库', href: '/library' }
+      : { icon: UserRound, label: '来自', name: `@${entry.owner.username}`, href: `/u/${entry.owner.username}` }
+
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-xl border bg-card p-3 transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+    >
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/40" aria-hidden>
+        <Icon className="size-5" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-xs text-muted-foreground">{label}</span>
+        <span className="truncate font-medium">{name}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+    </Link>
+  )
+}
+
+/** Opened from an entry, the meme goes by the entry's name and links back to where it lives. */
+export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
   const router = useRouter()
   const { user } = useSession()
   const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}`, {
     refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
   const { data: related } = useSWR<Meme[]>(meme?.status === 'success' ? `/memes/${id}/similar?limit=10` : null)
+  const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}` : null)
+  const entry = opened?.meme.id === id ? opened : undefined // A hand-edited link may pair an entry with another meme
+  const mine = Boolean(entry && entry.owner.id === user?.id)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [tagPending, setTagPending] = useState(false)
@@ -41,7 +76,7 @@ export function MemeDetail({ id }: { id: string }) {
       </div>
     )
   }
-  if (!meme) return <PageLoading />
+  if (!meme || openingEntry) return <PageLoading />
 
   const systemTags = meme.tags.filter((t) => !t.mine)
   const myTags = meme.tags.filter((t) => t.mine)
@@ -108,7 +143,10 @@ export function MemeDetail({ id }: { id: string }) {
 
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
-              <h1 className="text-pretty text-2xl font-semibold tracking-tight">{memeTitle(meme)}</h1>
+              <div className="flex flex-col gap-1">
+                <h1 className="text-pretty text-2xl font-semibold tracking-tight wrap-anywhere">{entry?.name ?? memeTitle(meme)}</h1>
+                {entry && meme.keywords.length > 0 && <p className="text-sm text-muted-foreground">{memeTitle(meme)}</p>}
+              </div>
               {meme.status !== 'success' && (
                 <div className="flex flex-wrap items-center gap-2">
                   <ProcessBadge status={meme.status} />
@@ -127,6 +165,8 @@ export function MemeDetail({ id }: { id: string }) {
               )}
             </div>
 
+            {entry && <EntrySource entry={entry} mine={mine} />}
+
             <div className="grid grid-cols-2 gap-2">
               <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />
               <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
@@ -138,7 +178,7 @@ export function MemeDetail({ id }: { id: string }) {
                 分享
               </Button>
             </div>
-            <AddToLibraryButton meme={meme} className="[&>button]:h-11 [&>button]:flex-1 md:[&>button]:h-9" />
+            <AddToLibraryButton meme={entry && mine ? { ...meme, entry: { id: entry.id, folder_id: entry.parent_id } } : meme} className="[&>button]:h-11 [&>button]:flex-1 md:[&>button]:h-9" />
 
             <section className="flex flex-col gap-2" aria-labelledby="tags-heading">
               <h2 id="tags-heading" className="text-sm font-medium">
