@@ -9,6 +9,8 @@ export const ROOT = ''
 export function useDragMove({ current, selected, onMove }: { current: string; selected: Set<string>; onMove: (ids: string[], target: string) => void }) {
   const [dragging, setDragging] = useState<string[] | null>(null)
   const [over, setOver] = useState<string | null>(null)
+  // On touch screens a long press opens the context menu instead of dragging.
+  const [enabled] = useState(() => window.matchMedia('(pointer: fine)').matches)
 
   const end = () => {
     setDragging(null)
@@ -21,7 +23,7 @@ export function useDragMove({ current, selected, onMove }: { current: string; se
     isOver: (target: string) => over === target,
 
     source: (id: string) => ({
-      draggable: true,
+      draggable: enabled,
       onDragStart: (e: React.DragEvent) => {
         const ids = selected.has(id) ? [...selected] : [id]
         e.dataTransfer.effectAllowed = 'move'

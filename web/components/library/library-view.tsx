@@ -16,7 +16,6 @@ import {
   Home,
   Inbox,
   Lock,
-  MoreVertical,
   Pencil,
   Search,
   Trash2,
@@ -38,7 +37,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { FolderMosaic } from '@/components/folder/folder-card'
@@ -241,7 +241,16 @@ function LibraryContent({ lib }: { lib: Library }) {
             <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{here}</h1>
             {folder && <VisibilityBadge visibility={folder.visibility} />}
           </div>
-          <p className="text-sm text-muted-foreground">{items.length} 项</p>
+          <p className="text-sm text-muted-foreground">
+            {items.length} 项
+            {items.length > 0 && (
+              <>
+                {' · '}
+                <span className="pointer-coarse:hidden">右键</span>
+                <span className="hidden pointer-coarse:inline">长按</span>条目查看更多操作
+              </>
+            )}
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button onClick={() => setUploadOpen(true)} className="h-11 sm:h-9">
@@ -368,58 +377,51 @@ function LibraryContent({ lib }: { lib: Library }) {
                     </span>
                   </button>
                 ) : (
-                  <>
-                    <Link
-                      href={href}
+                  <ContextMenu>
+                    <ContextMenuTrigger
+                      render={<Link href={href} />}
                       className={cn(
-                        'flex flex-col gap-2 rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+                        'flex flex-col gap-2 rounded-xl border bg-card p-2 transition select-none hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-popup-open:border-foreground/30',
                         dropTarget,
                       )}
                     >
                       {body}
-                    </Link>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button variant="secondary" size="icon-sm" aria-label={`${node.name} 的更多操作`} className="absolute top-3 right-3 bg-background/90 shadow-sm backdrop-blur" />}
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-44">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setRename(item)
+                          setRenameValue(node.name)
+                        }}
                       >
-                        <MoreVertical />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setRename(item)
-                            setRenameValue(node.name)
-                          }}
-                        >
-                          <Pencil />
-                          重命名
+                        <Pencil />
+                        重命名
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPicker({ mode: 'move', items: [item] })}>
+                        <FolderInput />
+                        移动到…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPicker({ mode: 'copy', items: [item] })}>
+                        <Copy />
+                        复制到…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
+                        {isPublicSelf ? <Lock /> : <Globe />}
+                        {isPublicSelf ? '设为私有' : '设为公开'}
+                      </DropdownMenuItem>
+                      {item.type === 'entry' && (
+                        <DropdownMenuItem onClick={() => download([item])}>
+                          <Download />
+                          下载
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setPicker({ mode: 'move', items: [item] })}>
-                          <FolderInput />
-                          移动到…
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setPicker({ mode: 'copy', items: [item] })}>
-                          <Copy />
-                          复制到…
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
-                          {isPublicSelf ? <Lock /> : <Globe />}
-                          {isPublicSelf ? '设为私有' : '设为公开'}
-                        </DropdownMenuItem>
-                        {item.type === 'entry' && (
-                          <DropdownMenuItem onClick={() => download([item])}>
-                            <Download />
-                            下载
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete([item])}>
-                          <Trash2 />
-                          删除
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete([item])}>
+                        <Trash2 />
+                        删除
+                      </DropdownMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 )}
               </li>
             )
