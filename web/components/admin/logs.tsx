@@ -316,7 +316,7 @@ function LogRow({ log }: { log: LogEntry }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex w-full flex-col gap-1.5 px-3 py-2.5 text-left hover:bg-muted/50 sm:flex-row sm:items-center sm:gap-3 sm:px-4"
+        className="flex w-full flex-col gap-1.5 px-3 py-2.5 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset sm:flex-row sm:items-center sm:gap-3 sm:px-4"
       >
         <div className="flex items-center gap-2 sm:contents">
           <time className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums sm:w-36">{formatDateTime(log.time)}</time>

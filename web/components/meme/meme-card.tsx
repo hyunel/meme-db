@@ -49,7 +49,7 @@ export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme
         />
       </div>
       <div className="flex min-h-8 items-center gap-1">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 gap-1">
           {shown.map((t) => (
             <Link
               key={t}
