@@ -35,6 +35,7 @@ import { api, qs, refresh } from '@/lib/api'
 import { formatDateTime, formatDuration, formatRelative, toMs } from '@/lib/format'
 import type { Page, Task, TaskDetail, TaskState, TaskTypeCounts } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { TabSwitch } from '@/components/tab-switch'
 
 const activeStates: TaskState[] = ['pending', 'retrying', 'running']
 const historyStates: TaskState[] = ['completed', 'failed']
@@ -273,19 +274,16 @@ export function AdminTasks() {
       </section>
 
       <div className="flex flex-col gap-3">
-        <div role="tablist" aria-label="任务视图" className="flex w-full rounded-lg border bg-background p-1 sm:w-fit">
-          {(['active', 'history'] as const).map((v) => (
-            <button
-              key={v}
-              role="tab"
-              aria-selected={view === v}
-              onClick={() => switchView(v)}
-              className={cn('h-9 flex-1 rounded-md px-4 text-sm transition-colors sm:flex-none', view === v ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground')}
-            >
-              {v === 'active' ? '活跃' : '历史'}
-            </button>
-          ))}
-        </div>
+        <TabSwitch
+          fill
+          label="任务视图"
+          value={view}
+          onChange={switchView}
+          tabs={[
+            ['active', '活跃'],
+            ['history', '历史'],
+          ]}
+        />
 
         <Toolbar>
           <SearchInput value={q} onChange={setQ} placeholder="任务标识或表情包标识" className="basis-full sm:basis-auto" />

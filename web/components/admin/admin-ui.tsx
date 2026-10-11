@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, RefreshCw, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -238,6 +238,27 @@ export interface Column<T> {
   /** title: card heading on mobile; hidden: desktop only */
   mobile?: 'title' | 'field' | 'hidden'
   className?: string
+  /** Makes the header sortable; null values sort last */
+  sortValue?: (row: T) => number | string | null
+}
+
+export interface SortState {
+  key: string
+  dir: 'asc' | 'desc'
+}
+
+export function sortRows<T>(rows: T[], columns: Column<T>[], sort: SortState | undefined) {
+  const get = sort && columns.find((c) => c.key === sort.key)?.sortValue
+  if (!get) return rows
+  const dir = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const x = get(a)
+    const y = get(b)
+    if (x === y) return 0
+    if (x === null) return 1
+    if (y === null) return -1
+    return (x < y ? -1 : 1) * dir
+  })
 }
 
 /** Table on desktop, stacked cards on mobile. */
@@ -251,6 +272,9 @@ export function DataList<T>({
   empty,
   rowLabel,
   loading = false,
+  sort,
+  onSortChange,
+  rowClassName,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -261,6 +285,9 @@ export function DataList<T>({
   empty: React.ReactNode
   rowLabel: (row: T) => string
   loading?: boolean
+  sort?: SortState
+  onSortChange?: (s: SortState) => void
+  rowClassName?: (row: T) => string | undefined
 }) {
   const selectable = Boolean(selected && onSelectedChange)
   const ids = rows.map(getId)
@@ -311,11 +338,26 @@ export function DataList<T>({
                   />
                 </TableHead>
               )}
-              {columns.map((c) => (
-                <TableHead key={c.key} className={c.className}>
-                  {c.header}
-                </TableHead>
-              ))}
+              {columns.map((c) => {
+                const active = sort?.key === c.key
+                const SortIcon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+                return (
+                  <TableHead key={c.key} className={c.className} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+                    {c.sortValue && onSortChange ? (
+                      <button
+                        type="button"
+                        onClick={() => onSortChange({ key: c.key, dir: active && sort.dir === 'desc' ? 'asc' : 'desc' })}
+                        className={cn('-ml-1.5 inline-flex h-8 items-center gap-1 rounded px-1.5 hover:bg-muted hover:text-foreground', active && 'text-foreground')}
+                      >
+                        {c.header}
+                        <SortIcon className={cn('size-3.5', !active && 'opacity-40')} aria-hidden />
+                      </button>
+                    ) : (
+                      c.header
+                    )}
+                  </TableHead>
+                )
+              })}
               {actions && (
                 <TableHead className="w-12">
                   <span className="sr-only">操作</span>
@@ -327,7 +369,7 @@ export function DataList<T>({
             {rows.map((r) => {
               const id = getId(r)
               return (
-                <TableRow key={id} data-state={selected?.has(id) ? 'selected' : undefined}>
+                <TableRow key={id} data-state={selected?.has(id) ? 'selected' : undefined} className={rowClassName?.(r)}>
                   {selectable && (
                     <TableCell>
                       <Checkbox aria-label={`选择 ${rowLabel(r)}`} checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />
@@ -361,7 +403,7 @@ export function DataList<T>({
           {rows.map((r) => {
             const id = getId(r)
             return (
-              <li key={id} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', selected?.has(id) && 'border-foreground/40 bg-muted/40')}>
+              <li key={id} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', selected?.has(id) && 'border-foreground/40 bg-muted/40', rowClassName?.(r))}>
                 <div className="flex items-start gap-3">
                   {selectable && <Checkbox aria-label={`选择 ${rowLabel(r)}`} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
                   <div className="min-w-0 flex-1">{title?.cell(r)}</div>

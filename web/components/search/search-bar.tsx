@@ -1,13 +1,12 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ImageIcon, Search } from 'lucide-react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useImageInput } from './use-image-input'
-import { putImageQuery, validateQueryImage } from '@/lib/image-query'
+import { useImageInput } from '@/hooks/use-image-input'
+import { putImageQuery } from '@/lib/image-query'
 import { pushRecentSearch } from '@/lib/recent-searches'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +27,6 @@ export function SearchBar({
 }) {
   const router = useRouter()
   const [value, setValue] = useState(defaultValue)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   const buildParams = (extra: Record<string, string>) => {
     const p = new URLSearchParams(extra)
@@ -44,18 +42,7 @@ export function SearchBar({
     router.push(`/search?${buildParams(q ? { q } : {})}`)
   }
 
-  const searchByImage = (file: File | undefined | null) => {
-    if (!file) return
-    const err = validateQueryImage(file)
-    if (err) {
-      toast.error(err)
-      return
-    }
-    const q = putImageQuery(file)
-    router.push(`/search?${buildParams({ img: q.id })}`)
-  }
-
-  const imageInput = useImageInput(searchByImage)
+  const imageInput = useImageInput((file) => router.push(`/search?${buildParams({ img: putImageQuery(file).id })}`))
   const dragging = imageInput.dragging
 
   const lg = size === 'lg'
@@ -86,22 +73,11 @@ export function SearchBar({
         placeholder={dragging ? '松开以按图片搜索' : scope === 'mine' ? '在我的库中搜索…' : '输入关键词，或拖入/粘贴图片搜索'}
         className={cn('h-full min-w-0 flex-1 bg-transparent px-2 outline-none placeholder:text-muted-foreground', lg ? 'text-base' : 'text-sm')}
       />
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden
-        onChange={(e) => {
-          searchByImage(e.target.files?.[0])
-          e.target.value = ''
-        }}
-      />
+      <input {...imageInput.inputProps} />
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="button" variant="ghost" size={lg ? 'icon-lg' : 'icon-sm'} onClick={() => fileRef.current?.click()} aria-label="按图片搜索" />
+            <Button type="button" variant="ghost" size={lg ? 'icon-lg' : 'icon-sm'} onClick={imageInput.open} aria-label="按图片搜索" />
           }
         >
           <ImageIcon />

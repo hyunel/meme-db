@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -9,10 +9,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { MemeGrid } from '@/components/meme/meme-card'
-import { useImageInput } from './use-image-input'
+import { useImageInput } from '@/hooks/use-image-input'
 import { ErrorState, EmptyState, MemeGridSkeleton } from '@/components/states'
 import { api } from '@/lib/api'
-import { getImageQuery, putImageQuery, validateQueryImage, type ImageQuery } from '@/lib/image-query'
+import { getImageQuery, putImageQuery, type ImageQuery } from '@/lib/image-query'
 import { clearRecentSearches, pushRecentSearch, removeRecentSearch, useRecentSearches } from '@/lib/recent-searches'
 import { useSession } from '@/lib/session'
 import type { LibraryView, SearchResult } from '@/lib/types'
@@ -64,7 +64,6 @@ export function SearchView() {
     setLastQ(q)
     setInput(q)
   }
-  const fileRef = useRef<HTMLInputElement>(null)
 
   const folder = folderView?.folder
   const memes = results?.map((r) => r.meme)
@@ -97,19 +96,8 @@ export function SearchView() {
     else navigate({ q: v })
   }
 
-  const attach = (file: File | null | undefined) => {
-    if (!file) return
-    const err = validateQueryImage(file)
-    if (err) {
-      toast.error('图片无法使用', { description: err })
-      return
-    }
-    const iq = putImageQuery(file)
-    navigate({ img: iq.id, q: input.trim() })
-  }
-  const imageInput = useImageInput(attach)
+  const imageInput = useImageInput((file) => navigate({ img: putImageQuery(file).id, q: input.trim() }))
   const dragging = imageInput.dragging
-
 
   const setScope = (next: Scope) => {
     if (next === scope) return
@@ -145,19 +133,8 @@ export function SearchView() {
             placeholder={dragging ? '松开以添加图片' : scope === 'mine' ? '在我的库中搜索…' : '关键词，或粘贴/拖入图片'}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden
-            onChange={(e) => {
-              attach(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-          <Button type="button" variant="ghost" size="icon-lg" onClick={() => fileRef.current?.click()} aria-label={image ? '替换图片' : '添加图片'}>
+          <input {...imageInput.inputProps} />
+          <Button type="button" variant="ghost" size="icon-lg" onClick={imageInput.open} aria-label={image ? '替换图片' : '添加图片'}>
             <ImageIcon />
           </Button>
           <Button type="submit" size="lg" className="h-10 px-4 sm:px-5" disabled={isLoading}>
