@@ -298,23 +298,40 @@ func (h *AdminHandler) ListTags(c echo.Context) error {
 	return c.JSON(http.StatusOK, page)
 }
 
-type RenameTagRequest struct {
-	ID   string `param:"id" validate:"required,uuid"`
-	Name string `json:"name"`
+func (h *AdminHandler) TagDuplicates(c echo.Context) error {
+	groups, err := h.tagService.Duplicates(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, groups)
 }
 
-func (h *AdminHandler) RenameTag(c echo.Context) error {
-	var req RenameTagRequest
+type UpdateTagRequest struct {
+	ID     string  `param:"id" validate:"required,uuid"`
+	Name   *string `json:"name"`
+	Hidden *bool   `json:"hidden"`
+}
+
+func (h *AdminHandler) UpdateTag(c echo.Context) error {
+	var req UpdateTagRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" || len([]rune(name)) > 50 {
-		return apperror.BadRequest("标签需为 1–50 个字符")
-	}
+	ctx := c.Request().Context()
 
-	if err := h.tagService.Rename(c.Request().Context(), req.ID, name); err != nil {
-		return err
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || len([]rune(name)) > 50 {
+			return apperror.BadRequest("标签需为 1–50 个字符")
+		}
+		if err := h.tagService.Rename(ctx, req.ID, name); err != nil {
+			return err
+		}
+	}
+	if req.Hidden != nil {
+		if err := h.tagService.SetHidden(ctx, req.ID, *req.Hidden); err != nil {
+			return err
+		}
 	}
 	return c.NoContent(http.StatusNoContent)
 }

@@ -73,23 +73,32 @@ func main() {
 
 	memeService := service.NewMemeService(service.MemeServiceConfig{
 		RetrievalPrompt: cfg.Prompt.Retrieval,
+		TagMinUsage:     cfg.Tags.MinUsage,
 	}, repo, assetService, inferClient.WithPriority(inference.PriorityInteractive), taskWorker)
+
+	tagService := service.NewTagService(service.TagServiceConfig{
+		Prompt:            cfg.Prompt.Tag,
+		MergeSimilarity:   cfg.Tags.MergeSimilarity,
+		SuggestSimilarity: cfg.Tags.SuggestSimilarity,
+		MinUsage:          cfg.Tags.MinUsage,
+		CommonShare:       cfg.Tags.CommonShare,
+	}, repo, memeService, inferClient.WithPriority(inference.PriorityInteractive))
 
 	ingestService := service.NewIngestService(service.IngestServiceConfig{
 		StoragePath:     cfg.Server.StoragePath,
 		CaptionPrompt:   cfg.Prompt.Caption,
 		RetrievalPrompt: cfg.Prompt.Retrieval,
-	}, repo, inferClient.WithPriority(inference.PriorityBackground))
+	}, repo, inferClient.WithPriority(inference.PriorityBackground), tagService)
 
 	libraryService := service.NewLibraryService(repo, memeService, assetService)
 	favService := service.NewFavoriteService(repo, memeService, libraryService)
-	tagService := service.NewTagService(repo, memeService)
 	userService := service.NewUserService(repo, memeService)
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
 	logService := service.NewLogService(repo, cfg.Log.Retention)
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
+	taskWorker.RegisterHandler(model.JobResolveLabels, tagService)
 
 	workerDone := make(chan struct{})
 	go func() {
@@ -245,8 +254,9 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	admin.POST("/search/debug", h.admin.SearchDebug)
 
 	admin.GET("/tags", h.admin.ListTags)
+	admin.GET("/tags/duplicates", h.admin.TagDuplicates)
 	admin.POST("/tags/merge", h.admin.MergeTags)
-	admin.PATCH("/tags/:id", h.admin.RenameTag)
+	admin.PATCH("/tags/:id", h.admin.UpdateTag)
 	admin.DELETE("/tags", h.admin.DeleteTags)
 
 	admin.GET("/tasks", h.task.List)

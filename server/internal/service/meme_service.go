@@ -18,6 +18,7 @@ import (
 
 type MemeServiceConfig struct {
 	RetrievalPrompt string
+	TagMinUsage     int
 }
 
 type MemeService struct {
@@ -45,7 +46,7 @@ func NewMemeService(
 }
 
 func (s *MemeService) Memes(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Meme, error) {
-	memes, err := s.repo.Meme.Memes(ctx, viewer.UserID, viewer.IsAdmin(), ids)
+	memes, err := s.repo.Meme.Memes(ctx, viewer.UserID, viewer.IsAdmin(), ids, s.cfg.TagMinUsage)
 	if err != nil {
 		return nil, err
 	}

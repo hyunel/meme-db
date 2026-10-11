@@ -114,21 +114,40 @@ CREATE TABLE IF NOT EXISTS library.favorites (
 CREATE INDEX IF NOT EXISTS idx_favorites_asset ON library.favorites(asset_id) WHERE asset_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_favorites_node ON library.favorites(node_id) WHERE node_id IS NOT NULL;
 
+-- Spellings that differ only in case, width or separators share a key.
+CREATE OR REPLACE FUNCTION library.label_key(name TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE
+RETURN btrim(regexp_replace(lower(normalize(name, NFKC)), '[\s_/"''“”‘’《》「」『』-]+', ' ', 'g'));
+
 CREATE TABLE IF NOT EXISTS library.tags (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name VARCHAR(100) UNIQUE NOT NULL,
+    embedding vector(1024),                 -- Of the founding spelling; new spellings are matched against it
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,  -- Still matched, so its spellings don't come back as new tags, but never shown
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_tags_embedding ON library.tags USING hnsw (embedding vector_cosine_ops);
+
+-- Every spelling given by the VLM or users, mapped to the tag it means.
+CREATE TABLE IF NOT EXISTS library.labels (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    name VARCHAR(100) UNIQUE NOT NULL,
+    tag_id UUID REFERENCES library.tags(id) ON DELETE CASCADE,  -- NULL until resolved
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_labels_key ON library.labels(library.label_key(name));
+CREATE INDEX IF NOT EXISTS idx_labels_tag ON library.labels(tag_id);
+
 CREATE TABLE IF NOT EXISTS library.asset_tags (
     asset_id UUID NOT NULL REFERENCES core.assets(id) ON DELETE CASCADE,
-    tag_id UUID NOT NULL REFERENCES library.tags(id) ON DELETE CASCADE,
+    label_id UUID NOT NULL REFERENCES library.labels(id) ON DELETE CASCADE,
     user_id UUID REFERENCES iam.users(id) ON DELETE CASCADE,  -- NULL = system tag
-    UNIQUE NULLS NOT DISTINCT (asset_id, tag_id, user_id)
+    UNIQUE NULLS NOT DISTINCT (asset_id, label_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_asset_tags_asset_user ON library.asset_tags(asset_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON library.asset_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_asset_tags_label ON library.asset_tags(label_id);
 
 -- Files of active users that are public themselves or through a public ancestor folder.
 CREATE OR REPLACE VIEW library.public_files AS

@@ -32,6 +32,8 @@ export interface MemeTag {
   id: string
   name: string
   mine: boolean
+  /** On too few memes to show on cards */
+  rare: boolean
 }
 
 export interface EntryRef {
@@ -190,8 +192,13 @@ export interface TaskTypeCounts {
 export interface TagUsage {
   id: string
   name: string
-  created_at: string
+  /** Other spellings that resolve to this tag */
+  aliases: string[]
+  hidden: boolean
+  /** On so many memes that it hardly tells them apart */
+  common: boolean
   usage: number
+  created_at: string
 }
 
 export interface Overview {

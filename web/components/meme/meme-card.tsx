@@ -14,7 +14,7 @@ const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height /
 
 export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme; similarity?: number; allowAdd?: boolean; className?: string }) {
   const kind = kindOf(meme.mime_type)
-  const shown = [...new Set(meme.tags.map((t) => t.name))].slice(0, 2)
+  const shown = [...new Set(meme.tags.filter((t) => !t.rare).map((t) => t.name))].slice(0, 2)
 
   return (
     <div className={cn('group relative flex flex-col gap-1.5', className)}>

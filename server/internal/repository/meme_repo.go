@@ -123,7 +123,8 @@ func (row *memeRow) toModel() *model.Meme {
 	}
 }
 
-func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool, ids []string) ([]*model.Meme, error) {
+// minUsage marks the tags on fewer memes as rare.
+func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool, ids []string, minUsage int) ([]*model.Meme, error) {
 	if len(ids) == 0 {
 		return []*model.Meme{}, nil
 	}
@@ -139,17 +140,24 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			(SELECT jsonb_build_object('id', n.id, 'folder_id', n.parent_id) FROM library.nodes n
 			 WHERE n.asset_id = a.id AND n.owner_id = $2::uuid ORDER BY n.created_at LIMIT 1) AS entry,
 			COALESCE((
-				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', at.user_id IS NOT NULL)
-					ORDER BY at.user_id NULLS FIRST, t.name)
-				FROM library.asset_tags at JOIN library.tags t ON t.id = at.tag_id
-				WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
+				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', x.usage < $4)
+					ORDER BY x.mine, x.usage DESC, t.name)
+				FROM (
+					SELECT l.tag_id, at.user_id IS NOT NULL AS mine,
+						(SELECT count(DISTINCT u.asset_id) FROM library.asset_tags u JOIN library.labels ul ON ul.id = u.label_id
+						 WHERE ul.tag_id = l.tag_id) AS usage
+					FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
+					WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
+					GROUP BY l.tag_id, mine
+				) x JOIN library.tags t ON t.id = x.tag_id
+				WHERE x.mine OR NOT t.hidden
 			), '[]') AS tags
 		FROM core.assets a
 		JOIN core.meme_info m ON m.asset_id = a.id
 		WHERE a.id = ANY($1::uuid[]) AND ($3 OR %[2]s OR %[3]s)
 	`, memeInPublic, memePublic, memeOwnedBy("$2"))
 
-	rows, err := collectAll[memeRow](r.db.Query(ctx, query, ids, nullable(viewerID), admin))
+	rows, err := collectAll[memeRow](r.db.Query(ctx, query, ids, nullable(viewerID), admin, minUsage))
 	if err != nil {
 		return nil, err
 	}
@@ -164,10 +172,12 @@ func (r *MemeRepository) PopularIDs(ctx context.Context, viewerID string, admin 
 	var w filter
 	w.where(memeListed(&w, viewerID, admin))
 	if tag != "" {
+		// Any spelling of the tag finds it, so links with an old or alternate spelling keep working.
 		w.where(fmt.Sprintf(`EXISTS (
-			SELECT 1 FROM library.asset_tags at JOIN library.tags t ON t.id = at.tag_id
-			WHERE at.asset_id = m.asset_id AND t.name = %s AND (at.user_id IS NULL OR at.user_id = %s::uuid))`,
-			w.arg(tag), w.arg(nullable(viewerID))))
+			SELECT 1 FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
+			WHERE at.asset_id = m.asset_id AND (at.user_id IS NULL OR at.user_id = %s::uuid)
+				AND l.tag_id IN (SELECT tag_id FROM library.labels WHERE library.label_key(name) = library.label_key(%s)))`,
+			w.arg(nullable(viewerID)), w.arg(tag)))
 	}
 	query := fmt.Sprintf(`
 		SELECT m.asset_id::text, count(*) OVER () FROM core.meme_info m %s
