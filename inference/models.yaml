@@ -15,10 +15,10 @@ vlm:
 
   # Option 2: Use OpenAI-compatible API (Gemini, GLM, OpenAI, etc.)
   provider: "openai"
-  openai:
-    model: "gemini-2.5-flash"
-    api_key: "${GEMINI_API_KEY}"  # Environment variable
-    base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  # openai:
+  #   model: "gemini-2.5-flash"
+  #   api_key: "${GEMINI_API_KEY}"  # Environment variable
+  #   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
   # openai:
   #   model: "gpt-4o"
@@ -28,6 +28,11 @@ vlm:
   #   model: "glm-4v-flash"
   #   api_key: "${GLM_API_KEY}"
   #   base_url: "https://open.bigmodel.cn/api/paas/v4/"
+
+  openai:
+    model: "deepseek-flash"
+    api_key: "${DEEPSEEK_API_KEY}"  # Environment variable
+    base_url: "https://api.deepseek.com/v1"
 
 clip:
   batch_size: 64
