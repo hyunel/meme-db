@@ -70,7 +70,7 @@ MemeDB/
   - For multiple operations requiring atomicity, use the `Transaction` helper (`Provider.Tx`).
 - **Access Control**: Enforced explicitly in repository queries (owner / visibility filters); there is no row-level security. A node is public if it or an ancestor folder is public (`library.public_files`).
 - **API Tokens**: Requests authenticate with a session JWT or a personal API token (`mdb_…`), whose scope `rbac` enforces: `read` tokens may only GET signed-in routes, the admin API needs the `admin` scope, and routes under `rbac.RequireSession()` (password, tokens) refuse tokens altogether.
-- **Schema**: `server/sql/init.sql` creates a fresh database; `server/sql/migrations/` upgrades existing ones.
+- **Schema**: `server/sql/init.sql` creates the database.
 
 ### Protobuf Workflow
 - **Definition**: Protocol buffers are defined in `protos/`.

@@ -15,11 +15,11 @@ type TagRepository struct {
 	db db.DBTX
 }
 
-// TagOf finds the tag of a spelling or of one with the same key; labelID is set only if this exact spelling is resolved.
+// TagOf finds the tag of a spelling or of one with the same key; labelID is set only if this exact spelling exists.
 func (r *TagRepository) TagOf(ctx context.Context, name string) (labelID, tagID string, err error) {
 	query := `
 		SELECT COALESCE(CASE WHEN name = $1 THEN id::text END, ''), tag_id::text FROM library.labels
-		WHERE library.label_key(name) = library.label_key($1) AND tag_id IS NOT NULL
+		WHERE library.label_key(name) = library.label_key($1)
 		ORDER BY name = $1 DESC LIMIT 1
 	`
 	err = r.db.QueryRow(ctx, query, name).Scan(&labelID, &tagID)
@@ -53,25 +53,16 @@ func (r *TagRepository) Create(ctx context.Context, name string, embedding pgvec
 	return id, err
 }
 
-// SetLabel maps a new or unresolved spelling to a tag; a resolved one keeps its tag.
+// SetLabel maps a new spelling to a tag; an existing one keeps its tag.
 func (r *TagRepository) SetLabel(ctx context.Context, name, tagID string) (string, error) {
 	query := `
 		INSERT INTO library.labels (name, tag_id) VALUES ($1, $2::uuid)
-		ON CONFLICT (name) DO UPDATE SET tag_id = COALESCE(labels.tag_id, EXCLUDED.tag_id)
+		ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
 		RETURNING id::text
 	`
 	var id string
 	err := r.db.QueryRow(ctx, query, name, tagID).Scan(&id)
 	return id, err
-}
-
-// PendingLabels lists unresolved spellings, most used first so that the common spelling names its tag.
-func (r *TagRepository) PendingLabels(ctx context.Context) ([]string, error) {
-	query := `
-		SELECT l.name FROM library.labels l WHERE l.tag_id IS NULL
-		ORDER BY (SELECT count(*) FROM library.asset_tags at WHERE at.label_id = l.id) DESC, length(l.name), l.name
-	`
-	return collectScalars[string](r.db.Query(ctx, query))
 }
 
 func (r *TagRepository) SetSystemLabels(ctx context.Context, assetID string, labelIDs []string) error {

@@ -98,7 +98,6 @@ func main() {
 	logService := service.NewLogService(repo, cfg.Log.Retention)
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
-	taskWorker.RegisterHandler(model.JobResolveLabels, tagService)
 
 	workerDone := make(chan struct{})
 	go func() {

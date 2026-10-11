@@ -71,16 +71,6 @@ func (s *TagService) resolve(ctx context.Context, name string) (string, error) {
 	return s.repo.Tag.SetLabel(ctx, name, tagID)
 }
 
-// Handle resolves the spellings that migration 004 left without a tag.
-func (s *TagService) Handle(ctx context.Context, _ *model.Task) error {
-	names, err := s.repo.Tag.PendingLabels(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = s.Resolve(ctx, names)
-	return err
-}
-
 func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeID, name string) (*model.MemeTag, error) {
 	if _, err := s.memes.Get(ctx, viewer, memeID); err != nil {
 		return nil, err

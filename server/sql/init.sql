@@ -147,7 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_tags_embedding ON library.tags USING hnsw (embedd
 CREATE TABLE IF NOT EXISTS library.labels (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name VARCHAR(100) UNIQUE NOT NULL,
-    tag_id UUID REFERENCES library.tags(id) ON DELETE CASCADE,  -- NULL until resolved
+    tag_id UUID NOT NULL REFERENCES library.tags(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
