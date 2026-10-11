@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, RefreshCw, Search } from 'lucide-react'
-import { toast } from 'sonner'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Loader2, MoreHorizontal, RefreshCw, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -12,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { CopyButton } from '@/components/code-block'
 import { cn } from '@/lib/utils'
 
 export function AdminPageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
@@ -117,28 +117,10 @@ export function RefreshControls({ auto, onAutoChange, onRefresh }: { auto?: bool
 }
 
 export function CopyId({ value, className }: { value: string; className?: string }) {
-  const [done, setDone] = useState(false)
   return (
     <span className={cn('inline-flex max-w-full items-center gap-1 font-mono text-xs', className)}>
       <span className="truncate">{value}</span>
-      <button
-        type="button"
-        aria-label={`复制 ${value}`}
-        className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={async (e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          try {
-            await navigator.clipboard.writeText(value)
-            setDone(true)
-            setTimeout(() => setDone(false), 1200)
-          } catch {
-            toast.error('复制失败')
-          }
-        }}
-      >
-        {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      </button>
+      <CopyButton value={value} />
     </span>
   )
 }

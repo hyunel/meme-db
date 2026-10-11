@@ -18,6 +18,25 @@ export interface UserRef {
   username: string
 }
 
+export type TokenScope = 'read' | 'write' | 'admin'
+
+export interface ApiToken {
+  id: string
+  name: string
+  /** Last characters of the secret */
+  hint: string
+  scope: TokenScope
+  expires_at: string | null
+  /** Recorded to the minute */
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface CreatedToken extends ApiToken {
+  /** Only ever returned on creation */
+  secret: string
+}
+
 export interface UserStats {
   files: number
   folders: number
@@ -83,8 +102,15 @@ export interface Entry {
   parent_id: string | null
   name: string
   visibility: Visibility
-  meme: Meme | null
+  meme: Meme
   created_at: string
+}
+
+/** An entry opened by its link, which may be in another user's public folder */
+export interface EntryDetail extends Entry {
+  owner: UserRef
+  /** The viewer-visible folders above it, root first */
+  ancestors: Crumb[]
 }
 
 export interface Crumb {
@@ -93,17 +119,17 @@ export interface Crumb {
 }
 
 export interface LibraryView {
+  /** Null at the root of the library */
   folder: Folder | null
+  /** The viewer-visible folders above it, root first */
   ancestors: Crumb[]
   folders: Folder[]
   entries: Entry[]
 }
 
-export interface FolderPage {
+/** A folder opened by its link, which may be another user's public one */
+export interface FolderPage extends LibraryView {
   folder: Folder
-  ancestors: Crumb[]
-  folders: Folder[]
-  memes: Meme[]
 }
 
 export interface Profile {

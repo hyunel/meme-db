@@ -50,7 +50,7 @@ import { UploadDialog } from './upload-dialog'
 import { ROOT, useDragMove } from './use-drag-move'
 import { api, qs, refresh } from '@/lib/api'
 import { toMs } from '@/lib/format'
-import { isProcessing } from '@/lib/media'
+import { isProcessing, memeHref } from '@/lib/media'
 import { downloadMany } from '@/lib/meme-transfer'
 import type { Entry, Folder, LibraryView as Library } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -151,7 +151,7 @@ function LibraryContent({ lib }: { lib: Library }) {
     run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
 
   const download = (sel: Item[]) => {
-    const memes = sel.flatMap((i) => (i.type === 'entry' && i.entry.meme ? [i.entry.meme] : []))
+    const memes = sel.flatMap((i) => (i.type === 'entry' ? [i.entry.meme] : []))
     if (!memes.length) {
       toast.info('所选内容中没有可下载的表情包')
       return
@@ -317,7 +317,7 @@ function LibraryContent({ lib }: { lib: Library }) {
             const node = nodeOf(item)
             const checked = selected.has(node.id)
             const meme = item.type === 'entry' ? item.entry.meme : null
-            const href = item.type === 'folder' ? libraryHref(node.id) : `/m/${meme?.id}`
+            const href = meme ? memeHref(meme.id, node.id) : libraryHref(node.id)
             const isPublicSelf = node.visibility === 'public'
             const dropTarget = drag.isOver(node.id) && 'border-foreground bg-brand/30 ring-2 ring-foreground/20'
 
@@ -325,15 +325,13 @@ function LibraryContent({ lib }: { lib: Library }) {
               <>
                 <div className="relative aspect-square overflow-hidden rounded-lg bg-muted/60">
                   <div data-thumb className="flex size-full items-center justify-center p-2">
-                    {item.type === 'folder' ? (
-                      item.folder.previews.length ? (
-                        <FolderMosaic previews={item.folder.previews} className="size-full" />
-                      ) : (
-                        <FolderIcon className="size-12 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
-                      )
-                    ) : meme ? (
-                      <MemeMedia meme={meme} />
-                    ) : null}
+                    {item.type === 'entry' ? (
+                      <MemeMedia meme={item.entry.meme} />
+                    ) : item.folder.previews.length ? (
+                      <FolderMosaic previews={item.folder.previews} className="size-full" />
+                    ) : (
+                      <FolderIcon className="size-12 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
+                    )}
                   </div>
                   {item.type === 'folder' && (
                     <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">

@@ -121,7 +121,7 @@ export function PublicFolderView({ id }: { id: string }) {
   const page = useSWR<FolderPage>(`/folders/${id}`)
   return (
     <Loadable result={page} notFound={{ title: '合集不存在', description: '它可能已被删除，或已设为私有。' }}>
-      {({ folder, ancestors, folders, memes }) => (
+      {({ folder, ancestors, folders, entries }) => (
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
           <nav aria-label="合集路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
             <ol className="flex w-max items-center gap-1 text-sm text-muted-foreground">
@@ -148,7 +148,7 @@ export function PublicFolderView({ id }: { id: string }) {
           </nav>
           <PageHeader
             title={folder.name}
-            description={`${folders.length} 个子文件夹 · ${memes.length} 个表情包`}
+            description={`${folders.length} 个子文件夹 · ${entries.length} 个表情包`}
             action={<FavoriteButton kind="folder" id={folder.id} active={folder.is_favorite} count={folder.favorite_count} showCount className="h-11 self-start sm:h-9" />}
           />
           {folders.length > 0 && (
@@ -160,7 +160,7 @@ export function PublicFolderView({ id }: { id: string }) {
               ))}
             </ul>
           )}
-          {memes.length ? <MemeGrid memes={memes} allowAdd /> : folders.length === 0 && <EmptyState icon={FolderOpen} title="这个合集还是空的" />}
+          {entries.length ? <MemeGrid memes={entries} allowAdd /> : folders.length === 0 && <EmptyState icon={FolderOpen} title="这个合集还是空的" />}
         </div>
       )}
     </Loadable>
