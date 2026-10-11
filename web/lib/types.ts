@@ -60,6 +60,12 @@ export interface EntryRef {
   folder_id: string | null
 }
 
+export interface FolderRef {
+  id: string
+  parent_id: string | null
+  name: string
+}
+
 export interface MemeThumb {
   id: string
   url: string
@@ -80,7 +86,8 @@ export interface Meme extends MemeThumb {
   favorite_count: number
   library_count: number
   is_favorite: boolean
-  entry: EntryRef | null
+  /** The viewer's library entries of this meme, oldest first */
+  entries: EntryRef[]
   created_at: string
   analyzed_at: string | null
 }

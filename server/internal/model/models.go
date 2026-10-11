@@ -132,7 +132,7 @@ type Meme struct {
 	FavoriteCount int        `json:"favorite_count"`
 	LibraryCount  int        `json:"library_count"`
 	IsFavorite    bool       `json:"is_favorite"`
-	Entry         *EntryRef  `json:"entry"` // The viewer's oldest library entry of this meme
+	Entries       []EntryRef `json:"entries"` // The viewer's library entries of this meme, oldest first
 	CreatedAt     time.Time  `json:"created_at"`
 	AnalyzedAt    *time.Time `json:"analyzed_at"`
 }
@@ -147,6 +147,12 @@ type MemeTag struct {
 type EntryRef struct {
 	ID       string  `json:"id"`
 	FolderID *string `json:"folder_id"`
+}
+
+type FolderRef struct {
+	ID       string  `json:"id" db:"id"`
+	ParentID *string `json:"parent_id" db:"parent_id"`
+	Name     string  `json:"name" db:"name"`
 }
 
 type MemeThumb struct {

@@ -19,6 +19,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
       ['GET', '/memes', 'public', '热门表情包，可按 tag 筛选'],
       ['GET', '/memes/{id}', 'public', '表情包详情与识别状态'],
       ['GET', '/memes/{id}/similar', 'public', '相似表情包'],
+      ['GET', '/memes/{id}/folders', 'public', '收录该表情包的文件夹：自己的与公开合集'],
       ['GET', '/tags/hot', 'public', '热门标签'],
       ['GET', '/folders', 'public', '公开合集'],
       ['GET', '/folders/{id}', 'public', '合集中的子文件夹与条目'],
@@ -31,6 +32,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
     title: '我的库',
     endpoints: [
       ['GET', '/library', 'read', '库根目录，或以 folder_id 指定的文件夹'],
+      ['GET', '/library/folders', 'read', '库中全部文件夹（id、parent_id、name），用于选择位置'],
       ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id'],
       ['POST', '/library/entries', 'write', '把已有表情包加入库：{ meme_id, parent_id }'],
       ['POST', '/library/folders', 'write', '新建文件夹：{ name, parent_id }'],

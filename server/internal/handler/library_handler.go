@@ -44,6 +44,14 @@ func (h *LibraryHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, view)
 }
 
+func (h *LibraryHandler) FolderTree(c echo.Context) error {
+	folders, err := h.libraryService.FolderTree(c.Request().Context(), rbac.GetIdentity(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, folders)
+}
+
 type CreateFolderRequest struct {
 	ParentID string `json:"parent_id" validate:"omitempty,uuid"`
 	Name     string `json:"name"`
@@ -204,6 +212,24 @@ func (h *LibraryHandler) PublicFolders(c echo.Context) error {
 	}
 
 	folders, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), limitOr(req.Limit, 40))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, folders)
+}
+
+type MemeFoldersRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+func (h *LibraryHandler) MemeFolders(c echo.Context) error {
+	var req MemeFoldersRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	folders, err := h.libraryService.MemeFolders(c.Request().Context(), rbac.GetIdentity(c), req.ID, limitOr(req.Limit, 20))
 	if err != nil {
 		return err
 	}

@@ -279,7 +279,7 @@ func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id strin
 	if err != nil {
 		return err
 	}
-	if meme.Entry == nil && !viewer.IsAdmin() {
+	if len(meme.Entries) == 0 && !viewer.IsAdmin() {
 		return apperror.Forbidden("只能重试自己库中的表情包")
 	}
 	_, err = s.reanalyze(ctx, []string{id}, model.ProcessingStatusFailed)

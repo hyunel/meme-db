@@ -4,13 +4,13 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, ChevronRight, Download, FolderOpen, Library, Loader2, Plus, RotateCw, Share2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Library, Loader2, Plus, RotateCw, Share2, UserRound, X, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MemeMedia } from './meme-media'
 import { MemeGrid } from './meme-card'
-import { AddToLibraryButton, FavoriteButton } from './meme-actions'
+import { FavoriteButton, SaveToLibraryButton } from './meme-actions'
 import { DownloadDialog } from './download-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
@@ -19,36 +19,88 @@ import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { shareMeme } from '@/lib/meme-transfer'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
-import type { EntryDetail, Meme, MemeTag } from '@/lib/types'
+import type { EntryDetail, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
-/** Where an entry the meme was opened from lives, linking back there. */
-function EntrySource({ entry, mine }: { entry: EntryDetail; mine: boolean }) {
-  const folder = entry.ancestors.at(-1)
-  const { icon: Icon, label, name, href } = folder
-    ? {
-        icon: FolderOpen,
-        label: mine ? ['我的库', ...entry.ancestors.slice(0, -1).map((a) => a.name)].join(' / ') : `@${entry.owner.username} 的合集`,
-        name: folder.name,
-        href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}`,
-      }
-    : mine
-      ? { icon: Library, label: '位于', name: '我的库', href: '/library' }
-      : { icon: UserRound, label: '来自', name: `@${entry.owner.username}`, href: `/u/${entry.owner.username}` }
+type Place = { key: string; href: string; name: string; meta: string; icon: LucideIcon; cover?: MemeThumb; current?: boolean }
+
+const PLACES_SHOWN = 3
+const LIBRARY_ROOT: Place = { key: 'library', href: '/library', name: '我的库', meta: '根目录', icon: Library }
+
+/** Where the meme lives: the place it was opened from, then the viewer's folders and the public collections holding it. */
+function MemePlaces({ meme, entry, mine }: { meme: Meme; entry?: EntryDetail; mine: boolean }) {
+  const { user } = useSession()
+  const { data: folders = [] } = useSWR<Folder[]>(`/memes/${meme.id}/folders`)
+  const [expanded, setExpanded] = useState(false)
+
+  const folderPlace = (f: Folder): Place => {
+    const own = f.owner.id === user?.id
+    return {
+      key: f.id,
+      href: own ? `/library?folder=${f.id}` : `/f/${f.id}`,
+      name: f.name,
+      meta: `${own ? `我的库 · ${f.visibility === 'private' ? '私有' : '公开'}` : `@${f.owner.username}`} · ${f.item_count} 项`,
+      icon: FolderOpen,
+      cover: f.previews[0],
+    }
+  }
+
+  // The folder the entry sits in; without one the viewer may see, the library root or the owner's page.
+  const folder = entry?.ancestors.at(-1)
+  const openedPlace = ({ owner }: EntryDetail): Place => {
+    const found = folder && folders.find((f) => f.id === folder.id)
+    if (found) return folderPlace(found)
+    if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}`, name: folder.name, meta: mine ? '我的库' : `@${owner.username}`, icon: FolderOpen }
+    return mine ? LIBRARY_ROOT : { key: 'owner', href: `/u/${owner.username}`, name: `@${owner.username}`, meta: '公开的表情包', icon: UserRound }
+  }
+
+  // The first of each place is kept, so the one opened from stays marked.
+  const places = [
+    ...(entry ? [{ ...openedPlace(entry), current: true }] : []),
+    ...(meme.entries.some((e) => !e.folder_id) ? [LIBRARY_ROOT] : []),
+    ...folders.map(folderPlace),
+  ].filter((p, i, all) => all.findIndex((q) => q.key === p.key) === i)
+  if (!places.length) return null
+  const shown = expanded ? places : places.slice(0, PLACES_SHOWN)
 
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-xl border bg-card p-3 transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-    >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/40" aria-hidden>
-        <Icon className="size-5" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-xs text-muted-foreground">{label}</span>
-        <span className="truncate font-medium">{name}</span>
-      </span>
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
-    </Link>
+    <section className="flex flex-col gap-2" aria-labelledby="places-heading">
+      <h2 id="places-heading" className="text-sm font-medium">
+        收录于
+      </h2>
+      <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+        {shown.map(({ key, href, name, meta, icon: Icon, cover, current }) => (
+          <li key={key}>
+            <Link
+              href={href}
+              className="group flex items-center gap-3 p-2.5 transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
+            >
+              {cover ? (
+                <span className="size-10 shrink-0 overflow-hidden rounded-lg border bg-checker p-0.5" aria-hidden>
+                  <MemeMedia meme={cover} />
+                </span>
+              ) : (
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted" aria-hidden>
+                  <Icon className="size-5 text-muted-foreground" />
+                </span>
+              )}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium">{name}</span>
+                <span className="truncate text-xs text-muted-foreground">{meta}</span>
+              </span>
+              {current && <span className="shrink-0 rounded-full bg-brand/40 px-2 py-0.5 text-xs">当前</span>}
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {places.length > PLACES_SHOWN && (
+        <Button variant="ghost" size="sm" className="-ml-2 self-start text-muted-foreground" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          <ChevronDown className={cn('transition-transform', expanded && 'rotate-180')} data-icon="inline-start" />
+          {expanded ? '收起' : `展开其余 ${places.length - PLACES_SHOWN} 个`}
+        </Button>
+      )}
+    </section>
   )
 }
 
@@ -154,7 +206,7 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
                   {meme.status === 'failed' && (
                     <>
                       <span className="text-sm break-all text-muted-foreground">{meme.fail_reason ?? '识别失败'}</span>
-                      {(meme.entry || user?.role === 'admin') && (
+                      {(meme.entries.length > 0 || user?.role === 'admin') && (
                         <Button size="sm" variant="outline" onClick={retry}>
                           <RotateCw data-icon="inline-start" />
                           重试
@@ -166,20 +218,20 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
               )}
             </div>
 
-            {entry && <EntrySource entry={entry} mine={mine} />}
-
-            <div className="grid grid-cols-2 gap-2">
-              <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />
-              <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
-                <Download data-icon="inline-start" />
-                下载
-              </Button>
-              <Button variant="outline" className="col-span-2 h-11 md:h-9" onClick={() => shareMeme(meme)}>
-                <Share2 data-icon="inline-start" />
-                分享
-              </Button>
+            <div className="flex flex-col gap-2">
+              <SaveToLibraryButton meme={meme} className="h-11 md:h-9" />
+              <div className="grid grid-cols-3 gap-2">
+                <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />
+                <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
+                  <Download data-icon="inline-start" />
+                  下载
+                </Button>
+                <Button variant="outline" className="h-11 md:h-9" onClick={() => shareMeme(meme)}>
+                  <Share2 data-icon="inline-start" />
+                  分享
+                </Button>
+              </div>
             </div>
-            <AddToLibraryButton meme={entry && mine ? { ...meme, entry: { id: entry.id, folder_id: entry.parent_id } } : meme} className="[&>button]:h-11 [&>button]:flex-1 md:[&>button]:h-9" />
 
             <section className="flex flex-col gap-2" aria-labelledby="tags-heading">
               <h2 id="tags-heading" className="text-sm font-medium">
@@ -215,6 +267,8 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
                 </form>
               )}
             </section>
+
+            <MemePlaces meme={meme} entry={entry} mine={mine} />
 
             {meme.ocr_text && (
               <section className="flex flex-col gap-2" aria-labelledby="ocr-heading">

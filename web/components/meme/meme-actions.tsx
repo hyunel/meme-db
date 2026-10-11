@@ -1,17 +1,16 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Check, Download, FolderInput, FolderPlus, Heart, Loader2, MoreHorizontal, Share2 } from 'lucide-react'
+import { Check, Download, FolderPlus, Heart, MoreHorizontal, Share2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
-import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
 import { DownloadDialog } from './download-dialog'
+import { SaveToLibraryDialog } from './save-to-library-dialog'
 import { api, refresh } from '@/lib/api'
 import { shareMeme } from '@/lib/meme-transfer'
-import type { Entry, EntryRef, Meme } from '@/lib/types'
+import type { Meme } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type BtnSize = 'default' | 'sm' | 'icon' | 'icon-sm' | 'lg'
@@ -80,58 +79,20 @@ export function FavoriteButton({
   )
 }
 
-function useAddToLibrary(meme: Meme) {
-  const router = useRouter()
+/** Opens the dialog choosing where the meme goes in the viewer's library, once they are signed in. */
+function useSaveToLibrary(meme: Meme) {
   const requireLogin = useRequireLogin()
-  const [pending, setPending] = useState(false)
-  const [pickerOpen, setPickerOpen] = useState(false)
-  // The entry just created or moved here, until the meme is refetched.
-  const [local, setLocal] = useState<EntryRef | null>(null)
-  const entry = local ?? meme.entry
-
-  const add = async () => {
-    if (!requireLogin('登录后即可把表情包加入你的私人库。')) return
-    if (pending) return
-    setPending(true)
-    try {
-      const added = await api<Entry>('/library/entries', { method: 'POST', json: { meme_id: meme.id } })
-      setLocal({ id: added.id, folder_id: added.parent_id })
-      void refresh()
-      toast.success('已加入我的库', {
-        action: { label: '移动到文件夹', onClick: () => setPickerOpen(true) },
-      })
-    } catch (err) {
-      toast.error('加入失败，请重试', { description: (err as Error).message })
-    } finally {
-      setPending(false)
-    }
+  const [open, setOpen] = useState(false)
+  return {
+    count: meme.entries.length,
+    open: () => requireLogin('登录后即可把表情包加入你的私人库。') && setOpen(true),
+    dialog: open && <SaveToLibraryDialog meme={meme} onOpenChange={setOpen} />,
   }
-
-  const dialog = pickerOpen && entry && (
-    <FolderPickerDialog
-      open
-      onOpenChange={setPickerOpen}
-      mode="move"
-      count={1}
-      initialFolder={null}
-      sourceFolder={entry.folder_id}
-      onConfirm={async (target) => {
-        await api('/library/nodes/move', { method: 'POST', json: { ids: [entry.id], target_id: target } })
-        setLocal({ id: entry.id, folder_id: target })
-        void refresh()
-        toast.success('已移动', {
-          action: { label: '前往', onClick: () => router.push(target ? `/library?folder=${target}` : '/library') },
-        })
-      }}
-    />
-  )
-
-  return { add, pending, dialog, inLibrary: Boolean(entry), openPicker: () => setPickerOpen(true) }
 }
 
 export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme; className?: string; allowAdd?: boolean }) {
   const [downloadOpen, setDownloadOpen] = useState(false)
-  const lib = useAddToLibrary(meme)
+  const lib = useSaveToLibrary(meme)
   return (
     <>
       <DropdownMenu>
@@ -163,9 +124,9 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
           {allowAdd && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={lib.inLibrary || lib.pending} onClick={lib.add}>
-                {lib.inLibrary ? <Check /> : <FolderPlus />}
-                {lib.inLibrary ? '已在我的库' : '加入我的库'}
+              <DropdownMenuItem onClick={lib.open}>
+                {lib.count ? <Check /> : <FolderPlus />}
+                {lib.count ? '已在我的库…' : '加入我的库…'}
               </DropdownMenuItem>
             </>
           )}
@@ -177,22 +138,15 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
   )
 }
 
-export function AddToLibraryButton({ meme, className }: { meme: Meme; className?: string }) {
-  const lib = useAddToLibrary(meme)
-
+export function SaveToLibraryButton({ meme, className }: { meme: Meme; className?: string }) {
+  const lib = useSaveToLibrary(meme)
   return (
-    <div className={cn('flex flex-wrap gap-2', className)}>
-      <Button type="button" onClick={lib.add} disabled={lib.inLibrary || lib.pending}>
-        {lib.pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : lib.inLibrary ? <Check data-icon="inline-start" /> : <FolderPlus data-icon="inline-start" />}
-        {lib.inLibrary ? '已在我的库' : '加入我的库'}
+    <>
+      <Button type="button" variant={lib.count ? 'secondary' : 'default'} onClick={lib.open} className={className}>
+        {lib.count ? <Check data-icon="inline-start" /> : <FolderPlus data-icon="inline-start" />}
+        {lib.count ? (lib.count > 1 ? `已在我的库 · ${lib.count} 处` : '已在我的库') : '加入我的库'}
       </Button>
-      {lib.inLibrary && (
-        <Button type="button" variant="outline" onClick={lib.openPicker}>
-          <FolderInput data-icon="inline-start" />
-          移动到文件夹
-        </Button>
-      )}
       {lib.dialog}
-    </div>
+    </>
   )
 }

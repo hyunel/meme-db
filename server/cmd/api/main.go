@@ -202,6 +202,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/memes", h.meme.List)
 	api.GET("/memes/:id", h.meme.Get)
 	api.GET("/memes/:id/similar", h.meme.Similar)
+	api.GET("/memes/:id/folders", h.library.MemeFolders)
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
@@ -231,6 +232,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 
 	lib := priv.Group("/library")
 	lib.GET("", h.library.Get)
+	lib.GET("/folders", h.library.FolderTree)
 	lib.POST("/folders", h.library.CreateFolder)
 	lib.POST("/upload", h.library.Upload)
 	lib.POST("/entries", h.library.AddEntry)

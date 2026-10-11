@@ -73,6 +73,11 @@ func (r *NodeRepository) Ancestors(ctx context.Context, path string) ([]*model.N
 	return collectAll[model.Node](r.db.Query(ctx, query, path))
 }
 
+func (r *NodeRepository) FolderTree(ctx context.Context, ownerID string) ([]*model.FolderRef, error) {
+	query := `SELECT id, parent_id, name FROM library.nodes WHERE owner_id = $1::uuid AND type = 'FOLDER' ORDER BY name`
+	return collectAll[model.FolderRef](r.db.Query(ctx, query, ownerID))
+}
+
 func (r *NodeRepository) Rename(ctx context.Context, id, name string) error {
 	_, err := r.db.Exec(ctx, `UPDATE library.nodes SET name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1::uuid`, id, name)
 	return err
@@ -170,6 +175,22 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 		}
 	}
 	return folders, nil
+}
+
+// MemeFolders lists the folders directly holding the asset that the viewer may open:
+// their own, then public ones of active users by favorites.
+func (r *NodeRepository) MemeFolders(ctx context.Context, viewerID, assetID string, limit int) ([]string, error) {
+	query := `
+		SELECT f.id::text FROM library.nodes f
+		JOIN iam.users u ON u.id = f.owner_id
+		WHERE f.id IN (SELECT parent_id FROM library.nodes WHERE asset_id = $1::uuid AND type = 'FILE')
+		  AND (f.owner_id = $2::uuid OR (u.status = 'active'
+		    AND EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> f.path)))
+		ORDER BY (f.owner_id = $2::uuid) IS TRUE DESC,
+			(SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) DESC, f.created_at DESC
+		LIMIT $3
+	`
+	return collectScalars[string](r.db.Query(ctx, query, assetID, nullable(viewerID), limit))
 }
 
 func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, limit int) ([]string, error) {

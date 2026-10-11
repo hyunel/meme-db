@@ -91,7 +91,7 @@ type memeRow struct {
 	FavoriteCount int             `db:"favorite_count"`
 	LibraryCount  int             `db:"library_count"`
 	IsFavorite    bool            `db:"is_favorite"`
-	Entry         *model.EntryRef `db:"entry"`
+	Entries       []model.EntryRef `db:"entries"`
 	Tags          []model.MemeTag `db:"tags"`
 }
 
@@ -112,7 +112,7 @@ func (row *memeRow) toModel() *model.Meme {
 		FavoriteCount: row.FavoriteCount,
 		LibraryCount:  row.LibraryCount,
 		IsFavorite:    row.IsFavorite,
-		Entry:         row.Entry,
+		Entries:       row.Entries,
 		CreatedAt:     row.CreatedAt,
 		AnalyzedAt:    row.AnalyzedAt,
 	}
@@ -132,8 +132,8 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			(SELECT count(*) FROM library.favorites f WHERE f.asset_id = a.id) AS favorite_count,
 			(SELECT count(*) FROM library.nodes n WHERE n.asset_id = a.id) AS library_count,
 			EXISTS (SELECT 1 FROM library.favorites f WHERE f.asset_id = a.id AND f.user_id = $2::uuid) AS is_favorite,
-			(SELECT jsonb_build_object('id', n.id, 'folder_id', n.parent_id) FROM library.nodes n
-			 WHERE n.asset_id = a.id AND n.owner_id = $2::uuid ORDER BY n.created_at LIMIT 1) AS entry,
+			COALESCE((SELECT jsonb_agg(jsonb_build_object('id', n.id, 'folder_id', n.parent_id) ORDER BY n.created_at)
+			 FROM library.nodes n WHERE n.asset_id = a.id AND n.owner_id = $2::uuid), '[]') AS entries,
 			COALESCE((
 				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', x.usage < $4)
 					ORDER BY x.mine, x.usage DESC, t.name)

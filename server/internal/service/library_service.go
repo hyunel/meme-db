@@ -33,6 +33,11 @@ func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids
 	return orderByID(folders, ids, func(f *model.Folder) string { return f.ID }), nil
 }
 
+// FolderTree lists every folder of the viewer's library, for choosing where to put something.
+func (s *LibraryService) FolderTree(ctx context.Context, viewer *rbac.Identity) ([]*model.FolderRef, error) {
+	return s.repo.Node.FolderTree(ctx, viewer.UserID)
+}
+
 type LibraryView struct {
 	Folder    *model.Folder   `json:"folder"`    // Nil at the root of the viewer's library
 	Ancestors []model.Crumb   `json:"ancestors"` // The viewer-visible folders above Folder, root first
@@ -447,6 +452,14 @@ func visibility(isPublic, parentPublic bool) string {
 
 func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, limit int) ([]*model.Folder, error) {
 	ids, err := s.repo.Node.PublicRootFolders(ctx, "", limit)
+	if err != nil {
+		return nil, err
+	}
+	return s.Folders(ctx, viewer, ids)
+}
+
+func (s *LibraryService) MemeFolders(ctx context.Context, viewer *rbac.Identity, memeID string, limit int) ([]*model.Folder, error) {
+	ids, err := s.repo.Node.MemeFolders(ctx, viewer.UserID, memeID, limit)
 	if err != nil {
 		return nil, err
 	}
