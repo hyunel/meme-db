@@ -241,6 +241,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	admin.GET("/memes", h.admin.ListMemes)
 	admin.POST("/memes/reprocess", h.admin.ReprocessMemes)
 	admin.DELETE("/memes", h.admin.DeleteMemes)
+	admin.POST("/search/debug", h.admin.SearchDebug)
 
 	admin.GET("/tags", h.admin.ListTags)
 	admin.POST("/tags/merge", h.admin.MergeTags)

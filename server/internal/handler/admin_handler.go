@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -230,6 +231,51 @@ func (h *AdminHandler) DeleteMemes(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, CountResponse{Count: n})
+}
+
+type SearchDebugRequest struct {
+	Query string                `form:"q" validate:"max=200"`
+	Image *multipart.FileHeader `form:"image"`
+	Scope string                `form:"scope" validate:"omitempty,oneof=all public"`
+	Track string                `form:"track" validate:"omitempty,uuid"`
+	// Recall limits overriding the defaults
+	Metaphor  int `form:"metaphor" validate:"omitempty,min=1,max=200"`
+	Semantic  int `form:"semantic" validate:"omitempty,min=1,max=200"`
+	ClipText  int `form:"clip_text" validate:"omitempty,min=1,max=200"`
+	OCR       int `form:"ocr" validate:"omitempty,min=1,max=200"`
+	ClipImage int `form:"clip_image" validate:"omitempty,min=1,max=200"`
+}
+
+func (h *AdminHandler) SearchDebug(c echo.Context) error {
+	var req SearchDebugRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	req.Query = strings.TrimSpace(req.Query)
+	if req.Query == "" && req.Image == nil {
+		return apperror.BadRequest("请输入关键词或添加图片")
+	}
+
+	params := service.SearchDebugParams{Viewer: rbac.GetIdentity(c), Query: req.Query, Public: req.Scope == "public", Track: req.Track, Limits: map[string]int{}}
+	for channel, limit := range map[string]int{"metaphor": req.Metaphor, "semantic": req.Semantic, "clip_text": req.ClipText, "ocr": req.OCR, "clip_image": req.ClipImage} {
+		if limit > 0 {
+			params.Limits[channel] = limit
+		}
+	}
+	if req.Image != nil {
+		image, err := readSearchImage(req.Image)
+		if err != nil {
+			return err
+		}
+		params.Image = image
+	}
+
+	debug, err := h.memeService.Debug(c.Request().Context(), params)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, debug)
 }
 
 type ListTagsRequest struct {

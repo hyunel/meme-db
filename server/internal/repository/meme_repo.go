@@ -241,40 +241,80 @@ type RecallScope struct {
 	Exclude    string  // An asset to leave out
 }
 
+// cond filters core.meme_info aliased m down to the scope.
+func (s RecallScope) cond(w *filter) string {
+	var cond string
+	if s.Mine {
+		owned := "n.owner_id = " + w.arg(s.ViewerID) + "::uuid"
+		if s.FolderPath != nil {
+			owned += " AND n.path <@ " + w.arg(*s.FolderPath) + "::ltree"
+		}
+		cond = "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND " + owned + ")"
+	} else {
+		cond = memeListed(w, s.ViewerID, s.Admin)
+	}
+	if s.Exclude != "" {
+		cond += " AND m.asset_id <> " + w.arg(s.Exclude) + "::uuid"
+	}
+	return cond
+}
+
+// expr returns the similarity to the query value bound to v, the filter matches pass, and the
+// order that lets the HNSW / trigram indexes serve a LIMIT.
+func (rc Recall) expr(v string) (similarity, cond, order string) {
+	if rc.Column == "ocr_text" {
+		return "word_similarity(" + v + ", m.ocr_text)", v + " <% m.ocr_text", "similarity DESC"
+	}
+	return "1 - (m." + rc.Column + " <=> " + v + ")", "m." + rc.Column + " IS NOT NULL", "m." + rc.Column + " <=> " + v
+}
+
+// Recall returns the hits of every channel; a meme found by several channels is listed once per channel.
 func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope) ([]*model.SearchCandidate, error) {
 	if len(recalls) == 0 {
 		return nil, nil
 	}
-	var w filter
-	var scopeCond string
-	if scope.Mine {
-		cond := "n.owner_id = " + w.arg(scope.ViewerID) + "::uuid"
-		if scope.FolderPath != nil {
-			cond += " AND n.path <@ " + w.arg(*scope.FolderPath) + "::ltree"
-		}
-		scopeCond = "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND " + cond + ")"
-	} else {
-		scopeCond = memeListed(&w, scope.ViewerID, scope.Admin)
-	}
-	if scope.Exclude != "" {
-		scopeCond += " AND m.asset_id <> " + w.arg(scope.Exclude) + "::uuid"
-	}
 
+	var w filter
+	scopeCond := scope.cond(&w)
 	subqueries := make([]string, len(recalls))
 	for i, rc := range recalls {
-		v := w.arg(rc.Value)
-		// Ordering by the distance operator itself lets the HNSW / trigram indexes serve the LIMIT.
-		similarity, cond, order := "1 - (m."+rc.Column+" <=> "+v+")", "m."+rc.Column+" IS NOT NULL", "m."+rc.Column+" <=> "+v
-		if rc.Column == "ocr_text" {
-			similarity, cond, order = "word_similarity("+v+", m.ocr_text)", v+" <% m.ocr_text", "similarity DESC"
-		}
+		similarity, cond, order := rc.expr(w.arg(rc.Value))
 		subqueries[i] = fmt.Sprintf(`(SELECT m.asset_id, m.vlm_json, %s AS similarity, '%s' AS recall_type
 			FROM core.meme_info m WHERE %s AND %s ORDER BY %s LIMIT %d)`,
 			similarity, rc.Type, cond, scopeCond, order, rc.Limit)
 	}
-	query := `SELECT DISTINCT ON (asset_id) asset_id, vlm_json, similarity, recall_type FROM (` +
-		strings.Join(subqueries, " UNION ALL ") + `) c ORDER BY asset_id, similarity DESC`
-	return collectAll[model.SearchCandidate](r.db.Query(ctx, query, w.args...))
+
+	return collectAll[model.SearchCandidate](r.db.Query(ctx, strings.Join(subqueries, " UNION ALL "), w.args...))
+}
+
+// RecallRank returns a meme's similarity in a channel and its rank among the memes in scope the channel
+// matches; the rank is nil if the channel does not match the meme at all (below the OCR threshold).
+func (r *MemeRepository) RecallRank(ctx context.Context, rc Recall, scope RecallScope, assetID string) (similarity float32, rank *int, err error) {
+	var w filter
+	scopeCond := scope.cond(&w)
+	sim, cond, _ := rc.expr(w.arg(rc.Value))
+
+	query := fmt.Sprintf(`
+		WITH t AS (SELECT COALESCE(%[1]s, 0) AS similarity, COALESCE(%[2]s, false) AS matched FROM core.meme_info m WHERE m.asset_id = %[4]s::uuid)
+		SELECT t.similarity, CASE WHEN t.matched THEN 1 + (SELECT count(*) FROM core.meme_info m WHERE %[2]s AND %[3]s AND %[1]s > t.similarity) END FROM t
+	`, sim, cond, scopeCond, w.arg(assetID))
+	err = r.db.QueryRow(ctx, query, w.args...).Scan(&similarity, &rank)
+	return
+}
+
+func (r *MemeRepository) Captions(ctx context.Context, ids []string) (map[string]json.RawMessage, error) {
+	type row struct {
+		AssetID string          `db:"asset_id"`
+		VLMJSON json.RawMessage `db:"vlm_json"`
+	}
+	query := `SELECT asset_id::text, vlm_json FROM core.meme_info WHERE asset_id = ANY($1::uuid[]) AND vlm_json IS NOT NULL`
+	rows, err := collectAll[row](r.db.Query(ctx, query, ids))
+
+	captions := make(map[string]json.RawMessage, len(rows))
+	for _, r := range rows {
+		captions[r.AssetID] = r.VLMJSON
+	}
+	return captions, err
 }
 
 func (r *MemeRepository) Vectors(ctx context.Context, assetID string) (metaphor, semantic, clip *pgvector.Vector, err error) {

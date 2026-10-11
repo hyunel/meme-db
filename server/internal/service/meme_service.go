@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
@@ -93,11 +94,12 @@ func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id str
 			recalls = append(recalls, repository.Recall{Type: v.name, Column: v.name, Value: *v.vec, Limit: limit})
 		}
 	}
-	candidates, err := s.repo.Meme.Recall(ctx, recalls, repository.RecallScope{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), Exclude: id})
+	hits, err := s.repo.Meme.Recall(ctx, recalls, repository.RecallScope{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), Exclude: id})
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform similarity search: %w", err)
 	}
 
+	candidates := bestPerMeme(hits)
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Similarity > candidates[j].Similarity })
 	ids := make([]string, 0, min(limit, len(candidates)))
 	for _, c := range candidates[:min(limit, len(candidates))] {
@@ -105,6 +107,9 @@ func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id str
 	}
 	return s.Memes(ctx, viewer, ids)
 }
+
+// Recall limits of the search channels; a debug search may override them.
+var recallLimits = map[string]int{"metaphor": 15, "semantic": 10, "clip_text": 15, "ocr": 10, "clip_image": 50}
 
 type SearchParams struct {
 	Viewer   *rbac.Identity
@@ -131,50 +136,12 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		scope.FolderPath = &folder.Path
 	}
 
-	var textVec, clipTextVec, clipImageVec []float32
-	g, gCtx := errgroup.WithContext(ctx)
-	if params.Image != nil {
-		g.Go(func() (err error) {
-			clipImageVec, err = s.inferClient.ClipImageEmbedding(gCtx, *params.Image)
-			return err
-		})
-	} else if params.Query != "" {
-		g.Go(func() (err error) {
-			textVec, err = s.inferClient.TextEmbedding(gCtx, params.Query, s.cfg.RetrievalPrompt)
-			return err
-		})
-		g.Go(func() (err error) {
-			clipTextVec, err = s.inferClient.ClipTextEmbedding(gCtx, params.Query)
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to get embeddings: %w", err)
-	}
-
-	var recalls []repository.Recall
-	if params.Image != nil {
-		recalls = []repository.Recall{{Type: "clip_image", Column: "clip_vector", Value: pgvector.NewVector(clipImageVec), Limit: 50}}
-	} else if params.Query != "" {
-		recalls = []repository.Recall{
-			{Type: "metaphor", Column: "metaphor_vector", Value: pgvector.NewVector(textVec), Limit: 15},
-			{Type: "semantic", Column: "semantic_vector", Value: pgvector.NewVector(textVec), Limit: 10},
-			{Type: "clip_text", Column: "clip_vector", Value: pgvector.NewVector(clipTextVec), Limit: 15},
-			{Type: "ocr", Column: "ocr_text", Value: params.Query, Limit: 10},
-		}
-	}
-	candidates, err := s.repo.Meme.Recall(ctx, recalls, scope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to perform database search: %w", err)
-	}
-
-	scores, err := s.rerank(ctx, params.Query, candidates)
+	run, err := s.search(ctx, params.Query, params.Image, scope, recallLimits)
 	if err != nil {
 		return nil, err
 	}
-
-	ids := make([]string, len(candidates))
-	for i, c := range candidates {
+	ids := make([]string, len(run.candidates))
+	for i, c := range run.candidates {
 		ids[i] = c.AssetID
 	}
 	memes, err := s.Memes(ctx, params.Viewer, ids)
@@ -186,10 +153,10 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		memeByID[m.ID] = m
 	}
 
-	results := make([]model.SearchResult, 0, len(candidates))
-	for i, c := range candidates {
+	results := make([]model.SearchResult, 0, len(run.candidates))
+	for i, c := range run.candidates {
 		if meme, ok := memeByID[c.AssetID]; ok {
-			results = append(results, model.SearchResult{Meme: meme, RecallType: c.RecallType, Score: scores[i], Similarity: c.Similarity})
+			results = append(results, model.SearchResult{Meme: meme, RecallType: c.RecallType, Score: run.scores[i], Similarity: c.Similarity})
 		}
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
@@ -197,6 +164,85 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 		results = results[:params.Limit]
 	}
 	return results, nil
+}
+
+type searchRun struct {
+	recalls    []repository.Recall
+	hits       []*model.SearchCandidate // Of every channel
+	candidates []*model.SearchCandidate // Each meme once, with its most similar hit
+	scores     []float32                // Of the candidates: rerank scores, or the similarity without a text query
+	timings    SearchTimings
+}
+
+// search recalls by text (metaphor, semantic, CLIP and OCR) or by image (CLIP), then reranks against the text.
+func (s *MemeService) search(ctx context.Context, query string, image *inference.ImageInput, scope repository.RecallScope, limits map[string]int) (*searchRun, error) {
+	start := time.Now()
+	var textVec, clipTextVec, clipImageVec []float32
+	g, gCtx := errgroup.WithContext(ctx)
+	if image != nil {
+		g.Go(func() (err error) {
+			clipImageVec, err = s.inferClient.ClipImageEmbedding(gCtx, *image)
+			return err
+		})
+	} else if query != "" {
+		g.Go(func() (err error) {
+			textVec, err = s.inferClient.TextEmbedding(gCtx, query, s.cfg.RetrievalPrompt)
+			return err
+		})
+		g.Go(func() (err error) {
+			clipTextVec, err = s.inferClient.ClipTextEmbedding(gCtx, query)
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to get embeddings: %w", err)
+	}
+
+	run := &searchRun{}
+	run.timings.Embed = time.Since(start).Milliseconds()
+
+	if image != nil {
+		run.recalls = []repository.Recall{{Type: "clip_image", Column: "clip_vector", Value: pgvector.NewVector(clipImageVec), Limit: limits["clip_image"]}}
+	} else if query != "" {
+		run.recalls = []repository.Recall{
+			{Type: "metaphor", Column: "metaphor_vector", Value: pgvector.NewVector(textVec), Limit: limits["metaphor"]},
+			{Type: "semantic", Column: "semantic_vector", Value: pgvector.NewVector(textVec), Limit: limits["semantic"]},
+			{Type: "clip_text", Column: "clip_vector", Value: pgvector.NewVector(clipTextVec), Limit: limits["clip_text"]},
+			{Type: "ocr", Column: "ocr_text", Value: query, Limit: limits["ocr"]},
+		}
+	}
+
+	step := time.Now()
+	hits, err := s.repo.Meme.Recall(ctx, run.recalls, scope)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform database search: %w", err)
+	}
+	run.hits, run.candidates = hits, bestPerMeme(hits)
+	run.timings.Recall = time.Since(step).Milliseconds()
+
+	step = time.Now()
+	if run.scores, err = s.rerank(ctx, query, run.candidates); err != nil {
+		return nil, err
+	}
+	run.timings.Rerank = time.Since(step).Milliseconds()
+	run.timings.Total = time.Since(start).Milliseconds()
+
+	return run, nil
+}
+
+// bestPerMeme keeps each meme's most similar hit, in the order the memes first appear.
+func bestPerMeme(hits []*model.SearchCandidate) []*model.SearchCandidate {
+	at := make(map[string]int, len(hits))
+	var best []*model.SearchCandidate
+	for _, h := range hits {
+		if i, ok := at[h.AssetID]; !ok {
+			at[h.AssetID] = len(best)
+			best = append(best, h)
+		} else if h.Similarity > best[i].Similarity {
+			best[i] = h
+		}
+	}
+	return best
 }
 
 func (s *MemeService) rerank(ctx context.Context, query string, candidates []*model.SearchCandidate) ([]float32, error) {
