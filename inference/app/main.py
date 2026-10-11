@@ -8,7 +8,6 @@ from .manager import ModelManager
 from .service import InferenceService
 from .pb import inference_pb2_grpc
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,7 +19,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MemeDB Inference Service")
     parser.add_argument('--host', type=str, default='[::]', help='Host to bind to')
     parser.add_argument('--port', type=int, default=50051, help='Port to bind to')
-    parser.add_argument('--workers', type=int, default=8, help='Number of worker threads (unused for async server)')
     parser.add_argument('-c', '--model-config', type=str, default='models.yaml', help='Path to model config file')
     return parser.parse_args()
 

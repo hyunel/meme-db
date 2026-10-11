@@ -17,16 +17,9 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         self.config = config
         self.schedulers = {}
 
-        # Dual resource managers
-        self.gpu_res = ResourceManager(concurrency=1, post_execution_callback=self._clear_cuda_cache)
+        self.gpu_res = ResourceManager(concurrency=1, post_execution_callback=torch.cuda.empty_cache if torch.cuda.is_available() else None)
         self.cpu_res = ResourceManager(concurrency=self.config.concurrency)
-        self._init_schedulers()
 
-    def _clear_cuda_cache(self):
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-    def _init_schedulers(self):
         configs = self.config.get_model_configs()
         for model_type, model in self.model_manager:
             config = configs[model_type]
@@ -58,7 +51,6 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         await self.cpu_res.stop()
 
     async def _load_frames(self, image: inference_pb2.Image, context: grpc.aio.ServicerContext):
-        """Decodes the request image, aborting the call with INVALID_ARGUMENT if it cannot be read."""
         loop = asyncio.get_running_loop()
         try:
             frames = await loop.run_in_executor(None, load_image_from_bytes, image.data, image.file_format)
@@ -68,8 +60,6 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         if not frames:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Unreadable image")
         return frames
-
-    # --- RPC Methods ---
 
     async def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
         priority = request.options.priority
@@ -122,14 +112,12 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
         frames = await self._load_frames(request.image, context)
 
-        # Prepare inputs
         clip_image = frames[len(frames) // 2]
         vlm_image = draw_stitch(frames)
         width, height = frames[0].width, frames[0].height
 
         priority = request.options.priority
 
-        # Submit to both schedulers
         clip_future = self.schedulers[ModelType.CLIP_IMAGE].submit(
             clip_image,
             priority=priority,
@@ -141,7 +129,6 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
             context=context
         )
 
-        # Wait for results
         clip_embedding, caption = await asyncio.gather(clip_future, vlm_future)
 
         return inference_pb2.ImageCaptionResponse(

@@ -26,9 +26,6 @@ class BatchRequest:
     future: Future = field(compare=False, default_factory=Future)
 
 class ResourceManager:
-    """
-    Global resource manager that executes batches based on priority.
-    """
     def __init__(self, concurrency: int = 1, post_execution_callback: Optional[Callable[[], None]] = None):
         self.queue: PriorityQueue[BatchRequest] = PriorityQueue()
         self.worker_task: Optional[asyncio.Task] = None
@@ -47,13 +44,10 @@ class ResourceManager:
             except asyncio.CancelledError:
                 pass
 
-        # Wait for all running tasks to complete (optional, or cancel them)
-        if self.running_tasks:
-            for t in self.running_tasks:
-                t.cancel()
-            await asyncio.gather(*self.running_tasks, return_exceptions=True)
+        for t in self.running_tasks:
+            t.cancel()
+        await asyncio.gather(*self.running_tasks, return_exceptions=True)
 
-        # Cancel all pending requests in the queue
         while not self.queue.empty():
             try:
                 request = self.queue.get_nowait()
@@ -71,13 +65,8 @@ class ResourceManager:
     async def _worker_loop(self):
         while True:
             try:
-                # Wait for a slot
                 await self.semaphore.acquire()
-
-                # Get request (waits if empty)
                 request = await self.queue.get()
-
-                # Spawn execution task
                 task = asyncio.create_task(self._execute_request(request))
                 self.running_tasks.add(task)
                 task.add_done_callback(self.running_tasks.discard)
@@ -92,7 +81,6 @@ class ResourceManager:
         loop = asyncio.get_running_loop()
         try:
             try:
-                # Run synchronously in executor
                 results = await loop.run_in_executor(None, request.func, request.batch)
                 if not request.future.done():
                     request.future.set_result(results)

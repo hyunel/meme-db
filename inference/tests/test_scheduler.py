@@ -39,7 +39,6 @@ async def test_scheduler_batching():
     )
     await scheduler.start()
 
-    # Submit 3 items quickly
     t1 = scheduler.submit("item1")
     t2 = scheduler.submit("item2")
     t3 = scheduler.submit("item3")
@@ -72,10 +71,8 @@ async def test_scheduler_latency():
     )
     await scheduler.start()
 
-    # Submit 1 item
     t1 = scheduler.submit("item1")
 
-    # Wait for result
     res = await t1
     assert res == "processed_item1"
     assert len(processed_batches) == 1
@@ -100,7 +97,7 @@ async def test_scheduler_priority_local():
         processed_batches.append(items)
         return [f"processed_{i}" for i in items]
 
-    # Batch size 1 to force sequential processing by RM
+    # Batch size 1, so every item is its own batch
     scheduler = BatchScheduler(
         resource_manager=rm,
         process_func=process_func,
@@ -109,22 +106,18 @@ async def test_scheduler_priority_local():
     )
     await scheduler.start()
 
-    # 1. Submit low priority first.
     t1 = asyncio.create_task(scheduler.submit("low", priority=0))
 
-    # Wait until it starts processing
     await processing_started.wait()
 
-    # 2. Submit high and medium tasks.
     t2 = asyncio.create_task(scheduler.submit("high", priority=10))
     t3 = asyncio.create_task(scheduler.submit("medium", priority=5))
 
-    # Allow the first task to finish
     continue_event.set()
 
     await asyncio.gather(t1, t2, t3)
 
-    # Order should be low (started), then high (priority), then medium
+    # "low" was already running; the rest go by priority
     assert processed_batches[0] == ["low"]
     assert processed_batches[1] == ["high"]
     assert processed_batches[2] == ["medium"]
@@ -134,9 +127,6 @@ async def test_scheduler_priority_local():
 
 @pytest.mark.asyncio
 async def test_global_priority():
-    """
-    Test that ResourceManager respects priority across different schedulers.
-    """
     rm = ResourceManager()
     await rm.start()
 
@@ -146,9 +136,7 @@ async def test_global_priority():
     continue_event = threading.Event()
 
     def process_slow(items):
-        # Notify we started
         loop.call_soon_threadsafe(processing_started.set)
-        # Block until we allow it to continue
         continue_event.wait()
         events.append(f"processed_{items[0]}")
         return items
@@ -157,30 +145,24 @@ async def test_global_priority():
         events.append(f"processed_{items[0]}")
         return items
 
-    s1 = BatchScheduler(rm, process_slow, 1, 0.01) # Scheduler 1
-    s2 = BatchScheduler(rm, process_fast, 1, 0.01) # Scheduler 2
+    s1 = BatchScheduler(rm, process_slow, 1, 0.01)
+    s2 = BatchScheduler(rm, process_fast, 1, 0.01)
 
     await s1.start()
     await s2.start()
 
-    # 1. Start a slow task on S1 (Low Priority)
     t1 = asyncio.create_task(s1.submit("s1_low", priority=0))
 
-    # Wait for it to grab the RM worker
     await processing_started.wait()
 
-    # 2. While S1 is running, submit tasks to S1 and S2 with different priorities
-    # S2 has High Priority task
     t2 = asyncio.create_task(s2.submit("s2_high", priority=10))
-    # S1 has Medium Priority task
     t3 = asyncio.create_task(s1.submit("s1_medium", priority=5))
 
-    # Allow the first task to finish
     continue_event.set()
 
     await asyncio.gather(t1, t2, t3)
 
-    # Expected: s1_low (started first), then s2_high (highest global priority), then s1_medium
+    # "s1_low" was already running; the rest go by priority across schedulers
     assert events == ["processed_s1_low", "processed_s2_high", "processed_s1_medium"]
 
     await s1.stop()
@@ -189,9 +171,6 @@ async def test_global_priority():
 
 @pytest.mark.asyncio
 async def test_scheduler_cancellation_lazy():
-    """
-    Test that cancelled tasks are removed/ignored before batch processing.
-    """
     rm = ResourceManager()
     await rm.start()
 
@@ -211,30 +190,23 @@ async def test_scheduler_cancellation_lazy():
 
     ctx = MockContext()
 
-    # Submit 3 items, enough to fill a batch
-    # We must schedule them so they enter the queue
     t1 = asyncio.create_task(scheduler.submit("item1", context=ctx))
     t2 = asyncio.create_task(scheduler.submit("item2", context=ctx))
     t3 = asyncio.create_task(scheduler.submit("item3")) # No context, won't be cancelled
 
-    # Give them a moment to reach the queue (but not be processed yet, latency window open)
     await asyncio.sleep(0.01)
 
-    # Cancel t1 and t2 immediately
     ctx.cancel()
 
-    # Wait for t3.
-    # The scheduler should discard t1 and t2 from batch formation.
+    # Cancelled tasks are dropped when the batch forms
     res3 = await t3
     assert res3 == "item3"
 
-    # t1 and t2 should be cancelled
     with pytest.raises(asyncio.CancelledError):
         await t1
     with pytest.raises(asyncio.CancelledError):
         await t2
 
-    # The processed batch should ONLY contain item3
     assert len(processed_batches) == 1
     assert processed_batches[0] == ["item3"]
 
@@ -243,9 +215,6 @@ async def test_scheduler_cancellation_lazy():
 
 @pytest.mark.asyncio
 async def test_scheduler_error_propagation():
-    """
-    Test that exceptions in process_func are propagated to futures.
-    """
     rm = ResourceManager()
     await rm.start()
 
@@ -260,16 +229,12 @@ async def test_scheduler_error_propagation():
     )
     await scheduler.start()
 
-    # Submit a task
     t1 = asyncio.create_task(scheduler.submit("item1"))
 
-    # Verify it raises ValueError
     with pytest.raises(ValueError, match="Simulated Error"):
         await t1
 
-    # Verify scheduler is still alive by submitting another task
-    # We need a non-error func to verify, but we can't change func dynamically cleanly.
-    # Instead, we check if another task fails with same error (worker didn't crash).
+    # A second failure, rather than a hang, shows the worker survived
     t2 = asyncio.create_task(scheduler.submit("item2"))
     with pytest.raises(ValueError, match="Simulated Error"):
         await t2
@@ -279,14 +244,10 @@ async def test_scheduler_error_propagation():
 
 @pytest.mark.asyncio
 async def test_scheduler_result_mismatch():
-    """
-    Test that result count mismatch raises RuntimeError.
-    """
     rm = ResourceManager()
     await rm.start()
 
     def process_func_bad_count(items):
-        # Return fewer results than items
         return [f"processed_{i}" for i in items[:-1]]
 
     scheduler = BatchScheduler(
@@ -300,8 +261,7 @@ async def test_scheduler_result_mismatch():
     t1 = scheduler.submit("item1")
     t2 = scheduler.submit("item2")
 
-    # Both should fail with RuntimeError
-    # We must run them concurrently to form a batch
+    # Submitted together so they form one batch
     results = asyncio.gather(t1, t2, return_exceptions=True)
     res = await results
 
@@ -315,9 +275,6 @@ async def test_scheduler_result_mismatch():
 
 @pytest.mark.asyncio
 async def test_scheduler_shutdown_handling():
-    """
-    Test that shutdown cancels pending tasks.
-    """
     rm = ResourceManager()
     await rm.start()
 
@@ -328,26 +285,20 @@ async def test_scheduler_shutdown_handling():
         resource_manager=rm,
         process_func=process_func,
         batch_size=10,
-        max_latency=10.0 # Long latency, tasks will sit in queue
+        max_latency=10.0  # Tasks sit in the queue until stop
     )
     await scheduler.start()
 
-    # Submit tasks, they will wait for batch to fill or latency
     t1 = asyncio.create_task(scheduler.submit("item1"))
 
-    # Wait a bit to ensure it's in the queue (or waiting for first task loop)
     await asyncio.sleep(0.01)
 
-    # Stop scheduler
     await scheduler.stop()
 
-    # Allow loop to propagate cancellation to t1
     await asyncio.sleep(0.01)
 
-    # Check if t1 is done (it should be cancelled)
     assert t1.done()
     assert t1.cancelled()
-    # No manual cleanup needed
     await rm.stop()
 
 @pytest.mark.asyncio
@@ -384,7 +335,6 @@ async def test_simple_scheduler_concurrency():
     max_concurrent = 0
     lock = threading.Lock()
 
-    # We use a smaller concurrency for test
     CONCURRENCY_LIMIT = 2
 
     def process_func(items):
@@ -393,7 +343,6 @@ async def test_simple_scheduler_concurrency():
             processed_count += 1
             max_concurrent = max(max_concurrent, processed_count)
 
-        # Simulate work
         time.sleep(0.1)
 
         with lock:
@@ -407,12 +356,10 @@ async def test_simple_scheduler_concurrency():
     )
     await scheduler.start()
 
-    # Submit more than concurrency limit
     tasks = [asyncio.create_task(scheduler.submit(f"item{i}")) for i in range(5)]
 
     await asyncio.gather(*tasks)
 
-    # Verify that max_concurrent never exceeded CONCURRENCY_LIMIT
     assert max_concurrent == CONCURRENCY_LIMIT
 
     await scheduler.stop()
