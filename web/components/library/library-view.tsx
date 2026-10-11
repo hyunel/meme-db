@@ -145,7 +145,8 @@ function LibraryContent({ lib }: { lib: Library }) {
     selected,
     onMove: (nodeIds, target) => transfer('move', nodeIds, target || null).catch((e: Error) => toast.error(e.message)),
   })
-  const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-foreground/20'
+  // Inset, as the scrolling breadcrumb bar clips anything drawn outside a crumb.
+  const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-inset ring-foreground/20'
 
   const setPublic = (sel: Item[], isPublic: boolean) =>
     run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
