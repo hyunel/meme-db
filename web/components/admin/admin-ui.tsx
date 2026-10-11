@@ -275,6 +275,7 @@ export function DataList<T>({
   sort,
   onSortChange,
   rowClassName,
+  onRowClick,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -288,6 +289,7 @@ export function DataList<T>({
   sort?: SortState
   onSortChange?: (s: SortState) => void
   rowClassName?: (row: T) => string | undefined
+  onRowClick?: (row: T) => void
 }) {
   const selectable = Boolean(selected && onSelectedChange)
   const ids = rows.map(getId)
@@ -369,7 +371,12 @@ export function DataList<T>({
             {rows.map((r) => {
               const id = getId(r)
               return (
-                <TableRow key={id} data-state={selected?.has(id) ? 'selected' : undefined} className={rowClassName?.(r)}>
+                <TableRow
+                  key={id}
+                  data-state={selected?.has(id) ? 'selected' : undefined}
+                  className={cn(onRowClick && 'cursor-pointer', rowClassName?.(r))}
+                  onClick={onRowClick ? () => onRowClick(r) : undefined}
+                >
                   {selectable && (
                     <TableCell>
                       <Checkbox aria-label={`选择 ${rowLabel(r)}`} checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />
@@ -403,7 +410,11 @@ export function DataList<T>({
           {rows.map((r) => {
             const id = getId(r)
             return (
-              <li key={id} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', selected?.has(id) && 'border-foreground/40 bg-muted/40', rowClassName?.(r))}>
+              <li
+                key={id}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', onRowClick && 'cursor-pointer active:bg-muted/50', selected?.has(id) && 'border-foreground/40 bg-muted/40', rowClassName?.(r))}
+              >
                 <div className="flex items-start gap-3">
                   {selectable && <Checkbox aria-label={`选择 ${rowLabel(r)}`} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
                   <div className="min-w-0 flex-1">{title?.cell(r)}</div>
@@ -449,15 +460,36 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
   )
 }
 
-export function StatCard({ label, value, hint, href, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; href?: string; tone?: 'danger' | 'warn' }) {
+export const toneText = { warn: 'text-[oklch(0.5_0.13_70)]', danger: 'text-destructive' } as const
+export const toneLabel = { warn: '预警', danger: '严重' } as const
+
+export function StatCard({
+  label,
+  value,
+  hint,
+  href,
+  tone,
+  children,
+}: {
+  label: string
+  value: React.ReactNode
+  hint?: React.ReactNode
+  href?: string
+  tone?: 'danger' | 'warn'
+  children?: React.ReactNode
+}) {
   const body = (
     <>
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn('text-2xl font-semibold tabular-nums', tone === 'danger' && 'text-destructive', tone === 'warn' && 'text-[oklch(0.5_0.13_70)]')}>{value}</span>
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      <span className="truncate text-xs text-muted-foreground">{label}</span>
+      <span className={cn('truncate text-xl font-semibold tabular-nums sm:text-2xl', tone && toneText[tone])}>
+        {value}
+        {tone && <span className="sr-only">（{toneLabel[tone]}）</span>}
+      </span>
+      {hint && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
+      {children}
     </>
   )
-  const cls = 'flex min-w-0 flex-col gap-1 rounded-xl border bg-card p-4'
+  const cls = cn('flex min-w-0 flex-col gap-1 rounded-xl border bg-card p-3 sm:p-4', tone === 'warn' && 'border-warning/50', tone === 'danger' && 'border-destructive/40')
   return href ? (
     <Link href={href} className={cn(cls, 'transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none')}>
       {body}

@@ -6,6 +6,7 @@ export function TabSwitch<T extends string>({
   onChange,
   tabs,
   fill = false,
+  className,
 }: {
   label: string
   value: T
@@ -13,9 +14,10 @@ export function TabSwitch<T extends string>({
   tabs: readonly (readonly [T, string, (number | undefined)?])[]
   /** Spans the width on small screens, as in the admin console */
   fill?: boolean
+  className?: string
 }) {
   return (
-    <div role="tablist" aria-label={label} className={cn('flex rounded-lg border', fill ? 'w-full bg-background p-1 sm:w-fit' : 'self-start bg-card p-0.5')}>
+    <div role="tablist" aria-label={label} className={cn('flex rounded-lg border', fill ? 'w-full bg-background p-1 sm:w-fit' : 'self-start bg-card p-0.5', className)}>
       {tabs.map(([id, text, count]) => (
         <button
           key={id}
