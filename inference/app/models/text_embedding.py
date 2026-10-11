@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class TextEmbeddingModel(BaseModel):
     def _load_model(self) -> None:
-        model_id = 'Qwen/Qwen3-Embedding-0.6B'
+        model_id = self.name = 'Qwen/Qwen3-Embedding-0.6B'
         logger.info(f"Loading Text Embedding model: {model_id}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side='left')
         self.model = AutoModel.from_pretrained(

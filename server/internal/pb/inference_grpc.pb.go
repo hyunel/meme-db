@@ -24,6 +24,7 @@ const (
 	InferenceService_ClipTextEmbedding_FullMethodName  = "/inference.InferenceService/ClipTextEmbedding"
 	InferenceService_Rerank_FullMethodName             = "/inference.InferenceService/Rerank"
 	InferenceService_ImageCaption_FullMethodName       = "/inference.InferenceService/ImageCaption"
+	InferenceService_Metrics_FullMethodName            = "/inference.InferenceService/Metrics"
 )
 
 // InferenceServiceClient is the client API for InferenceService service.
@@ -40,6 +41,8 @@ type InferenceServiceClient interface {
 	Rerank(ctx context.Context, in *RerankRequest, opts ...grpc.CallOption) (*RerankResponse, error)
 	// Caption image using VLM
 	ImageCaption(ctx context.Context, in *ImageCaptionRequest, opts ...grpc.CallOption) (*ImageCaptionResponse, error)
+	// Resource usage and request statistics of the last span_seconds, in step_seconds buckets
+	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error)
 }
 
 type inferenceServiceClient struct {
@@ -100,6 +103,16 @@ func (c *inferenceServiceClient) ImageCaption(ctx context.Context, in *ImageCapt
 	return out, nil
 }
 
+func (c *inferenceServiceClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetricsResponse)
+	err := c.cc.Invoke(ctx, InferenceService_Metrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InferenceServiceServer is the server API for InferenceService service.
 // All implementations must embed UnimplementedInferenceServiceServer
 // for forward compatibility.
@@ -114,6 +127,8 @@ type InferenceServiceServer interface {
 	Rerank(context.Context, *RerankRequest) (*RerankResponse, error)
 	// Caption image using VLM
 	ImageCaption(context.Context, *ImageCaptionRequest) (*ImageCaptionResponse, error)
+	// Resource usage and request statistics of the last span_seconds, in step_seconds buckets
+	Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error)
 	mustEmbedUnimplementedInferenceServiceServer()
 }
 
@@ -138,6 +153,9 @@ func (UnimplementedInferenceServiceServer) Rerank(context.Context, *RerankReques
 }
 func (UnimplementedInferenceServiceServer) ImageCaption(context.Context, *ImageCaptionRequest) (*ImageCaptionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ImageCaption not implemented")
+}
+func (UnimplementedInferenceServiceServer) Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Metrics not implemented")
 }
 func (UnimplementedInferenceServiceServer) mustEmbedUnimplementedInferenceServiceServer() {}
 func (UnimplementedInferenceServiceServer) testEmbeddedByValue()                          {}
@@ -250,6 +268,24 @@ func _InferenceService_ImageCaption_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InferenceService_Metrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InferenceServiceServer).Metrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InferenceService_Metrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InferenceServiceServer).Metrics(ctx, req.(*MetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InferenceService_ServiceDesc is the grpc.ServiceDesc for InferenceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -276,6 +312,10 @@ var InferenceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImageCaption",
 			Handler:    _InferenceService_ImageCaption_Handler,
+		},
+		{
+			MethodName: "Metrics",
+			Handler:    _InferenceService_Metrics_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

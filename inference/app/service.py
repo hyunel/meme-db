@@ -1,4 +1,5 @@
 import grpc
+import json
 import torch
 import logging
 import asyncio
@@ -7,6 +8,7 @@ from .config import ModelType, ModelConfig
 from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
 from .schedulers import BatchScheduler, SimpleScheduler, ResourceManager
+from .metrics import Monitor
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +40,18 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
                         concurrency=config.concurrency,
                     )
 
+        models = [{'role': t.value, 'name': m.name, 'device': str(configs[t].device) if m.is_gpu else 'API'} for t, m in self.model_manager]
+        self.monitor = Monitor(self.schedulers, models)
+
     async def start(self):
         await self.gpu_res.start()
         await self.cpu_res.start()
         for s in self.schedulers.values():
             await s.start()
+        await self.monitor.start()
 
     async def stop(self):
+        await self.monitor.stop()
         for s in self.schedulers.values():
             await s.stop()
         await self.gpu_res.stop()
@@ -137,3 +144,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
             height=height,
             clip_embedding=inference_pb2.Embedding(values=clip_embedding)
         )
+
+    async def Metrics(self, request: inference_pb2.MetricsRequest, context: grpc.ServicerContext) -> inference_pb2.MetricsResponse:
+        snapshot = self.monitor.snapshot(request.span_seconds, request.step_seconds)
+        return inference_pb2.MetricsResponse(json=json.dumps(snapshot).encode())

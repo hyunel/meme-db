@@ -697,6 +697,102 @@ func (x *ImageCaptionResponse) GetClipEmbedding() *Embedding {
 	return nil
 }
 
+type MetricsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpanSeconds   int32                  `protobuf:"varint,1,opt,name=span_seconds,json=spanSeconds,proto3" json:"span_seconds,omitempty"`
+	StepSeconds   int32                  `protobuf:"varint,2,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricsRequest) Reset() {
+	*x = MetricsRequest{}
+	mi := &file_inference_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsRequest) ProtoMessage() {}
+
+func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_inference_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsRequest.ProtoReflect.Descriptor instead.
+func (*MetricsRequest) Descriptor() ([]byte, []int) {
+	return file_inference_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *MetricsRequest) GetSpanSeconds() int32 {
+	if x != nil {
+		return x.SpanSeconds
+	}
+	return 0
+}
+
+func (x *MetricsRequest) GetStepSeconds() int32 {
+	if x != nil {
+		return x.StepSeconds
+	}
+	return 0
+}
+
+type MetricsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Json          []byte                 `protobuf:"bytes,1,opt,name=json,proto3" json:"json,omitempty"` // A dashboard snapshot, passed through to the admin console
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricsResponse) Reset() {
+	*x = MetricsResponse{}
+	mi := &file_inference_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsResponse) ProtoMessage() {}
+
+func (x *MetricsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_inference_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsResponse.ProtoReflect.Descriptor instead.
+func (*MetricsResponse) Descriptor() ([]byte, []int) {
+	return file_inference_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MetricsResponse) GetJson() []byte {
+	if x != nil {
+		return x.Json
+	}
+	return nil
+}
+
 var File_inference_proto protoreflect.FileDescriptor
 
 const file_inference_proto_rawDesc = "" +
@@ -741,13 +837,19 @@ const file_inference_proto_rawDesc = "" +
 	"\acaption\x18\x01 \x01(\tR\acaption\x12\x14\n" +
 	"\x05width\x18\x02 \x01(\x05R\x05width\x12\x16\n" +
 	"\x06height\x18\x03 \x01(\x05R\x06height\x12;\n" +
-	"\x0eclip_embedding\x18\x04 \x01(\v2\x14.inference.EmbeddingR\rclipEmbedding2\xb9\x03\n" +
+	"\x0eclip_embedding\x18\x04 \x01(\v2\x14.inference.EmbeddingR\rclipEmbedding\"V\n" +
+	"\x0eMetricsRequest\x12!\n" +
+	"\fspan_seconds\x18\x01 \x01(\x05R\vspanSeconds\x12!\n" +
+	"\fstep_seconds\x18\x02 \x01(\x05R\vstepSeconds\"%\n" +
+	"\x0fMetricsResponse\x12\x12\n" +
+	"\x04json\x18\x01 \x01(\fR\x04json2\xfb\x03\n" +
 	"\x10InferenceService\x12R\n" +
 	"\rTextEmbedding\x12\x1f.inference.TextEmbeddingRequest\x1a .inference.TextEmbeddingResponse\x12a\n" +
 	"\x12ClipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n" +
 	"\x11ClipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n" +
 	"\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n" +
-	"\fImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3"
+	"\fImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponse\x12@\n" +
+	"\aMetrics\x12\x19.inference.MetricsRequest\x1a\x1a.inference.MetricsResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3"
 
 var (
 	file_inference_proto_rawDescOnce sync.Once
@@ -761,7 +863,7 @@ func file_inference_proto_rawDescGZIP() []byte {
 	return file_inference_proto_rawDescData
 }
 
-var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_inference_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_inference_proto_goTypes = []any{
 	(*TaskOptions)(nil),                // 0: inference.TaskOptions
 	(*Image)(nil),                      // 1: inference.Image
@@ -776,6 +878,8 @@ var file_inference_proto_goTypes = []any{
 	(*RerankResponse)(nil),             // 10: inference.RerankResponse
 	(*ImageCaptionRequest)(nil),        // 11: inference.ImageCaptionRequest
 	(*ImageCaptionResponse)(nil),       // 12: inference.ImageCaptionResponse
+	(*MetricsRequest)(nil),             // 13: inference.MetricsRequest
+	(*MetricsResponse)(nil),            // 14: inference.MetricsResponse
 }
 var file_inference_proto_depIdxs = []int32{
 	0,  // 0: inference.TextEmbeddingRequest.options:type_name -> inference.TaskOptions
@@ -794,13 +898,15 @@ var file_inference_proto_depIdxs = []int32{
 	7,  // 13: inference.InferenceService.ClipTextEmbedding:input_type -> inference.ClipTextEmbeddingRequest
 	9,  // 14: inference.InferenceService.Rerank:input_type -> inference.RerankRequest
 	11, // 15: inference.InferenceService.ImageCaption:input_type -> inference.ImageCaptionRequest
-	4,  // 16: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
-	6,  // 17: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
-	8,  // 18: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
-	10, // 19: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
-	12, // 20: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
+	13, // 16: inference.InferenceService.Metrics:input_type -> inference.MetricsRequest
+	4,  // 17: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
+	6,  // 18: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
+	8,  // 19: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
+	10, // 20: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
+	12, // 21: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
+	14, // 22: inference.InferenceService.Metrics:output_type -> inference.MetricsResponse
+	17, // [17:23] is the sub-list for method output_type
+	11, // [11:17] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -817,7 +923,7 @@ func file_inference_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_inference_proto_rawDesc), len(file_inference_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -16,7 +16,7 @@ class OpenAIVLM(VLMModel):
     def _load_model(self) -> None:
         from openai import OpenAI
 
-        self.model_name = self.config.vlm.openai.model
+        self.model_name = self.name = self.config.vlm.openai.model
         self.client = OpenAI(
             api_key=self.config.vlm.openai.api_key,
             base_url=self.config.vlm.openai.base_url,
