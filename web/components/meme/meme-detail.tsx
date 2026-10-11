@@ -137,7 +137,7 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
         </Button>
 
         <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
-          <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border bg-card p-6 md:aspect-auto md:min-h-[28rem] md:p-10">
+          <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border bg-checker p-6 md:aspect-auto md:min-h-[28rem] md:p-10">
             <MemeMedia meme={meme} controls className="max-h-[70vh]" />
           </div>
 

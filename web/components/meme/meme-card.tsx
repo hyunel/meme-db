@@ -20,7 +20,7 @@ export function MemeCard({ meme, entryId, similarity, allowAdd, className }: { m
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
       <Link
         href={memeHref(meme.id, entryId)}
-        className="relative block overflow-hidden rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
+        className="relative block overflow-hidden rounded-xl border bg-checker p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
         style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
         <MemeMedia meme={meme} className="transition-transform duration-300 group-hover:scale-[1.03]" />

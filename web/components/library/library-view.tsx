@@ -323,7 +323,7 @@ function LibraryContent({ lib }: { lib: Library }) {
 
             const body = (
               <>
-                <div className="relative aspect-square overflow-hidden rounded-lg bg-muted/60">
+                <div className={cn('relative aspect-square overflow-hidden rounded-lg', item.type === 'entry' ? 'bg-checker' : 'bg-muted/60')}>
                   <div data-thumb className="flex size-full items-center justify-center p-2">
                     {item.type === 'entry' ? (
                       <MemeMedia meme={item.entry.meme} />

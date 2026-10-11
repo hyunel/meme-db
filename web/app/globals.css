@@ -91,6 +91,7 @@
   --sidebar-accent-foreground: oklch(0.22 0.014 265);
   --sidebar-border: oklch(0.91 0.006 95);
   --sidebar-ring: oklch(0.6 0.012 265);
+  --checker: oklch(0.945 0.005 95);
 }
 
 @layer base {
@@ -100,6 +101,13 @@
   body {
     @apply bg-background text-foreground font-sans;
   }
+}
+
+/* A faint checkerboard behind memes, so transparent areas read apart from white ones. */
+@utility bg-checker {
+  background-color: var(--card);
+  background-image: conic-gradient(var(--checker) 25%, transparent 0 50%, var(--checker) 0 75%, transparent 0);
+  background-size: 16px 16px;
 }
 
 /* A scroll container clips at its padding box, so the padding gives focus rings room. */

@@ -287,7 +287,7 @@ export function AdminUserDetail({ id }: { id: string }) {
                   <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                     {user.recent.map((m) => (
                       <li key={m.id}>
-                        <Link href={`/m/${m.id}`} className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-card p-1.5 hover:border-foreground/30">
+                        <Link href={`/m/${m.id}`} className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-checker p-1.5 hover:border-foreground/30">
                           <MemeMedia meme={m} />
                         </Link>
                       </li>
