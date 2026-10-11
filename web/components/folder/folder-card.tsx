@@ -2,10 +2,24 @@
 
 import Link from 'next/link'
 import { Images } from 'lucide-react'
-import type { Folder } from '@/lib/types'
+import type { Folder, MemeThumb } from '@/lib/types'
 import { useSession } from '@/lib/session'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { FavoriteButton } from '@/components/meme/meme-actions'
+import { cn } from '@/lib/utils'
+
+/** Up to four of a folder's memes in a 2×2 grid. */
+export function FolderMosaic({ previews, className }: { previews: MemeThumb[]; className?: string }) {
+  return (
+    <div className={cn('grid grid-cols-2 grid-rows-2 gap-1.5 overflow-hidden rounded-lg', className)}>
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} className="overflow-hidden rounded-md bg-muted p-1.5">
+          {previews[i] && <MemeMedia meme={previews[i]} />}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function FolderCard({ folder, showOwner = true }: { folder: Folder; showOwner?: boolean }) {
   const { user } = useSession()
@@ -14,13 +28,7 @@ export function FolderCard({ folder, showOwner = true }: { folder: Folder; showO
   return (
     <div className="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 transition hover:border-foreground/30 hover:shadow-md">
       <Link href={href} className="flex flex-col gap-3 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-        <div className="grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1.5 overflow-hidden rounded-lg">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="overflow-hidden rounded-md bg-muted p-1.5">
-              {folder.previews[i] && <MemeMedia meme={folder.previews[i]} />}
-            </div>
-          ))}
-        </div>
+        <FolderMosaic previews={folder.previews} className="aspect-[4/3]" />
         <p className="truncate px-1 pr-10 font-medium">{folder.name}</p>
       </Link>
       <div className="flex items-center gap-3 px-1 text-xs text-muted-foreground">

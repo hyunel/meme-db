@@ -41,11 +41,13 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MemeMedia } from '@/components/meme/meme-media'
+import { FolderMosaic } from '@/components/folder/folder-card'
 import { ProcessBadge, VisibilityBadge } from '@/components/status-badges'
 import { EmptyState, PageLoading } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { FolderPickerDialog, type PickerMode } from './folder-picker-dialog'
 import { UploadDialog } from './upload-dialog'
+import { ROOT, useDragMove } from './use-drag-move'
 import { api, qs, refresh } from '@/lib/api'
 import { toMs } from '@/lib/format'
 import { isProcessing } from '@/lib/media'
@@ -129,6 +131,22 @@ function LibraryContent({ lib }: { lib: Library }) {
 
   const ids = (sel: Item[]) => sel.map((i) => nodeOf(i).id)
 
+  const transfer = async (mode: PickerMode, nodeIds: string[], target: string | null) => {
+    await api(`/library/nodes/${mode}`, { method: 'POST', json: { ids: nodeIds, target_id: target } })
+    await refresh()
+    toast.success(mode === 'move' ? '已移动' : '已复制', {
+      action: { label: '前往', onClick: () => router.push(libraryHref(target)) },
+    })
+    exitSelect()
+  }
+
+  const drag = useDragMove({
+    current: folder?.id ?? ROOT,
+    selected,
+    onMove: (nodeIds, target) => transfer('move', nodeIds, target || null).catch((e: Error) => toast.error(e.message)),
+  })
+  const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-foreground/20'
+
   const setPublic = (sel: Item[], isPublic: boolean) =>
     run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
 
@@ -192,7 +210,7 @@ function LibraryContent({ lib }: { lib: Library }) {
       <nav aria-label="文件夹路径" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         <ol className="flex w-max items-center gap-0.5 text-sm text-muted-foreground">
           <li>
-            <Link href="/library" className="flex h-8 items-center gap-1 rounded-md px-1.5 hover:bg-muted hover:text-foreground">
+            <Link href="/library" {...drag.target(ROOT)} className={cn('flex h-8 items-center gap-1 rounded-md px-1.5 hover:bg-muted hover:text-foreground', dropHighlight(ROOT))}>
               <Home className="size-3.5" aria-hidden />
               我的库
             </Link>
@@ -203,7 +221,11 @@ function LibraryContent({ lib }: { lib: Library }) {
               <Link
                 href={libraryHref(f.id)}
                 aria-current={f.id === folder?.id ? 'page' : undefined}
-                className="flex h-8 max-w-40 items-center truncate rounded-md px-1.5 hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
+                {...drag.target(f.id)}
+                className={cn(
+                  'flex h-8 max-w-40 items-center truncate rounded-md px-1.5 hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground',
+                  dropHighlight(f.id),
+                )}
               >
                 {f.name}
               </Link>
@@ -288,18 +310,28 @@ function LibraryContent({ lib }: { lib: Library }) {
             const meme = item.type === 'entry' ? item.entry.meme : null
             const href = item.type === 'folder' ? libraryHref(node.id) : `/m/${meme?.id}`
             const isPublicSelf = node.visibility === 'public'
+            const dropTarget = drag.isOver(node.id) && 'border-foreground bg-brand/30 ring-2 ring-foreground/20'
 
             const body = (
               <>
-                <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-muted/60 p-2">
-                  {item.type === 'folder' ? (
-                    <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                      <FolderIcon className="size-12 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
-                      <span className="text-xs tabular-nums">{item.folder.item_count} 项</span>
-                    </div>
-                  ) : meme ? (
-                    <MemeMedia meme={meme} />
-                  ) : null}
+                <div className="relative aspect-square overflow-hidden rounded-lg bg-muted/60">
+                  <div data-thumb className="flex size-full items-center justify-center p-2">
+                    {item.type === 'folder' ? (
+                      item.folder.previews.length ? (
+                        <FolderMosaic previews={item.folder.previews} className="size-full" />
+                      ) : (
+                        <FolderIcon className="size-12 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
+                      )
+                    ) : meme ? (
+                      <MemeMedia meme={meme} />
+                    ) : null}
+                  </div>
+                  {item.type === 'folder' && (
+                    <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
+                      <FolderIcon className="size-3" aria-hidden />
+                      {item.folder.item_count} 项
+                    </span>
+                  )}
                   {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5" />}
                 </div>
                 <div className="flex min-w-0 flex-col gap-1 px-0.5">
@@ -310,7 +342,13 @@ function LibraryContent({ lib }: { lib: Library }) {
             )
 
             return (
-              <li key={node.id} className="relative">
+              <li
+                key={node.id}
+                data-node-id={node.id}
+                {...drag.source(node.id)}
+                {...(item.type === 'folder' ? drag.target(node.id) : {})}
+                className={cn('relative transition-opacity', drag.isDragging(node.id) && 'opacity-50')}
+              >
                 {selecting ? (
                   <button
                     type="button"
@@ -319,6 +357,7 @@ function LibraryContent({ lib }: { lib: Library }) {
                     className={cn(
                       'flex w-full flex-col gap-2 rounded-xl border bg-card p-2 text-left transition',
                       checked ? 'border-foreground ring-2 ring-foreground/15' : 'hover:border-foreground/30',
+                      dropTarget,
                     )}
                   >
                     {body}
@@ -329,7 +368,13 @@ function LibraryContent({ lib }: { lib: Library }) {
                   </button>
                 ) : (
                   <>
-                    <Link href={href} className="flex flex-col gap-2 rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                    <Link
+                      href={href}
+                      className={cn(
+                        'flex flex-col gap-2 rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+                        dropTarget,
+                      )}
+                    >
                       {body}
                     </Link>
                     <DropdownMenu>
@@ -429,14 +474,7 @@ function LibraryContent({ lib }: { lib: Library }) {
           initialFolder={folder?.id ?? null}
           sourceFolder={folder?.id ?? null}
           movingFolderIds={picker.items.flatMap((i) => (i.type === 'folder' ? [i.folder.id] : []))}
-          onConfirm={async (target) => {
-            await api(`/library/nodes/${picker.mode}`, { method: 'POST', json: { ids: ids(picker.items), target_id: target } })
-            await refresh()
-            toast.success(picker.mode === 'move' ? '已移动' : '已复制', {
-              action: { label: '前往', onClick: () => router.push(libraryHref(target)) },
-            })
-            exitSelect()
-          }}
+          onConfirm={(target) => transfer(picker.mode, ids(picker.items), target)}
         />
       )}
 
