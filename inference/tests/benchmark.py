@@ -15,7 +15,6 @@ import io
 from app.pb import inference_pb2
 from app.pb import inference_pb2_grpc
 
-# --- Data Generation ---
 
 def generate_random_text(min_len: int = 10, max_len: int = 50) -> str:
     length = random.randint(min_len, max_len)
@@ -27,7 +26,6 @@ def generate_random_image_bytes(size: int = 224) -> bytes:
     img.save(buf, format='JPEG')
     return buf.getvalue()
 
-# --- Benchmark Logic ---
 
 class BenchmarkStats:
     def __init__(self):
@@ -93,18 +91,16 @@ def perform_request(stub, args, text, image, task_type):
 
         return (time.perf_counter() - start) * 1000, False
     except Exception:
-        # print(f"Request failed: {e}") # Reduce noise in progress bar
         return 0, True
 
 def worker(args, server_address, tasks_per_worker, pbar=None):
     stats = BenchmarkStats()
 
-    # Each worker creates its own channel/stub to simulate real client isolation
+    # A channel per worker, like separate clients
     channel = grpc.insecure_channel(server_address)
     stub = inference_pb2_grpc.InferenceServiceStub(channel)
 
-    # Pre-generate some data to avoid measuring generation time during loop
-    # We generate a pool of data and cycle through it
+    # A pregenerated pool keeps data generation out of the measurements
     pool_size = 100
     text_pool = [generate_random_text() for _ in range(pool_size)]
     image_pool = [inference_pb2.Image(data=generate_random_image_bytes(), file_format='jpeg') for _ in range(pool_size)]

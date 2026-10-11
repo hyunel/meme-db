@@ -10,11 +10,6 @@ from ..config import ModelType
 logger = logging.getLogger(__name__)
 
 class CLIPModel(BaseModel):
-    """
-    CLIP Model wrapper for Image and Text Embeddings.
-    Uses SigLIP2 by default.
-    """
-
     def _load_model(self) -> None:
         model_id = "google/siglip2-base-patch16-224"
         logger.info(f"Loading CLIP model: {model_id} on {self.config.clip.device}")
@@ -27,24 +22,13 @@ class CLIPModel(BaseModel):
 
         self.processor = AutoProcessor.from_pretrained(model_id, use_fast=True)
 
+        self.get_image_features = self.model.get_image_features
+        self.get_text_features = self.model.get_text_features
         if self.config.clip.compile:
-            # Note: partial compilation of methods
-            self.get_image_features = torch.compile(self.model.get_image_features)
-            self.get_text_features = torch.compile(self.model.get_text_features)
-        else:
-            self.get_image_features = self.model.get_image_features
-            self.get_text_features = self.model.get_text_features
+            self.get_image_features = torch.compile(self.get_image_features)
+            self.get_text_features = torch.compile(self.get_text_features)
 
     def get_image_embedding(self, images: List[Image.Image]) -> List[List[float]]:
-        """
-        Generate embeddings for a list of images.
-
-        Args:
-            images: List of PIL Images.
-
-        Returns:
-            List of embedding vectors (floats).
-        """
         inputs = self.processor(images=images, return_tensors="pt").to(self.config.clip.device)
 
         with torch.no_grad():
@@ -53,15 +37,6 @@ class CLIPModel(BaseModel):
             return features.float().cpu().numpy().tolist()
 
     def get_text_embedding(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generate embeddings for a list of text strings.
-
-        Args:
-            texts: List of strings.
-
-        Returns:
-            List of embedding vectors (floats).
-        """
         inputs = self.processor(text=texts, padding="max_length", return_tensors="pt").to(self.config.clip.device)
 
         with torch.no_grad():

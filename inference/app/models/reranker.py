@@ -2,20 +2,15 @@ from typing import List, Tuple, Dict, Callable
 import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from .base import BaseModel
+from .base import BaseModel, DEFAULT_TASK
 from ..config import ModelType
 
 logger = logging.getLogger(__name__)
 
 class RerankerModel(BaseModel):
-    """
-    Reranker Model wrapper using Qwen-Reranker.
-    Calculates relevance probability between query and document.
-    """
-
-    # Constants for template
     PREFIX = "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n"
     SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    MAX_LENGTH = 8192
 
     def _load_model(self) -> None:
         model_id = "Qwen/Qwen3-Reranker-0.6B"
@@ -31,53 +26,28 @@ class RerankerModel(BaseModel):
         if self.config.reranker.compile:
             self.model = torch.compile(self.model)
 
-        # Cache IDs and Template Tokens
         self.yes_id = self.tokenizer.convert_tokens_to_ids("yes")
         self.no_id = self.tokenizer.convert_tokens_to_ids("no")
         self.prefix_tokens = self.tokenizer.encode(self.PREFIX, add_special_tokens=False)
         self.suffix_tokens = self.tokenizer.encode(self.SUFFIX, add_special_tokens=False)
 
     def predict(self, items: List[Tuple[Tuple[str, str], str]]) -> List[float]:
-        """
-        Rerank a list of (query, document) pairs.
-
-        Args:
-            items: List of ((query_str, document_str), task_description) tuples.
-
-        Returns:
-            List of relevance scores (probabilities of 'yes').
-        """
-        default_description = "Given a web search query, retrieve relevant passages that answer the query"
-
-        prompts = []
-        for (q, d), desc in items:
-            desc = desc or default_description
-            prompts.append(f'<Instruct>: {desc}\n<Query>: {q}\n<Document>: {d}')
-
-        max_length = 8192
-        # Tokenize body first
+        prompts = [f'<Instruct>: {desc or DEFAULT_TASK}\n<Query>: {q}\n<Document>: {d}' for (q, d), desc in items]
+        # The body is truncated to leave room for the chat template around it.
         inputs = self.tokenizer(
             prompts,
             padding=False,
             truncation='longest_first',
             return_attention_mask=False,
-            max_length=max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
+            max_length=self.MAX_LENGTH - len(self.prefix_tokens) - len(self.suffix_tokens)
         )
-
-        # Prepend/Append system tokens
-        for i, ele in enumerate(inputs['input_ids']):
-            inputs['input_ids'][i] = self.prefix_tokens + ele + self.suffix_tokens
-
-        # Pad final inputs
+        inputs['input_ids'] = [self.prefix_tokens + ids + self.suffix_tokens for ids in inputs['input_ids']]
         padded_inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt").to(self.config.reranker.device)
 
         with torch.no_grad():
-            outputs = self.model(**padded_inputs)
-            logits = outputs.logits[:, -1, :]
+            logits = self.model(**padded_inputs).logits[:, -1, :]
             scores = torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1)
-            log_scores = torch.nn.functional.log_softmax(scores, dim=1)
-            # Return probability of 'yes' class (index 1)
-            return log_scores[:, 1].exp().cpu().tolist()
+            return torch.softmax(scores, dim=1)[:, 1].cpu().tolist()  # P("yes")
 
     @property
     def inference_methods(self) -> Dict[ModelType, Callable]:

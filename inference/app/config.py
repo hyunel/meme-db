@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal, Any, Dict
 
 class ModelType(str, Enum):
-    """Enum for different model types."""
     CLIP = "clip"
     CLIP_IMAGE = "clip_image"
     CLIP_TEXT = "clip_text"
@@ -15,7 +14,6 @@ class ModelType(str, Enum):
     VLM = "vlm"
 
 class BaseModelConfig(BaseModel):
-    """Unified configuration for both model parameters and task execution settings."""
     # Model parameters
     device: Optional[Any] = None
     dtype: Optional[str] = None
@@ -71,18 +69,7 @@ class ModelConfig(BaseModel):
         if not os.path.exists(yaml_path):
             return cls()
 
-        with open(yaml_path, 'r') as f:
-            yaml_content = f.read()
-
-        # Substitute environment variables in YAML (${VAR_NAME} format)
-        def replace_env_var(match):
-            var_name = match.group(1)
-            return os.environ.get(var_name, match.group(0))
-
-        yaml_content = re.sub(r'\$\{([^}]+)\}', replace_env_var, yaml_content)
-
-        # Load YAML
-        config_dict = yaml.safe_load(yaml_content) or {}
-
-        # Create config from dict
-        return cls(**config_dict)
+        with open(yaml_path) as f:
+            # ${VAR} placeholders come from the environment.
+            content = re.sub(r'\$\{([^}]+)\}', lambda m: os.environ.get(m.group(1), m.group(0)), f.read())
+        return cls(**(yaml.safe_load(content) or {}))

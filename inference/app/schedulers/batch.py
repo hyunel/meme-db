@@ -38,7 +38,6 @@ class BatchScheduler(Generic[T, R]):
             except asyncio.CancelledError:
                 pass
 
-        # Cancel all active tasks
         for task in self.active_tasks.values():
             if not task.future.done():
                 task.future.cancel()
@@ -67,36 +66,22 @@ class BatchScheduler(Generic[T, R]):
                 task.future.cancel()
 
     async def _get_next_valid_task(self) -> Task[T]:
-        """Get next valid task, discarding cancelled ones."""
         while True:
             task = await self.queue.get()
-            # If task was cancelled externally (removed from active_tasks or future cancelled)
-            if not task.future.done():
+            if not task.future.done():  # Cancelled tasks stay queued until popped
                 return task
-            # If we are here, task is done/cancelled, loop again
 
     async def _worker_loop(self):
         while True:
             try:
-                # 1. Wait for the first valid item (blocking)
                 first_task = await self._get_next_valid_task()
                 batch = [first_task]
-
-                # 2. Try to fill the batch within latency window
-                deadline = first_task.created_at + self.max_latency
-                timeout = max(0, deadline - time.time())
-
                 try:
-                    async with asyncio.timeout(timeout):
+                    async with asyncio.timeout(max(0, first_task.created_at + self.max_latency - time.time())):
                         while len(batch) < self.batch_size:
-                            task = await self._get_next_valid_task()
-                            batch.append(task)
-                except (TimeoutError, asyncio.TimeoutError):
-                    pass # Latency window expired
-                except asyncio.CancelledError:
-                    raise # Propagate cancellation to stop loop
-
-                # 3. Process the batch
+                            batch.append(await self._get_next_valid_task())
+                except TimeoutError:
+                    pass  # Latency window expired
                 await self._process_batch(batch)
 
             except asyncio.CancelledError:
@@ -121,15 +106,13 @@ class BatchScheduler(Generic[T, R]):
                 raise RuntimeError(f"Batch processing returned {len(results)} results for {len(inputs)} inputs")
 
             for task, result in zip(valid_batch, results):
-                if task.id in self.active_tasks:
-                    self.active_tasks.pop(task.id)
+                self.active_tasks.pop(task.id, None)
                 if not task.future.done():
                     task.future.set_result(result)
 
         except Exception as e:
             logger.error(f"Batch processing failed: {e}", exc_info=True)
             for task in valid_batch:
-                if task.id in self.active_tasks:
-                    self.active_tasks.pop(task.id)
+                self.active_tasks.pop(task.id, None)
                 if not task.future.done():
                     task.future.set_exception(e)
