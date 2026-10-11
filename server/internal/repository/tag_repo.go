@@ -56,16 +56,19 @@ func (r *TagRepository) SetSystemTags(ctx context.Context, assetID string, names
 	return err
 }
 
-// Hot returns the system tags used most on public memes.
-func (r *TagRepository) Hot(ctx context.Context, limit int) ([]string, error) {
+// Hot returns the system tags used most on the memes viewerID may see.
+func (r *TagRepository) Hot(ctx context.Context, viewerID string, admin bool, limit int) ([]string, error) {
+	var w filter
+	w.where("at.user_id IS NULL")
+	w.where(memeListed(&w, viewerID, admin))
 	query := fmt.Sprintf(`
 		SELECT t.name FROM library.asset_tags at
 		JOIN library.tags t ON t.id = at.tag_id
 		JOIN core.meme_info m ON m.asset_id = at.asset_id
-		WHERE at.user_id IS NULL AND %s
-		GROUP BY t.name ORDER BY count(*) DESC, t.name LIMIT $1
-	`, memePublic)
-	return collectScalars[string](r.db.Query(ctx, query, limit))
+		%s
+		GROUP BY t.name ORDER BY count(*) DESC, t.name LIMIT %d
+	`, w.clause(), limit)
+	return collectScalars[string](r.db.Query(ctx, query, w.args...))
 }
 
 // ==============================================================================

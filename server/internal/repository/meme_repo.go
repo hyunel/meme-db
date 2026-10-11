@@ -26,6 +26,18 @@ func memeOwnedBy(viewer string) string {
 	return fmt.Sprintf(`EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND n.owner_id = %s::uuid)`, viewer)
 }
 
+// memeListed matches the analyzed memes viewerID may see: public ones and those in their
+// library, or all of them for admins.
+func memeListed(w *filter, viewerID string, admin bool) string {
+	switch {
+	case admin:
+		return memeAnalyzed
+	case viewerID == "":
+		return memePublic
+	}
+	return "(" + memeAnalyzed + " AND (" + memeInPublic + " OR " + memeOwnedBy(w.arg(viewerID)) + "))"
+}
+
 type MemeRepository struct {
 	db db.DBTX
 }
@@ -165,11 +177,11 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 	return memes, nil
 }
 
-// PublicIDs lists public memes, most favorited and collected first. A non-empty tag keeps
-// memes carrying it as a system tag or as one of viewerID's tags.
-func (r *MemeRepository) PublicIDs(ctx context.Context, viewerID, tag string, limit int) ([]string, int, error) {
+// PopularIDs lists the memes viewerID may see, most favorited and collected first. A
+// non-empty tag keeps memes carrying it as a system tag or as one of viewerID's tags.
+func (r *MemeRepository) PopularIDs(ctx context.Context, viewerID string, admin bool, tag string, limit int) ([]string, int, error) {
 	var w filter
-	w.where(memePublic)
+	w.where(memeListed(&w, viewerID, admin))
 	if tag != "" {
 		w.where(fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM library.asset_tags at JOIN library.tags t ON t.id = at.tag_id
@@ -247,33 +259,32 @@ type Recall struct {
 	Limit  int
 }
 
-// RecallScope selects the memes a recall may return.
+// RecallScope selects the memes a recall may return: every meme the viewer may see, or
+// only those in their library.
 type RecallScope struct {
 	ViewerID   string
-	Public     bool    // Public memes
-	Owned      bool    // Memes in the viewer's library
-	FolderPath *string // Restricts owned memes to a folder subtree
+	Admin      bool
+	Mine       bool    // Only memes in the viewer's library
+	FolderPath *string // With Mine, restricts the library to a folder subtree
 	Exclude    string  // An asset to leave out
 }
 
 // Recall runs the channels and keeps each meme's best similarity.
 func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope) ([]*model.SearchCandidate, error) {
-	var w filter
-	var scopes []string
-	if scope.Public {
-		scopes = append(scopes, memePublic)
+	if len(recalls) == 0 {
+		return nil, nil
 	}
-	if scope.Owned && scope.ViewerID != "" {
+	var w filter
+	var scopeCond string
+	if scope.Mine {
 		cond := "n.owner_id = " + w.arg(scope.ViewerID) + "::uuid"
 		if scope.FolderPath != nil {
 			cond += " AND n.path <@ " + w.arg(*scope.FolderPath) + "::ltree"
 		}
-		scopes = append(scopes, "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND "+cond+")")
+		scopeCond = "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND " + cond + ")"
+	} else {
+		scopeCond = memeListed(&w, scope.ViewerID, scope.Admin)
 	}
-	if len(scopes) == 0 || len(recalls) == 0 {
-		return nil, nil
-	}
-	scopeCond := "(" + strings.Join(scopes, " OR ") + ")"
 	if scope.Exclude != "" {
 		scopeCond += " AND m.asset_id <> " + w.arg(scope.Exclude) + "::uuid"
 	}

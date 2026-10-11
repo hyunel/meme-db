@@ -35,7 +35,7 @@ export function TagView({ tag }: { tag: string }) {
       <PageHeader
         eyebrow={<span className="inline-flex items-center gap-1"><Hash className="size-3.5" aria-hidden />标签</span>}
         title={`#${tag}`}
-        description={memes.data ? `${memes.data.total} 个公开表情包` : undefined}
+        description={memes.data ? `${memes.data.total} 个表情包` : undefined}
       />
       {others.length > 0 && (
         <nav aria-label="其他标签" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -52,7 +52,7 @@ export function TagView({ tag }: { tag: string }) {
       )}
       <Loadable result={memes} loading={<MemeGridSkeleton />}>
         {(page) =>
-          page.items.length ? <MemeGrid memes={page.items} allowAdd /> : <EmptyState icon={ImageOff} title="该标签下暂无公开表情包" description="试试其他标签或直接搜索。" />
+          page.items.length ? <MemeGrid memes={page.items} allowAdd /> : <EmptyState icon={ImageOff} title="该标签下暂无表情包" description="试试其他标签或直接搜索。" />
         }
       </Loadable>
     </div>
@@ -65,12 +65,12 @@ export function DiscoverView() {
   const folders = useSWR<Folder[]>('/folders?limit=40')
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-      <PageHeader title="发现" description="社区公开分享的表情包与合集" />
+      <PageHeader title="发现" description="全站热门表情包与社区公开分享的合集" />
       <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包', memes.data?.total], ['folders', '公开合集', folders.data?.length]] as const} />
       <div role="tabpanel">
         {tab === 'memes' ? (
           <Loadable result={memes} loading={<MemeGridSkeleton />}>
-            {(page) => (page.items.length ? <MemeGrid memes={page.items} allowAdd /> : <EmptyState icon={ImageOff} title="暂无公开表情包" />)}
+            {(page) => (page.items.length ? <MemeGrid memes={page.items} allowAdd /> : <EmptyState icon={ImageOff} title="暂无表情包" />)}
           </Loadable>
         ) : (
           <Loadable result={folders} loading={<MemeGridSkeleton count={4} />}>

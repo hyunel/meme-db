@@ -41,9 +41,9 @@ func (s *TagService) RemoveFromMeme(ctx context.Context, viewer *rbac.Identity, 
 	return s.repo.Tag.RemoveUserTag(ctx, memeID, tagID, viewer.UserID)
 }
 
-// Hot returns the system tags used most on public memes.
-func (s *TagService) Hot(ctx context.Context, limit int) ([]string, error) {
-	tags, err := s.repo.Tag.Hot(ctx, limit)
+// Hot returns the system tags used most on the memes the viewer may see.
+func (s *TagService) Hot(ctx context.Context, viewer *rbac.Identity, limit int) ([]string, error) {
+	tags, err := s.repo.Tag.Hot(ctx, viewer.UserID, viewer.IsAdmin(), limit)
 	if tags == nil {
 		tags = []string{}
 	}
