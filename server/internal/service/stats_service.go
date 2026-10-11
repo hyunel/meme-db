@@ -2,25 +2,28 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-type HealthReporter interface {
-	Health() (ok bool, detail string)
+type InferenceMonitor interface {
+	Metrics(ctx context.Context, span, step time.Duration) ([]byte, error)
 }
 
 type StatsService struct {
 	repo        *repository.Provider
-	inference   HealthReporter
+	inference   InferenceMonitor
 	storagePath string
 }
 
-func NewStatsService(repo *repository.Provider, inference HealthReporter, storagePath string) *StatsService {
+func NewStatsService(repo *repository.Provider, inference InferenceMonitor, storagePath string) *StatsService {
 	return &StatsService{repo: repo, inference: inference, storagePath: storagePath}
 }
 
@@ -53,13 +56,29 @@ func (s *StatsService) services(ctx context.Context) []model.ServiceStatus {
 		db.Detail = fmt.Sprintf("响应 %dms", time.Since(start).Milliseconds())
 	}
 
-	inference := model.ServiceStatus{Name: "推理服务"}
-	ok, state := s.inference.Health()
-	inference.OK, inference.Detail = ok, "连接状态 "+state
-
 	storage := model.ServiceStatus{Name: "文件存储", OK: true, Detail: s.storagePath}
 	if info, err := os.Stat(s.storagePath); err != nil || !info.IsDir() {
 		storage.OK, storage.Detail = false, "存储目录不可用"
 	}
-	return []model.ServiceStatus{db, inference, storage}
+	return []model.ServiceStatus{db, storage}
+}
+
+// Spans of the inference dashboard's time ranges, and the steps they are bucketed in
+var inferenceRanges = map[string][2]time.Duration{
+	"15m": {15 * time.Minute, 15 * time.Second},
+	"1h":  {time.Hour, 30 * time.Second},
+	"6h":  {6 * time.Hour, 3 * time.Minute},
+	"24h": {24 * time.Hour, 12 * time.Minute},
+}
+
+func (s *StatsService) Inference(ctx context.Context, rng string) (json.RawMessage, error) {
+	r := inferenceRanges[rng]
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	data, err := s.inference.Metrics(ctx, r[0], r[1])
+	if err != nil {
+		return nil, apperror.New(http.StatusServiceUnavailable, "推理服务无响应", err)
+	}
+	return data, nil
 }
