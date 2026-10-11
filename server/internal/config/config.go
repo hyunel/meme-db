@@ -21,6 +21,7 @@ type Config struct {
 	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
 	Log       LogConfig       `yaml:"log" validate:"required"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
+	Tags      TagsConfig      `yaml:"tags" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
 }
 
@@ -32,6 +33,14 @@ type UploadConfig struct {
 type PromptConfig struct {
 	Caption   string `yaml:"caption" validate:"required"`
 	Retrieval string `yaml:"retrieval" validate:"required"`
+	Tag       string `yaml:"tag" validate:"required"`
+}
+
+type TagsConfig struct {
+	MergeSimilarity   float64 `yaml:"merge_similarity" validate:"gt=0,lte=1"`
+	SuggestSimilarity float64 `yaml:"suggest_similarity" validate:"gt=0,lte=1"`
+	MinUsage          int     `yaml:"min_usage" validate:"gte=1"`
+	CommonShare       float64 `yaml:"common_share" validate:"gt=0,lte=1"`
 }
 
 type ServerConfig struct {

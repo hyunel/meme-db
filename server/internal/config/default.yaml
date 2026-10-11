@@ -14,11 +14,19 @@ worker:
   job_timeout: 5m     # Per-attempt deadline; the claim lease is twice this
   poll_interval: 5s   # Fallback wake-up for due retries and expired leases
 
+# Similarities compare embeddings of spellings under prompt.tag; retune them after changing that prompt or the embedding model.
+tags:
+  merge_similarity: 0.92    # A new spelling joins its most similar tag at or above this, else it starts a new tag
+  suggest_similarity: 0.8   # Tags this similar on average are suggested to admins as duplicates
+  min_usage: 2              # Tags on fewer memes stay off hot lists and meme cards
+  common_share: 0.3         # Tags on a larger share of memes are flagged as candidates to hide
+
 log:
   retention: 720h     # Stored logs older than this are deleted
 
 prompt:
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"
+  tag: "Given a meme tag, retrieve tags with the same meaning"
   caption: |
     # Role
     You are an expert in Internet culture, semiotics, and visual analysis. Your task is to extract structured, high-density feature representations from the provided Meme image for a search engine.
@@ -39,7 +47,7 @@ prompt:
         - Constraint: **High Confidence Only**. If the character is generic, ambiguous, or you are not 100% sure of the identity, leave this array empty to avoid hallucinations.
     4.  Visual_Style: Describe the aesthetic style using concise professional tags.
         - Examples: "3D Render", "Pixel Art", "Wojak", "Realistic", "Screenshot", "Anime", "Chibi".
-        - Constraint: **DO NOT** describe image quality.
+        - Constraint: **DO NOT** describe image quality, format, resolution or useless attributes (e.g., "blurry", "HD", "4K", "Meme"). Focus on the **artistic style** and **visual genre**.
     5.  Implied_Meaning: What specific vibe, attitude, or social reaction does sending this image convey?
         - Examples: "Smug superiority", "Pretending everything is fine", "Chaotic panic", "Reluctant acceptance", "Sarcastic surprise", "Sexual innuendo".
     6.  Synthetic_Queries: Generate 3-5 distinct search queries a user would likely type.

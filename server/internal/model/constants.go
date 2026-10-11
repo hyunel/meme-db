@@ -39,5 +39,6 @@ const (
 )
 
 const (
-	JobAnalyzeMeme = "analyze_meme"
+	JobAnalyzeMeme   = "analyze_meme"
+	JobResolveLabels = "resolve_labels"
 )

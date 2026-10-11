@@ -55,15 +55,14 @@ type Node struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
-type Tag struct {
+type TagUsage struct {
 	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
+	Aliases   []string  `json:"aliases" db:"aliases"` // Other spellings that resolve to this tag
+	Hidden    bool      `json:"hidden" db:"hidden"`
+	Common    bool      `json:"common" db:"common"` // On so many memes that it hardly tells them apart
+	Usage     int       `json:"usage" db:"usage"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
-type TagUsage struct {
-	Tag
-	Usage int `json:"usage" db:"usage"`
 }
 
 type Task struct {
@@ -130,6 +129,7 @@ type MemeTag struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Mine bool   `json:"mine"`
+	Rare bool   `json:"rare"` // On too few memes to show on cards
 }
 
 type EntryRef struct {

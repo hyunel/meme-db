@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { Merge, Pencil, Tags, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Merge, Pencil, Tags, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/states'
+import { TabSwitch } from '@/components/tab-switch'
 import { AdminPageHeader, BulkBar, DataList, FilterSelect, Pagination, SearchInput, Toolbar, useDebounced, usePaging, type Column } from './admin-ui'
 import { ConfirmDialog, useSelection } from './shared'
 import { api, qs, refresh } from '@/lib/api'
@@ -26,7 +27,33 @@ const sortOptions = [
 
 type Pending = { kind: 'rename'; tag: TagUsage } | { kind: 'merge'; sources: TagUsage[] } | { kind: 'delete'; tags: TagUsage[] } | null
 
+const badge = 'inline-flex h-5 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap'
+
 export function AdminTags() {
+  const [view, setView] = useState<'all' | 'duplicates'>('all')
+  const duplicates = useSWR<TagUsage[][]>('/admin/tags/duplicates')
+  const tabs = (
+    <TabSwitch
+      fill
+      label="标签视图"
+      value={view}
+      onChange={setView}
+      tabs={[
+        ['all', '全部标签'],
+        ['duplicates', '疑似重复', duplicates.data?.length],
+      ]}
+    />
+  )
+
+  return (
+    <>
+      <AdminPageHeader title="标签管理" description="VLM 与用户给出的不同写法会自动归入含义相同的标签" />
+      {view === 'all' ? <TagList tabs={tabs} /> : <TagDuplicates tabs={tabs} groups={duplicates.data} />}
+    </>
+  )
+}
+
+function TagList({ tabs }: { tabs: React.ReactNode }) {
   const [q, setQ] = useState('')
   const dq = useDebounced(q.trim())
   const [sort, setSort] = useState<SortKey>('usage')
@@ -45,22 +72,48 @@ export function AdminTags() {
       header: '名称',
       mobile: 'title',
       cell: (t) => (
-        <Link href={`/tags/${encodeURIComponent(t.name)}`} className="font-medium hover:underline">
-          #{t.name}
-        </Link>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Link href={`/tags/${encodeURIComponent(t.name)}`} className="font-medium hover:underline">
+              #{t.name}
+            </Link>
+            {t.hidden ? (
+              <span className={cn(badge, 'bg-muted text-muted-foreground')}>已屏蔽</span>
+            ) : (
+              t.common && (
+                <span className={cn(badge, 'bg-warning/15 text-[oklch(0.45_0.12_70)]')} title="出现在大部分表情包上，几乎没有区分度，可考虑屏蔽">
+                  高频
+                </span>
+              )
+            )}
+          </div>
+          {t.aliases.length > 0 && (
+            <span className="truncate text-xs text-muted-foreground" title={t.aliases.join('、')}>
+              也写作 {t.aliases.join('、')}
+            </span>
+          )}
+        </div>
       ),
     },
     { key: 'usage', header: '使用次数', cell: (t) => <span className="tabular-nums">{t.usage}</span> },
     { key: 'created', header: '创建时间', cell: (t) => <span className="tabular-nums">{formatDate(t.created_at)}</span> },
   ]
 
+  const setHidden = async (t: TagUsage, hidden: boolean) => {
+    await api(`/admin/tags/${t.id}`, { method: 'PATCH', json: { hidden } })
+    await refresh()
+    toast.success(hidden ? `已屏蔽「${t.name}」` : `已取消屏蔽「${t.name}」`)
+  }
+
   return (
     <>
-      <AdminPageHeader title="标签管理" description={tags.data ? `共 ${tags.data.total} 个标签` : undefined} />
-      <Toolbar>
-        <SearchInput value={q} onChange={setQ} placeholder="搜索标签名称" className="basis-full sm:basis-auto" />
-        <FilterSelect value={sort} onChange={setSort} options={sortOptions} label="排序" />
-      </Toolbar>
+      <div className="flex flex-col gap-3">
+        {tabs}
+        <Toolbar>
+          <SearchInput value={q} onChange={setQ} placeholder="搜索标签名称或写法" className="basis-full sm:basis-auto" />
+          <FilterSelect value={sort} onChange={setSort} options={sortOptions} label="排序" />
+        </Toolbar>
+      </div>
 
       <DataList
         rows={rows}
@@ -80,6 +133,10 @@ export function AdminTags() {
             <DropdownMenuItem onClick={() => setPending({ kind: 'merge', sources: [t] })}>
               <Merge />
               合并到…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setHidden(t, !t.hidden)}>
+              {t.hidden ? <Eye /> : <EyeOff />}
+              {t.hidden ? '取消屏蔽' : '屏蔽'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => setPending({ kind: 'delete', tags: [t] })}>
@@ -120,7 +177,7 @@ export function AdminTags() {
         destructive
         description={
           pending?.kind === 'delete'
-            ? `会从所有表情包上移除${pending.tags.map((t) => `「${t.name}」`).join('')}，共被使用 ${pending.tags.reduce((n, t) => n + t.usage, 0)} 次，且无法恢复。`
+            ? `会从所有表情包上移除${pending.tags.map((t) => `「${t.name}」`).join('')}，共被使用 ${pending.tags.reduce((n, t) => n + t.usage, 0)} 次，且无法恢复。之后的分析仍可能重新生成它，若要永久隐藏请改用屏蔽。`
             : ''
         }
         confirmLabel="删除"
@@ -186,7 +243,7 @@ function MergeDialog({ sources, onClose, onDone }: { sources: TagUsage[]; onClos
       open
       onOpenChange={(o) => !o && onClose()}
       title="合并标签"
-      description={`${sources.map((s) => `「${s.name}」`).join('')}会并入目标标签，原标签会被删除。`}
+      description={`${sources.map((s) => `「${s.name}」`).join('')}及其所有写法会并入目标标签，原标签会被删除。`}
       confirmLabel={target ? `合并到「${target.name}」` : '请选择目标'}
       onConfirm={async () => {
         if (!target) throw new Error('请选择目标标签')
@@ -218,5 +275,85 @@ function MergeDialog({ sources, onClose, onDone }: { sources: TagUsage[]; onClos
         </ul>
       </div>
     </ConfirmDialog>
+  )
+}
+
+function TagDuplicates({ tabs, groups }: { tabs: React.ReactNode; groups?: TagUsage[][] }) {
+  const [pending, setPending] = useState<{ target: TagUsage; sources: TagUsage[] } | null>(null)
+
+  return (
+    <>
+      <div className="flex flex-col gap-3">
+        {tabs}
+        <p className="text-sm text-muted-foreground">名称语义相近的标签按组列出。点击标签可将其排出本组，其余会并入组内最常用的标签。</p>
+      </div>
+
+      {!groups ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">加载中…</p>
+      ) : groups.length === 0 ? (
+        <EmptyState icon={Merge} title="没有疑似重复的标签" />
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {groups.map((g) => (
+            <DuplicateGroup key={g.map((t) => t.id).join()} group={g} onMerge={(target, sources) => setPending({ target, sources })} />
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(o) => !o && setPending(null)}
+        title="合并标签"
+        description={pending ? `${pending.sources.map((s) => `「${s.name}」`).join('')}及其所有写法会并入「${pending.target.name}」，原标签会被删除。` : ''}
+        confirmLabel="合并"
+        onConfirm={async () => {
+          if (!pending) return
+          await api('/admin/tags/merge', { method: 'POST', json: { source_ids: pending.sources.map((s) => s.id), target_id: pending.target.id } })
+          await refresh()
+          toast.success(`已合并到「${pending.target.name}」`)
+        }}
+      />
+    </>
+  )
+}
+
+function DuplicateGroup({ group, onMerge }: { group: TagUsage[]; onMerge: (target: TagUsage, sources: TagUsage[]) => void }) {
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  const [target, ...sources] = group.filter((t) => !excluded.has(t.id))
+  const toggle = (id: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
+  return (
+    <li className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+      <ul aria-label="组内标签" className="flex flex-wrap gap-1.5">
+        {group.map((t) => (
+          <li key={t.id}>
+            <button
+              type="button"
+              aria-pressed={!excluded.has(t.id)}
+              onClick={() => toggle(t.id)}
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm',
+                excluded.has(t.id) ? 'text-muted-foreground line-through' : t === target ? 'border-transparent bg-foreground text-background' : 'border-transparent bg-muted',
+              )}
+            >
+              #{t.name}
+              <span className="text-xs tabular-nums opacity-70">
+                {t.usage}
+                {t.hidden && ' · 已屏蔽'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <Button size="sm" variant="secondary" disabled={!sources.length} onClick={() => onMerge(target, sources)} className="shrink-0">
+        <Merge aria-hidden />
+        {sources.length ? `合并到「${target.name}」` : '至少保留两个'}
+      </Button>
+    </li>
   )
 }

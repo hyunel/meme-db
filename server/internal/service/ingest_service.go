@@ -52,10 +52,11 @@ type IngestService struct {
 	cfg         IngestServiceConfig
 	repo        *repository.Provider
 	inferClient inference.InferenceService
+	tags        *TagService
 }
 
-func NewIngestService(cfg IngestServiceConfig, repo *repository.Provider, inferClient inference.InferenceService) *IngestService {
-	return &IngestService{cfg: cfg, repo: repo, inferClient: inferClient}
+func NewIngestService(cfg IngestServiceConfig, repo *repository.Provider, inferClient inference.InferenceService, tags *TagService) *IngestService {
+	return &IngestService{cfg: cfg, repo: repo, inferClient: inferClient, tags: tags}
 }
 
 func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
@@ -148,6 +149,11 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 		return err
 	}
 
+	labels, err := s.tags.Resolve(ctx, systemTags(vlmOut))
+	if err != nil {
+		return err
+	}
+
 	now := time.Now()
 	metaphorVec := pgvector.NewVector(metaphorEmb)
 	semanticVec := pgvector.NewVector(semanticEmb)
@@ -168,7 +174,7 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 		if err != nil {
 			return err
 		}
-		return r.Tag.SetSystemTags(ctx, asset.ID, systemTags(vlmOut))
+		return r.Tag.SetSystemLabels(ctx, asset.ID, labels)
 	})
 }
 
