@@ -46,7 +46,8 @@ class RerankerModel(BaseModel):
         padded_inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt").to(self.config.reranker.device)
 
         with torch.no_grad():
-            logits = self.model(**padded_inputs).logits[:, -1, :]
+            # Only the last position is scored; vocabulary logits for every position would take gigabytes per batch.
+            logits = self.model(**padded_inputs, logits_to_keep=1).logits[:, -1, :]
             scores = torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1)
             return torch.softmax(scores, dim=1)[:, 1].cpu().tolist()  # P("yes")
 
