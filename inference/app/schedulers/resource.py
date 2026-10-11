@@ -67,6 +67,7 @@ class ResourceManager:
             try:
                 await self.semaphore.acquire()
                 request = await self.queue.get()
+
                 task = asyncio.create_task(self._execute_request(request))
                 self.running_tasks.add(task)
                 task.add_done_callback(self.running_tasks.discard)

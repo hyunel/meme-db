@@ -72,6 +72,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+
 	// ${VAR} placeholders come from the environment; unset ones are kept.
 	data = envPlaceholder.ReplaceAllFunc(data, func(m []byte) []byte {
 		if v, ok := os.LookupEnv(string(m[2 : len(m)-1])); ok {
@@ -79,6 +80,7 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		return m
 	})
+
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}

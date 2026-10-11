@@ -24,6 +24,7 @@ def draw_stitch(frames: List[Image.Image]) -> Image.Image:
     for img in frames:
         stitched.paste(img, (0, y_offset))
         y_offset += img.height
+
     return stitched
 
 
@@ -33,14 +34,17 @@ def generate_frame_indices(total_frames: int, percentiles: List[float] = [0.1, 0
         index = max(0, min(int(total_frames * p), total_frames - 1))  # Clamp to valid range
         if index not in indices:
             indices.append(index)
+
     return indices
 
 
 def generate_webm_frames(f: BinaryIO) -> List[Image.Image]:
     with av.open(f) as container:
         frames = [frame.to_image() for frame in container.decode(video=0)]
+
     if not frames:
         raise ValueError("No frames extracted")
+
     return [frames[idx].copy() for idx in generate_frame_indices(len(frames))]
 
 
@@ -55,10 +59,12 @@ def generate_tgs_frames(f: BinaryIO) -> List[Image.Image]:
         svg_buffer = BytesIO()
         export_svg(animation, svg_buffer, frame=idx, pretty=False)
         svg_buffer.seek(0)
+
         png_buffer = BytesIO()
         cairosvg.svg2png(file_obj=svg_buffer, write_to=png_buffer)
         png_buffer.seek(0)
         key_frames.append(Image.open(png_buffer).copy())
+
     return key_frames
 
 
@@ -79,4 +85,5 @@ def load_image_from_bytes(bytes_data: bytes, file_format: str) -> List[Image.Ima
             frames = generate_webm_frames(f)
         else:
             frames = [Image.open(f).copy()]
+
     return [rgba_to_rgb(img) for img in frames]

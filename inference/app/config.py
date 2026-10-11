@@ -72,4 +72,5 @@ class ModelConfig(BaseModel):
         with open(yaml_path) as f:
             # ${VAR} placeholders come from the environment.
             content = re.sub(r'\$\{([^}]+)\}', lambda m: os.environ.get(m.group(1), m.group(0)), f.read())
+
         return cls(**(yaml.safe_load(content) or {}))

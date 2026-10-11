@@ -33,6 +33,7 @@ class RerankerModel(BaseModel):
 
     def predict(self, items: List[Tuple[Tuple[str, str], str]]) -> List[float]:
         prompts = [f'<Instruct>: {desc or DEFAULT_TASK}\n<Query>: {q}\n<Document>: {d}' for (q, d), desc in items]
+
         # The body is truncated to leave room for the chat template around it.
         inputs = self.tokenizer(
             prompts,

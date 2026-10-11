@@ -76,12 +76,14 @@ class BatchScheduler(Generic[T, R]):
             try:
                 first_task = await self._get_next_valid_task()
                 batch = [first_task]
+
                 try:
                     async with asyncio.timeout(max(0, first_task.created_at + self.max_latency - time.time())):
                         while len(batch) < self.batch_size:
                             batch.append(await self._get_next_valid_task())
                 except TimeoutError:
                     pass  # Latency window expired
+
                 await self._process_batch(batch)
 
             except asyncio.CancelledError:
