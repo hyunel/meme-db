@@ -68,7 +68,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Toaster theme="light" position="top-center" richColors />
+          {/* Below md the toasts sit above the fixed tab bar */}
+          <Toaster
+            theme="light"
+            position="bottom-right"
+            richColors
+            className="[--toast-bottom:calc(4.5rem+env(safe-area-inset-bottom))] md:[--toast-bottom:1.5rem]"
+            offset={{ bottom: 'var(--toast-bottom)' }}
+            mobileOffset={{ bottom: 'var(--toast-bottom)' }}
+          />
         </TooltipProvider>
       </LoginPromptContext.Provider>
     </SWRConfig>

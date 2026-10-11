@@ -3,10 +3,12 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-const Toaster = ({ ...props }: ToasterProps) => {
+import { cn } from "@/lib/utils"
+
+const Toaster = ({ className, ...props }: ToasterProps) => {
   return (
     <Sonner
-      className="toaster group"
+      className={cn("toaster group", className)}
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
