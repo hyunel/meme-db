@@ -87,15 +87,10 @@ function useColumnCount() {
 
 export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[]; similarity?: Map<string, number>; allowAdd?: boolean }) {
   const count = useColumnCount()
-  // Each meme goes to the shortest column, so the columns stay level and the order reads left to right.
   const columns = useMemo(() => {
-    const cols = Array.from({ length: count }, () => ({ height: 0, memes: [] as Meme[] }))
-    for (const m of memes) {
-      const col = cols.reduce((a, b) => (b.height < a.height ? b : a))
-      col.memes.push(m)
-      col.height += ratioOf(m) + 0.3 // The tag row under the card
-    }
-    return cols.map((c) => c.memes)
+    const cols: Meme[][] = Array.from({ length: count }, () => [])
+    memes.forEach((m, i) => cols[i % count].push(m)) // Ranks run left to right, row by row
+    return cols
   }, [memes, count])
 
   return (
