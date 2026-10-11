@@ -125,7 +125,8 @@ type Meme struct {
 	Status        string     `json:"status"`
 	FailReason    *string    `json:"fail_reason"`
 	OCRText       string     `json:"ocr_text"`
-	Keywords      []string   `json:"keywords"`
+	Title         string     `json:"title"`
+	Summary       string     `json:"summary"`
 	Tags          []MemeTag  `json:"tags"` // System tags and the viewer's own tags
 	IsPublic      bool       `json:"is_public"`
 	FavoriteCount int        `json:"favorite_count"`

@@ -145,8 +145,9 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <h1 className="text-pretty text-2xl font-semibold tracking-tight wrap-anywhere">{entry?.name ?? memeTitle(meme)}</h1>
-                {entry && meme.keywords.length > 0 && <p className="text-sm text-muted-foreground">{memeTitle(meme)}</p>}
+                {entry && meme.title && <p className="text-sm text-muted-foreground">{meme.title}</p>}
               </div>
+              {meme.summary && <p className="text-sm leading-relaxed text-pretty">{meme.summary}</p>}
               {meme.status !== 'success' && (
                 <div className="flex flex-wrap items-center gap-2">
                   <ProcessBadge status={meme.status} />

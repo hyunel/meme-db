@@ -73,7 +73,8 @@ export interface Meme extends MemeThumb {
   status: ProcessStatus
   fail_reason: string | null
   ocr_text: string
-  keywords: string[]
+  title: string
+  summary: string
   tags: MemeTag[]
   is_public: boolean
   favorite_count: number

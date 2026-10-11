@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -86,7 +87,7 @@ func main() {
 
 	ingestService := service.NewIngestService(service.IngestServiceConfig{
 		StoragePath:     cfg.Server.StoragePath,
-		CaptionPrompt:   cfg.Prompt.Caption,
+		CaptionPrompt:   strings.ReplaceAll(cfg.Prompt.Caption, "{language}", cfg.Prompt.Language),
 		RetrievalPrompt: cfg.Prompt.Retrieval,
 	}, repo, inferClient.WithPriority(inference.PriorityBackground), tagService)
 

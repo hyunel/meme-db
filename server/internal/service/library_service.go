@@ -221,8 +221,8 @@ func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, mem
 		return nil, false, err
 	}
 	name := "meme"
-	if len(meme.Keywords) > 0 {
-		name = meme.Keywords[0]
+	if meme.Title != "" {
+		name = meme.Title
 	}
 	return s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension)
 }

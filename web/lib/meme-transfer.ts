@@ -19,7 +19,7 @@ function extOf(meme: Meme) {
 }
 
 function fileBase(meme: Meme) {
-  return `memedb-${meme.keywords[0] ?? meme.id}`
+  return `memedb-${meme.title || meme.id}`
 }
 
 function saveBlob(blob: Blob, filename: string) {

@@ -14,7 +14,7 @@ worker:
   job_timeout: 5m     # Per-attempt deadline; the claim lease is twice this
   poll_interval: 5s   # Fallback wake-up for due retries and expired leases
 
-# Similarities compare embeddings of spellings under prompt.tag; retune them after changing that prompt or the embedding model.
+# Similarities compare embeddings of spellings under prompt.tag; retune them after changing that prompt, prompt.language or the embedding model.
 tags:
   merge_similarity: 0.92    # A new spelling joins its most similar tag at or above this, else it starts a new tag
   suggest_similarity: 0.8   # Tags this similar on average are suggested to admins as duplicates
@@ -25,44 +25,34 @@ log:
   retention: 720h     # Stored logs older than this are deleted
 
 prompt:
+  language: "Simplified Chinese"   # Fills {language} in caption: titles, summaries and tags users see; the search fields stay English
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"
   tag: "Given a meme tag, retrieve tags with the same meaning"
   caption: |
-    # Role
-    You are an expert in Internet culture, semiotics, and visual analysis. Your task is to extract structured, high-density feature representations from the provided Meme image for a search engine.
+    You catalog memes for a meme search engine. Analyze the image and return one JSON object with these fields, in this order:
+    {"ocr_text": ..., "description": ..., "meaning": ..., "queries": [...], "title": ..., "summary": ..., "tags": [...]}
+    Inside string values, quote with “ ” or 「 」 rather than straight double quotes.
+    If the image is several frames stitched together and labelled "Key Frame", it is an animation: treat the frames as one meme.
 
-    # Constraints
-    1. NO Yapping: Do not use filler sentences like "The image depicts..." or "It seems to be...". Output raw, descriptive keywords and concise phrases.
-    2. Deep Reasoning: Analyze the interplay between the visual elements and the text to decode the *implied* meaning (sarcasm, irony, metaphor).
-    3. Format: Output STRICT JSON format only.
+    First, for the search engine, in English whatever language the image text is in:
+    - "ocr_text": all meaningful text in the image, verbatim in its original language, keeping line breaks. Skip watermarks, user handles, repeated background text and Key Frame labels. null if there is none.
+    - "description": one or two plain English sentences on what is shown: who or what (name the people, characters, logos and meme templates you recognize, telling look-alikes apart: Cheems is not Doge), expression and action, notable props or clothing, layout of image and text. No interpretation, no image quality.
+    - "meaning": one or two English sentences on the emotion, attitude or joke the meme conveys and the situations people send it in. When the joke rests on wordplay, a quote or a cultural reference, explain it.
+    - "queries": 6 to 10 search terms of one to three words that people would type to find this meme: the emotions and attitudes it shows, what is happening, the chat situations it answers, and its catchphrase or meme name. For example, a cat hiding under a blanket might get: hiding, scared, nope, under blanket, anxious, do not disturb. In English, plus at most 2 in the language of the image text when that is not English. Never include words meaning "meme", "sticker" or "reaction image" in any language.
 
-    # Extraction Tasks (Think Step-by-Step)
-    Analyze the image in the following dimensions:
+    Then, for users, in {language}:
+    - "title": a short name for the meme, like a file name: its catchphrase or meme name when it has one, otherwise its subject and mood.
+    - "summary": one or two sentences telling a user what the meme expresses and when to send it.
+    - "tags": 3 to 6 tags for browsing the collection.
 
-    1.  OCR_Text: Transcribe all visible text verbatim.
-    2.  Visual_Subject: Describe the main visible elements using concise keywords or short phrases.
-        - Examples: "Sweating Man", "Confused Cat", "Dinner Table", "Golden Hair", "Blue Eyes".
-    3.  Specific_Entities: Identify specific proper names, including celebrities, fictional characters, anime figures, famous IP sources, and source works.
-        - Examples: "Hatsune Miku", "Elon Musk", "SpongeBob".
-        - Constraint: **High Confidence Only**. If the character is generic, ambiguous, or you are not 100% sure of the identity, leave this array empty to avoid hallucinations.
-    4.  Visual_Style: Describe the aesthetic style using concise professional tags.
-        - Examples: "3D Render", "Pixel Art", "Wojak", "Realistic", "Screenshot", "Anime", "Chibi".
-        - Constraint: **DO NOT** describe image quality, format, resolution or useless attributes (e.g., "blurry", "HD", "4K", "Meme"). Focus on the **artistic style** and **visual genre**.
-    5.  Implied_Meaning: What specific vibe, attitude, or social reaction does sending this image convey?
-        - Examples: "Smug superiority", "Pretending everything is fine", "Chaotic panic", "Reluctant acceptance", "Sarcastic surprise", "Sexual innuendo".
-    6.  Synthetic_Queries: Generate 3-5 distinct search queries a user would likely type.
-        - Examples: "my face when boss calls", "shut up and take money", "awkward silence reaction", "math lady confused".
-        - Constraint: Generate the **raw usage scenario**, **conversational intent**, or **internal monologue** directly, without meta descriptors (e.g., "XXX meme", "image for XXX").
-
-    # Output Schema (JSON)
-    {
-      "ocr_text": "String" or null,
-      "visual_subject": ["Keyword1", "Keyword2", ...],
-      "specific_entities": ["Entity1", "Entity2", ...] or [],
-      "visual_style": ["Tag1", "Tag2", ...],
-      "implied_meaning": ["Keyword1", "Keyword2", ...],
-      "synthetic_queries": ["Query1", "Query2", ...]
-    }
+    A tag is a category that would fit many other memes too. Choose them from these kinds:
+    - Source: the people, characters, works and meme templates shown, e.g. Lu Xun, Pepe the Frog, Panda Head. Name each one you recognize, a character by full name together with its work; leave out only the ones you would be guessing.
+    - Subject: what the meme shows, e.g. Shiba Inu, cat, anime girl.
+    - Topic: what it is about, when it is about something, e.g. work, gaming, Linux, politics.
+    - Emotion or attitude: what it conveys, e.g. sarcasm, happy, speechless, scared.
+    - Style: only when the whole image is drawn in a distinctive style, e.g. pixel art, manga, 3D render.
+    Every tag must be true of this image and add something the others don't (not both "anime" and "anime girl"). Write each one the way {language} speakers usually call it, in the shortest common form, keeping a name in its original form when that is how they know it.
+    Never tag objects, actions, catchphrases or quotes particular to this image (they belong in the title and description), appearance details (hair or eye color, hairstyle, blushing), words true of almost every meme (meme, sticker, funny, silly), or production details (cutout, white background, low resolution, the language of the text).
 
 upload:
   max_size_mb: 1.0

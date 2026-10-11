@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -181,7 +180,7 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 func systemTags(out *inference.VLMOutput) []string {
 	seen := make(map[string]bool)
 	var tags []string
-	for _, t := range append(slices.Clone(out.SpecificEntities), out.VisualStyle...) {
+	for _, t := range out.Tags {
 		t = strings.TrimSpace(t)
 		if key := strings.ToLower(t); t != "" && len(t) <= 100 && !seen[key] {
 			seen[key] = true

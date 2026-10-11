@@ -92,20 +92,15 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
           ) : (
             <dl className="grid gap-3 text-sm">
               <Field label="OCR 文本">{vlm.ocr_text || <Muted />}</Field>
-              <Field label="视觉主体">
-                <Chips items={vlm.visual_subject} />
+              <Field label="画面描述">{vlm.description || <Muted />}</Field>
+              <Field label="含义">{vlm.meaning || <Muted />}</Field>
+              <Field label="搜索词">
+                <Chips items={vlm.queries} />
               </Field>
-              <Field label="具体实体">
-                <Chips items={vlm.specific_entities} />
-              </Field>
-              <Field label="视觉风格">
-                <Chips items={vlm.visual_style} />
-              </Field>
-              <Field label="隐含含义">
-                <Chips items={vlm.implied_meaning} />
-              </Field>
-              <Field label="合成查询">
-                <Chips items={vlm.synthetic_queries} />
+              <Field label="标题">{vlm.title || <Muted />}</Field>
+              <Field label="说明">{vlm.summary || <Muted />}</Field>
+              <Field label="标签">
+                <Chips items={vlm.tags} />
               </Field>
             </dl>
           )}

@@ -3,22 +3,21 @@ package inference
 import (
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 var ocrNoiseRegex = regexp.MustCompile(`(?i)(?:key\s+)?frame\s+\d+/\d+\n?`)
 
+// VLMOutput is the caption: English fields for search, and title, summary and tags in the configured language for users.
 type VLMOutput struct {
-	OCRText          string   `json:"ocr_text"`
-	VisualSubject    []string `json:"visual_subject"`
-	SpecificEntities []string `json:"specific_entities"`
-	VisualStyle      []string `json:"visual_style"`
-	ImpliedMeaning   []string `json:"implied_meaning"`
-	SyntheticQueries []string `json:"synthetic_queries"`
-
-	// Optional texts to embed; GetMetaphorText and GetSemanticText derive them otherwise.
-	MetaphorText string `json:"-"`
-	SemanticText string `json:"-"`
+	OCRText     string   `json:"ocr_text"`
+	Description string   `json:"description"`
+	Meaning     string   `json:"meaning"`
+	Queries     []string `json:"queries"`
+	Title       string   `json:"title"`
+	Summary     string   `json:"summary"`
+	Tags        []string `json:"tags"`
 }
 
 func toStringSlice(v any) []string {
@@ -53,49 +52,24 @@ func ParseVLMOutput(caption string) (*VLMOutput, error) {
 	if ocr, ok := raw["ocr_text"].(string); ok {
 		out.OCRText = strings.TrimSpace(ocrNoiseRegex.ReplaceAllString(ocr, "")) // Drop the key frame labels drawn on stitched frames
 	}
-	out.VisualSubject = toStringSlice(raw["visual_subject"])
-	out.SpecificEntities = toStringSlice(raw["specific_entities"])
-	out.VisualStyle = toStringSlice(raw["visual_style"])
-	out.ImpliedMeaning = toStringSlice(raw["implied_meaning"])
-	out.SyntheticQueries = toStringSlice(raw["synthetic_queries"])
-
-	out.MetaphorText, _ = raw["metaphor_text"].(string)
-	out.SemanticText, _ = raw["semantic_text"].(string)
-
+	out.Description, _ = raw["description"].(string)
+	out.Meaning, _ = raw["meaning"].(string)
+	out.Queries = toStringSlice(raw["queries"])
+	out.Title, _ = raw["title"].(string)
+	out.Summary, _ = raw["summary"].(string)
+	out.Tags = toStringSlice(raw["tags"])
 	return out, nil
 }
 
 func (out *VLMOutput) GetMetaphorText() string {
-	if out.MetaphorText != "" {
-		return out.MetaphorText
-	}
-	metaphorArray := append([]string{}, out.SyntheticQueries...)
-	metaphorArray = append(metaphorArray, out.ImpliedMeaning...)
-	return strings.Join(metaphorArray, ", ")
+	return strings.Join(append([]string{out.Meaning}, out.Queries...), "\n")
 }
 
 func (out *VLMOutput) GetSemanticText() string {
-	if out.SemanticText != "" {
-		return out.SemanticText
-	}
-	semanticArray := append([]string{}, out.SpecificEntities...)
-	semanticArray = append(semanticArray, out.VisualSubject...)
-	semanticArray = append(semanticArray, out.VisualStyle...)
-	return strings.Join(semanticArray, ", ")
+	return out.Description + "\n" + strings.Join(out.Tags, ", ")
 }
 
 func (out *VLMOutput) GetRerankDoc() string {
-	parts := []string{}
-	if out.OCRText != "" {
-		parts = append(parts, out.OCRText)
-	}
-	metaphor := out.GetMetaphorText()
-	if metaphor != "" {
-		parts = append(parts, metaphor)
-	}
-	semantic := out.GetSemanticText()
-	if semantic != "" {
-		parts = append(parts, semantic)
-	}
-	return strings.Join(parts, ", ")
+	parts := []string{out.Title, out.OCRText, out.Description, out.Meaning, strings.Join(out.Tags, ", "), strings.Join(out.Queries, "; ")}
+	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "\n")
 }

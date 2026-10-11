@@ -12,10 +12,6 @@ export const memeHref = (id: string, entryId?: string) => (entryId ? `/m/${id}?e
 
 export const isProcessing = (meme?: Pick<Meme, 'status'> | null) => meme?.status === 'pending' || meme?.status === 'processing'
 
-export function memeTitle(meme: Meme) {
-  return meme.keywords.slice(0, 3).join(' · ') || '未命名表情包'
-}
+export const memeTitle = (meme: Meme) => meme.title || '未命名表情包'
 
-export function memeAlt(meme: { keywords?: string[] }) {
-  return meme.keywords?.length ? `表情包：${meme.keywords.join('、')}` : '表情包'
-}
+export const memeAlt = (meme: { title?: string }) => (meme.title ? `表情包：${meme.title}` : '表情包')

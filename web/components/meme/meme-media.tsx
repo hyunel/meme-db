@@ -42,7 +42,7 @@ export function MemeMedia({
   className,
   controls = false,
 }: {
-  meme: MemeThumb & { keywords?: string[] }
+  meme: MemeThumb & { title?: string }
   className?: string
   controls?: boolean
 }) {

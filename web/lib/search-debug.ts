@@ -30,11 +30,12 @@ export interface Caption {
   raw: unknown
   vlm: {
     ocr_text: string
-    visual_subject: string[] | null
-    specific_entities: string[] | null
-    visual_style: string[] | null
-    implied_meaning: string[] | null
-    synthetic_queries: string[] | null
+    description: string
+    meaning: string
+    queries: string[] | null
+    title: string
+    summary: string
+    tags: string[] | null
   } | null
   metaphor_text: string
   semantic_text: string

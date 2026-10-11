@@ -31,6 +31,7 @@ type UploadConfig struct {
 }
 
 type PromptConfig struct {
+	Language  string `yaml:"language" validate:"required"`
 	Caption   string `yaml:"caption" validate:"required"`
 	Retrieval string `yaml:"retrieval" validate:"required"`
 	Tag       string `yaml:"tag" validate:"required"`

@@ -84,7 +84,8 @@ type memeRow struct {
 	Status        string          `db:"status"`
 	FailReason    *string         `db:"fail_reason"`
 	OCRText       string          `db:"ocr_text"`
-	VLMJSON       []byte          `db:"vlm_json"`
+	Title         string          `db:"title"`
+	Summary       string          `db:"summary"`
 	AnalyzedAt    *time.Time      `db:"analyzed_at"`
 	IsPublic      bool            `db:"is_public"`
 	FavoriteCount int             `db:"favorite_count"`
@@ -95,13 +96,6 @@ type memeRow struct {
 }
 
 func (row *memeRow) toModel() *model.Meme {
-	var vlm struct {
-		ImpliedMeaning []string `json:"implied_meaning"`
-	}
-	_ = json.Unmarshal(row.VLMJSON, &vlm) // Keywords are best effort; the VLM output is free-form
-	if vlm.ImpliedMeaning == nil {
-		vlm.ImpliedMeaning = []string{}
-	}
 	return &model.Meme{
 		ID:            row.ID,
 		MimeType:      row.MimeType,
@@ -111,7 +105,8 @@ func (row *memeRow) toModel() *model.Meme {
 		Status:        row.Status,
 		FailReason:    row.FailReason,
 		OCRText:       row.OCRText,
-		Keywords:      vlm.ImpliedMeaning,
+		Title:         row.Title,
+		Summary:       row.Summary,
 		Tags:          row.Tags,
 		IsPublic:      row.IsPublic,
 		FavoriteCount: row.FavoriteCount,
@@ -132,7 +127,7 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 		SELECT a.id, a.mime_type, a.file_size, a.created_at,
 			COALESCE(m.width, 0) AS width, COALESCE(m.height, 0) AS height,
 			m.processing_status AS status, m.fail_reason, COALESCE(m.ocr_text, '') AS ocr_text,
-			m.vlm_json, m.analyzed_at,
+			COALESCE(m.vlm_json->>'title', '') AS title, COALESCE(m.vlm_json->>'summary', '') AS summary, m.analyzed_at,
 			%[1]s AS is_public,
 			(SELECT count(*) FROM library.favorites f WHERE f.asset_id = a.id) AS favorite_count,
 			(SELECT count(*) FROM library.nodes n WHERE n.asset_id = a.id) AS library_count,
