@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import type { Meme } from '@/lib/types'
 import { kindOf } from '@/lib/media'
@@ -7,6 +8,9 @@ import { MemeMedia } from './meme-media'
 import { FavoriteButton, MemeMoreMenu } from './meme-actions'
 import { ProcessBadge } from '@/components/status-badges'
 import { cn } from '@/lib/utils'
+
+// Height over width, bounded so panoramas and long screenshots keep a usable card.
+const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)
 
 export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme; similarity?: number; allowAdd?: boolean; className?: string }) {
   const kind = kindOf(meme.mime_type)
@@ -16,7 +20,8 @@ export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
       <Link
         href={`/m/${meme.id}`}
-        className="relative block aspect-square overflow-hidden rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
+        className="relative block overflow-hidden rounded-xl border bg-card p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
+        style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
         <MemeMedia meme={meme} className="transition-transform duration-300 group-hover:scale-[1.03]" />
         <span className="sr-only">查看详情</span>
@@ -61,14 +66,49 @@ export function MemeCard({ meme, similarity, allowAdd, className }: { meme: Meme
   )
 }
 
+// The Tailwind lg / md / sm breakpoints, widest first.
+const columnQueries: [string, number][] = [
+  ['(min-width: 64rem)', 5],
+  ['(min-width: 48rem)', 4],
+  ['(min-width: 40rem)', 3],
+]
+
+function useColumnCount() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const lists = columnQueries.map(([q]) => window.matchMedia(q))
+      lists.forEach((l) => l.addEventListener('change', onChange))
+      return () => lists.forEach((l) => l.removeEventListener('change', onChange))
+    },
+    () => columnQueries.find(([q]) => window.matchMedia(q).matches)?.[1] ?? 2,
+    () => 2,
+  )
+}
+
 export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[]; similarity?: Map<string, number>; allowAdd?: boolean }) {
+  const count = useColumnCount()
+  // Each meme goes to the shortest column, so the columns stay level and the order reads left to right.
+  const columns = useMemo(() => {
+    const cols = Array.from({ length: count }, () => ({ height: 0, memes: [] as Meme[] }))
+    for (const m of memes) {
+      const col = cols.reduce((a, b) => (b.height < a.height ? b : a))
+      col.memes.push(m)
+      col.height += ratioOf(m) + 0.3 // The tag row under the card
+    }
+    return cols.map((c) => c.memes)
+  }, [memes, count])
+
   return (
-    <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-      {memes.map((m) => (
-        <li key={m.id}>
-          <MemeCard meme={m} similarity={similarity?.get(m.id)} allowAdd={allowAdd} />
-        </li>
+    <div className="flex items-start gap-3">
+      {columns.map((col, i) => (
+        <ul key={i} className="flex min-w-0 flex-1 flex-col gap-4">
+          {col.map((m) => (
+            <li key={m.id}>
+              <MemeCard meme={m} similarity={similarity?.get(m.id)} allowAdd={allowAdd} />
+            </li>
+          ))}
+        </ul>
       ))}
-    </ul>
+    </div>
   )
 }
