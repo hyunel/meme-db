@@ -34,43 +34,93 @@ func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids
 }
 
 type LibraryView struct {
-	Folder    *model.Folder   `json:"folder"`    // Nil at the root
-	Ancestors []model.Crumb   `json:"ancestors"` // Root first, excluding Folder
+	Folder    *model.Folder   `json:"folder"`    // Nil at the root of the viewer's library
+	Ancestors []model.Crumb   `json:"ancestors"` // The viewer-visible folders above Folder, root first
 	Folders   []*model.Folder `json:"folders"`
 	Entries   []*model.Entry  `json:"entries"`
 }
 
+// Get lists a folder of the viewer's library, or its root.
 func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderID *string) (*LibraryView, error) {
-	view := &LibraryView{Ancestors: []model.Crumb{}, Entries: []*model.Entry{}}
-	parentPublic := false
+	var folder *located
 	if folderID != nil {
-		folder, err := s.ownedFolder(ctx, viewer.UserID, *folderID)
-		if err != nil {
+		var err error
+		if folder, err = s.locate(ctx, viewer, *folderID, model.NodeTypeFolder); err != nil {
 			return nil, err
 		}
-		ancestors, err := s.repo.Node.Ancestors(ctx, folder.Path)
-		if err != nil {
-			return nil, err
+		if folder == nil || folder.OwnerID != viewer.UserID {
+			return nil, apperror.NotFound("文件夹不存在")
 		}
-		parentPublic = folder.IsPublic
-		for _, a := range ancestors {
-			view.Ancestors = append(view.Ancestors, model.Crumb{ID: a.ID, Name: a.Name})
-			parentPublic = parentPublic || a.IsPublic
-		}
+	}
+	return s.view(ctx, viewer, folder)
+}
+
+// PublicFolder lists a folder opened by its link, which may be another user's public one.
+func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*LibraryView, error) {
+	folder, err := s.locate(ctx, viewer, id, model.NodeTypeFolder)
+	if err != nil {
+		return nil, err
+	}
+	if folder == nil {
+		return nil, apperror.NotFound("合集不存在或未公开")
+	}
+	return s.view(ctx, viewer, folder)
+}
+
+// view lists a folder, or the root of the viewer's library if it is nil.
+func (s *LibraryService) view(ctx context.Context, viewer *rbac.Identity, folder *located) (*LibraryView, error) {
+	view := &LibraryView{Ancestors: []model.Crumb{}}
+	ownerID, parentID, public := viewer.UserID, (*string)(nil), false
+	if folder != nil {
 		folders, err := s.Folders(ctx, viewer, []string{folder.ID})
 		if err != nil {
 			return nil, err
 		}
-		view.Folder = folders[0]
+		view.Folder, view.Ancestors = folders[0], folder.Ancestors
+		ownerID, parentID, public = folder.OwnerID, &folder.ID, folder.IsPublic || folder.InPublic
 	}
 
-	children, err := s.repo.Node.Children(ctx, viewer.UserID, folderID)
+	children, err := s.repo.Node.Children(ctx, ownerID, parentID)
 	if err != nil {
 		return nil, err
 	}
-	folderIDs, assetIDs := splitChildren(children)
+	folderIDs, files := splitChildren(children)
 	if view.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
 		return nil, err
+	}
+	view.Entries, err = s.entries(ctx, viewer, files, public)
+	return view, err
+}
+
+type EntryDetail struct {
+	*model.Entry
+	Owner     model.UserRef `json:"owner"`
+	Ancestors []model.Crumb `json:"ancestors"` // The viewer-visible folders above it, root first
+}
+
+// Entry finds a file opened by its link, which may be in another user's public folder.
+func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id string) (*EntryDetail, error) {
+	file, err := s.locate(ctx, viewer, id, model.NodeTypeFile)
+	if err != nil {
+		return nil, err
+	}
+	var entries []*model.Entry
+	if file != nil {
+		if entries, err = s.entries(ctx, viewer, []*model.Node{file.Node}, file.InPublic); err != nil {
+			return nil, err
+		}
+	}
+	if len(entries) == 0 {
+		return nil, apperror.NotFound("表情包不存在或未公开")
+	}
+	return &EntryDetail{Entry: entries[0], Owner: model.UserRef{ID: file.Owner.ID, Username: file.Owner.Username}, Ancestors: file.Ancestors}, nil
+}
+
+// entries lists the files whose memes the viewer may see; inPublic tells whether a folder above them is public.
+func (s *LibraryService) entries(ctx context.Context, viewer *rbac.Identity, files []*model.Node, inPublic bool) ([]*model.Entry, error) {
+	assetIDs := make([]string, len(files))
+	for i, n := range files {
+		assetIDs[i] = *n.AssetID
 	}
 	memes, err := s.memes.Memes(ctx, viewer, assetIDs)
 	if err != nil {
@@ -80,19 +130,58 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 	for _, m := range memes {
 		memeByID[m.ID] = m
 	}
-	for _, n := range children {
-		if n.Type == model.NodeTypeFile {
-			view.Entries = append(view.Entries, &model.Entry{
+
+	entries := []*model.Entry{}
+	for _, n := range files {
+		if meme, ok := memeByID[*n.AssetID]; ok {
+			entries = append(entries, &model.Entry{
 				ID:         n.ID,
 				ParentID:   n.ParentID,
 				Name:       n.Name,
-				Visibility: visibility(n.IsPublic, parentPublic),
-				Meme:       memeByID[*n.AssetID],
+				Visibility: visibility(n.IsPublic, inPublic),
+				Meme:       meme,
 				CreatedAt:  n.CreatedAt,
 			})
 		}
 	}
-	return view, nil
+	return entries, nil
+}
+
+type located struct {
+	*model.Node
+	Owner     *model.User
+	Ancestors []model.Crumb // The viewer-visible folders above it, root first
+	InPublic  bool          // Whether a folder above it is public
+}
+
+// locate finds a node the viewer may see: any of their own, or a public one of an active user,
+// whose path others see from the topmost public folder down.
+func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id string, nodeType model.NodeType) (*located, error) {
+	node, err := s.repo.Node.Get(ctx, id)
+	if err != nil || node == nil || node.Type != nodeType {
+		return nil, err
+	}
+	owner, err := s.repo.User.Get(ctx, node.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	ancestors, err := s.repo.Node.Ancestors(ctx, node.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	own := node.OwnerID == viewer.UserID
+	loc := &located{Node: node, Owner: owner, Ancestors: []model.Crumb{}}
+	for _, a := range ancestors {
+		loc.InPublic = loc.InPublic || a.IsPublic
+		if loc.InPublic || own {
+			loc.Ancestors = append(loc.Ancestors, model.Crumb{ID: a.ID, Name: a.Name})
+		}
+	}
+	if !own && (!(loc.InPublic || node.IsPublic) || owner.Status != model.UserStatusActive) {
+		return nil, nil
+	}
+	return loc, nil
 }
 
 func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity, parentID *string, name string) (*model.Folder, error) {
@@ -114,46 +203,57 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 	return folders[0], nil
 }
 
-func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, file *multipart.FileHeader) (*model.EntryRef, error) {
+func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
 	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return s.addFile(ctx, viewer.UserID, parentID, asset.ID, filepath.Base(file.Filename))
+	return s.addFile(ctx, viewer, parentID, asset.ID, filepath.Base(file.Filename))
 }
 
-func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, memeID string, parentID *string) (*model.EntryRef, error) {
+func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, memeID string, parentID *string) (*EntryDetail, bool, error) {
 	meme, err := s.memes.Get(ctx, viewer, memeID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	asset, err := s.repo.Asset.Get(ctx, memeID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	name := "meme"
 	if len(meme.Keywords) > 0 {
 		name = meme.Keywords[0]
 	}
-	return s.addFile(ctx, viewer.UserID, parentID, memeID, name+asset.Extension)
+	return s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension)
 }
 
-func (s *LibraryService) addFile(ctx context.Context, ownerID string, parentID *string, assetID, name string) (*model.EntryRef, error) {
-	taken, err := s.takenNames(ctx, ownerID, parentID)
+// addFile reports whether it created the entry; a file already in the folder is returned instead, so adding can be retried.
+func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, parentID *string, assetID, name string) (*EntryDetail, bool, error) {
+	children, err := s.repo.Node.Children(ctx, viewer.UserID, parentID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	taken := make(map[string]bool, len(children))
+	for _, n := range children {
+		if n.AssetID != nil && *n.AssetID == assetID {
+			entry, err := s.Entry(ctx, viewer, n.ID)
+			return entry, false, err
+		}
+		taken[n.Name] = true
+	}
+
 	node, err := s.create(ctx, &model.Node{
-		OwnerID:  ownerID,
+		OwnerID:  viewer.UserID,
 		ParentID: parentID,
 		Name:     uniqueName(taken, name),
 		Type:     model.NodeTypeFile,
 		AssetID:  &assetID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return &model.EntryRef{ID: node.ID, FolderID: node.ParentID}, nil
+	entry, err := s.Entry(ctx, viewer, node.ID)
+	return entry, true, err
 }
 
 func (s *LibraryService) Rename(ctx context.Context, viewer *rbac.Identity, id, name string) error {
@@ -302,15 +402,15 @@ func (s *LibraryService) takenNames(ctx context.Context, ownerID string, parentI
 	return taken, err
 }
 
-func splitChildren(nodes []*model.Node) (folderIDs, assetIDs []string) {
+func splitChildren(nodes []*model.Node) (folderIDs []string, files []*model.Node) {
 	for _, n := range nodes {
 		if n.Type == model.NodeTypeFolder {
 			folderIDs = append(folderIDs, n.ID)
 		} else {
-			assetIDs = append(assetIDs, *n.AssetID)
+			files = append(files, n)
 		}
 	}
-	return folderIDs, assetIDs
+	return folderIDs, files
 }
 
 func uniqueName(taken map[string]bool, name string) string {
@@ -351,64 +451,6 @@ func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identit
 		return nil, err
 	}
 	return s.Folders(ctx, viewer, ids)
-}
-
-type FolderPage struct {
-	Folder    *model.Folder   `json:"folder"`
-	Ancestors []model.Crumb   `json:"ancestors"` // The viewer-visible part of the path, root first
-	Folders   []*model.Folder `json:"folders"`
-	Memes     []*model.Meme   `json:"memes"`
-}
-
-func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*FolderPage, error) {
-	notFound := apperror.NotFound("合集不存在或未公开")
-	node, err := s.repo.Node.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil || node.Type != model.NodeTypeFolder {
-		return nil, notFound
-	}
-	owner, err := s.repo.User.Get(ctx, node.OwnerID)
-	if err != nil {
-		return nil, err
-	}
-	ancestors, err := s.repo.Node.Ancestors(ctx, node.Path)
-	if err != nil {
-		return nil, err
-	}
-
-	own := node.OwnerID == viewer.UserID
-	page := &FolderPage{Ancestors: []model.Crumb{}}
-	public := false
-	for _, a := range ancestors {
-		public = public || a.IsPublic
-		if public || own {
-			page.Ancestors = append(page.Ancestors, model.Crumb{ID: a.ID, Name: a.Name})
-		}
-	}
-	if !own && (!(public || node.IsPublic) || owner.Status != model.UserStatusActive) {
-		return nil, notFound
-	}
-
-	folders, err := s.Folders(ctx, viewer, []string{id})
-	if err != nil {
-		return nil, err
-	}
-	page.Folder = folders[0]
-
-	children, err := s.repo.Node.Children(ctx, node.OwnerID, &id)
-	if err != nil {
-		return nil, err
-	}
-	folderIDs, assetIDs := splitChildren(children)
-	if page.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
-		return nil, err
-	}
-	if page.Memes, err = s.memes.Memes(ctx, viewer, assetIDs); err != nil {
-		return nil, err
-	}
-	return page, nil
 }
 
 type Profile struct {

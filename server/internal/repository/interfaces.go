@@ -14,6 +14,7 @@ import (
 
 type Repos struct {
 	User     *UserRepository
+	Token    *TokenRepository
 	Meme     *MemeRepository
 	Asset    *AssetRepository
 	Task     *TaskRepository
@@ -27,6 +28,7 @@ type Repos struct {
 func NewRepos(db db.DBTX) *Repos {
 	return &Repos{
 		User:     &UserRepository{db: db},
+		Token:    &TokenRepository{db: db},
 		Meme:     &MemeRepository{db: db},
 		Asset:    &AssetRepository{db: db},
 		Task:     &TaskRepository{db: db},

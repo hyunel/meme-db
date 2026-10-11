@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -12,6 +15,9 @@ import (
 	"github.com/hyunel/MemeDB/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// Tells API tokens apart from session JWTs.
+const tokenPrefix = "mdb_"
 
 type AuthServiceConfig struct {
 	JWTSecret string
@@ -36,7 +42,7 @@ func (s *AuthService) Register(ctx context.Context, username, email, password st
 	if err != nil {
 		return "", nil, err
 	}
-	token, err := s.generateToken(user.ID)
+	token, err := s.newSession(user.ID)
 	return token, user, err
 }
 
@@ -52,7 +58,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 		return "", nil, apperror.Forbidden("该账号已被禁用，请联系管理员")
 	}
 
-	token, err := s.generateToken(user.ID)
+	token, err := s.newSession(user.ID)
 	return token, user, err
 }
 
@@ -78,18 +84,60 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, current, next 
 	return setPassword(ctx, s.repo.Repos, userID, next)
 }
 
-func (s *AuthService) GetIdentity(ctx context.Context, userID string) (*rbac.Identity, error) {
-	user, err := s.repo.User.Get(ctx, userID)
+// Authenticate rejects a bad API token, so that a script never silently runs as a guest,
+// while a stale session degrades to a guest, which the web app notices through /auth/me.
+func (s *AuthService) Authenticate(ctx context.Context, credential string) (*rbac.Identity, error) {
+	if strings.HasPrefix(credential, tokenPrefix) {
+		return s.tokenIdentity(ctx, credential)
+	}
+
+	guest := &rbac.Identity{Role: rbac.RoleGuest}
+	userID, err := s.parseSession(credential)
+	if err != nil {
+		return guest, nil
+	}
+	user, err := s.activeUser(ctx, userID)
+	if err != nil || user == nil {
+		return guest, err
+	}
+	return &rbac.Identity{UserID: user.ID, Role: user.Role}, nil
+}
+
+var _ rbac.Authenticator = (*AuthService)(nil)
+
+func (s *AuthService) tokenIdentity(ctx context.Context, secret string) (*rbac.Identity, error) {
+	token, err := s.repo.Token.GetByHash(ctx, hashToken(secret))
 	if err != nil {
 		return nil, err
 	}
-	if user == nil || user.Status != model.UserStatusActive {
-		return nil, apperror.Unauthorized("用户不存在或已被禁用")
+	var user *model.User
+	if token != nil && (token.ExpiresAt == nil || token.ExpiresAt.After(time.Now())) {
+		if user, err = s.activeUser(ctx, token.UserID); err != nil {
+			return nil, err
+		}
 	}
-	return &rbac.Identity{UserID: userID, Role: user.Role}, nil
+	if user == nil {
+		return nil, apperror.Unauthorized("API 令牌无效、已过期或已被撤销")
+	}
+
+	// Recorded to the minute, sparing a write per request.
+	if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) > time.Minute {
+		if err := s.repo.Token.Touch(ctx, token.ID); err != nil {
+			return nil, err
+		}
+	}
+	return &rbac.Identity{UserID: user.ID, Role: user.Role, Scope: token.Scope}, nil
 }
 
-func (s *AuthService) generateToken(userID string) (string, error) {
+func (s *AuthService) activeUser(ctx context.Context, id string) (*model.User, error) {
+	user, err := s.repo.User.Get(ctx, id)
+	if err != nil || user == nil || user.Status != model.UserStatusActive {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *AuthService) newSession(userID string) (string, error) {
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -101,17 +149,48 @@ func (s *AuthService) generateToken(userID string) (string, error) {
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
 
-func (s *AuthService) ParseToken(tokenString string) (string, error) {
+func (s *AuthService) parseSession(tokenString string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		return []byte(s.cfg.JWTSecret), nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
-		return "", apperror.Unauthorized("登录已失效")
+		return "", err
 	}
 	return token.Claims.(*Claims).UserID, nil
 }
 
-var _ rbac.IdentityProvider = (*AuthService)(nil)
+func (s *AuthService) ListTokens(ctx context.Context, viewer *rbac.Identity) ([]*model.APIToken, error) {
+	return s.repo.Token.List(ctx, viewer.UserID)
+}
+
+// CreateToken returns the token with its secret, which is never shown again; a zero ttl never expires.
+func (s *AuthService) CreateToken(ctx context.Context, viewer *rbac.Identity, name, scope string, ttl time.Duration) (*model.APIToken, string, error) {
+	if scope == rbac.ScopeAdmin && viewer.Role != rbac.RoleAdmin {
+		return nil, "", apperror.Forbidden("只有管理员可以创建管理权限的令牌").OnField("scope")
+	}
+
+	secret := tokenPrefix + rand.Text()
+	token := &model.APIToken{UserID: viewer.UserID, Name: name, Hint: secret[len(secret)-4:], Scope: scope}
+	if ttl > 0 {
+		expires := time.Now().Add(ttl)
+		token.ExpiresAt = &expires
+	}
+	created, err := s.repo.Token.Create(ctx, token, hashToken(secret))
+	return created, secret, err
+}
+
+func (s *AuthService) DeleteToken(ctx context.Context, viewer *rbac.Identity, id string) error {
+	ok, err := s.repo.Token.Delete(ctx, viewer.UserID, id)
+	if err == nil && !ok {
+		err = apperror.NotFound("令牌不存在")
+	}
+	return err
+}
+
+func hashToken(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
+}
 
 func createUser(ctx context.Context, repo *repository.Provider, username, email, password, role string) (*model.User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))

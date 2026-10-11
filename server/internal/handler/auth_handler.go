@@ -2,8 +2,11 @@ package handler
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
+	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
@@ -89,6 +92,59 @@ func (h *AuthHandler) ChangePassword(c echo.Context) error {
 
 	err := h.authService.ChangePassword(c.Request().Context(), rbac.GetIdentity(c).UserID, req.CurrentPassword, req.NewPassword)
 	if err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *AuthHandler) ListTokens(c echo.Context) error {
+	tokens, err := h.authService.ListTokens(c.Request().Context(), rbac.GetIdentity(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, tokens)
+}
+
+type CreateTokenRequest struct {
+	Name          string `json:"name"`
+	Scope         string `json:"scope" validate:"required,oneof=read write admin"`
+	ExpiresInDays int    `json:"expires_in_days" validate:"omitempty,min=1,max=3650"` // Omitted = never
+}
+
+type CreateTokenResponse struct {
+	*model.APIToken
+	Secret string `json:"secret"` // Only ever returned here
+}
+
+func (h *AuthHandler) CreateToken(c echo.Context) error {
+	var req CreateTokenRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || len([]rune(name)) > 50 {
+		return apperror.BadRequest("名称需为 1–50 个字符").OnField("name")
+	}
+
+	ttl := time.Duration(req.ExpiresInDays) * 24 * time.Hour
+	token, secret, err := h.authService.CreateToken(c.Request().Context(), rbac.GetIdentity(c), name, req.Scope, ttl)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, CreateTokenResponse{APIToken: token, Secret: secret})
+}
+
+type TokenRequest struct {
+	ID string `param:"id" validate:"required,uuid"`
+}
+
+func (h *AuthHandler) DeleteToken(c echo.Context) error {
+	var req TokenRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.authService.DeleteToken(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
