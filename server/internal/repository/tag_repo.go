@@ -150,7 +150,7 @@ func (r *TagRepository) Get(ctx context.Context, ids []string, commonShare float
 
 func (r *TagRepository) usages(ctx context.Context, w filter, order string, commonShare float64) ([]*model.TagUsage, error) {
 	query := fmt.Sprintf(`
-		SELECT u.*, u.usage > %s * (SELECT count(*) FROM core.meme_info WHERE processing_status = 'success') AS common
+		SELECT u.*, u.usage > %s::float8 * (SELECT count(*) FROM core.meme_info WHERE processing_status = 'success') AS common
 		FROM (
 			SELECT t.id, t.name, t.hidden, t.created_at,
 				ARRAY(SELECT l.name FROM library.labels l WHERE l.tag_id = t.id AND l.name <> t.name ORDER BY l.name) AS aliases,
