@@ -26,7 +26,7 @@ func NewMemeHandler(memeService *service.MemeService, tagService *service.TagSer
 
 type SearchRequest struct {
 	Query    string                `form:"q" validate:"max=200"`
-	Scope    string                `form:"scope" validate:"omitempty,oneof=public mine"`
+	Scope    string                `form:"scope" validate:"omitempty,oneof=all mine"`
 	FolderID string                `form:"folder_id" validate:"omitempty,uuid"`
 	Limit    int                   `form:"limit" validate:"omitempty,min=1,max=100"`
 	Image    *multipart.FileHeader `form:"image"`
@@ -89,7 +89,7 @@ type ListMemesRequest struct {
 	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
-// List lists public memes, most popular first.
+// List lists the memes the viewer may see, most popular first.
 func (h *MemeHandler) List(c echo.Context) error {
 	var req ListMemesRequest
 	if err := BindAndValidate(c, &req); err != nil {
@@ -199,7 +199,7 @@ func (h *MemeHandler) HotTags(c echo.Context) error {
 		return err
 	}
 
-	tags, err := h.tagService.Hot(c.Request().Context(), limitOr(req.Limit, 10))
+	tags, err := h.tagService.Hot(c.Request().Context(), Viewer(c), limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}

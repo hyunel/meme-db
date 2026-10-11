@@ -18,7 +18,7 @@ import { useSession } from '@/lib/session'
 import type { LibraryView, SearchResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type Scope = 'public' | 'mine'
+type Scope = 'all' | 'mine'
 
 function search(q: string, scope: Scope, folderId: string | null, image: ImageQuery | null) {
   const form = new FormData()
@@ -37,7 +37,7 @@ export function SearchView() {
   const requireLogin = useRequireLogin()
 
   const q = params.get('q')?.trim() ?? ''
-  const scope: Scope = params.get('scope') === 'mine' ? 'mine' : 'public'
+  const scope: Scope = params.get('scope') === 'mine' ? 'mine' : 'all'
   const folderId = scope === 'mine' ? params.get('folder') : null
   const imageRef = params.get('img')
   const image = getImageQuery(imageRef)
@@ -191,7 +191,7 @@ export function SearchView() {
         <div role="radiogroup" aria-label="搜索范围" className="inline-flex rounded-lg border bg-card p-0.5">
           {(
             [
-              { id: 'public', label: '全站公开', icon: Globe },
+              { id: 'all', label: '全站', icon: Globe },
               { id: 'mine', label: '我的库', icon: Library },
             ] as const
           ).map((o) => (
@@ -302,11 +302,11 @@ export function SearchView() {
           <EmptyState
             icon={Library}
             title="登录后才可搜索我的库"
-            description="你也可以切换到全站公开范围继续搜索。"
+            description="你也可以切换到全站范围继续搜索。"
             action={
               <div className="flex flex-wrap justify-center gap-2">
-                <Button variant="outline" onClick={() => navigate({ scope: 'public', folder: null })}>
-                  切换到全站公开
+                <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
+                  切换到全站
                 </Button>
                 <Button nativeButton={false} render={<Link href={`/login?redirect=${encodeURIComponent(`${pathname}?${params.toString()}`)}`} />}>
                   去登录
@@ -345,8 +345,8 @@ export function SearchView() {
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 {scope === 'mine' && (
-                  <Button variant="outline" onClick={() => navigate({ scope: 'public', folder: null })}>
-                    切换到全站公开
+                  <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
+                    切换到全站
                   </Button>
                 )}
                 {image && (

@@ -21,7 +21,7 @@ export function SearchBar({
 }: {
   size?: 'md' | 'lg'
   defaultValue?: string
-  scope?: 'public' | 'mine'
+  scope?: 'all' | 'mine'
   folderId?: string | null
   className?: string
   autoFocus?: boolean

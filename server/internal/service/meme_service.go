@@ -64,9 +64,10 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	return memes[0], nil
 }
 
-// Popular lists public memes, optionally only those tagged tag, most popular first.
+// Popular lists the memes the viewer may see, optionally only those tagged tag, most
+// popular first.
 func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag string, limit int) (*model.Page[*model.Meme], error) {
-	ids, total, err := s.repo.Meme.PublicIDs(ctx, viewer.UserID, tag, limit)
+	ids, total, err := s.repo.Meme.PopularIDs(ctx, viewer.UserID, viewer.IsAdmin(), tag, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +78,7 @@ func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag st
 	return &model.Page[*model.Meme]{Items: memes, Total: total}, nil
 }
 
-// Similar finds memes close to a meme the viewer can see, among public memes and the
-// viewer's library.
+// Similar finds memes close to a meme the viewer can see, among the memes they may see.
 func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id string, limit int) ([]*model.Meme, error) {
 	if _, err := s.Get(ctx, viewer, id); err != nil {
 		return nil, err
@@ -97,12 +97,7 @@ func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id str
 			recalls = append(recalls, repository.Recall{Type: v.name, Column: v.name, Value: *v.vec, Limit: limit})
 		}
 	}
-	candidates, err := s.repo.Meme.Recall(ctx, recalls, repository.RecallScope{
-		ViewerID: viewer.UserID,
-		Public:   true,
-		Owned:    true,
-		Exclude:  id,
-	})
+	candidates, err := s.repo.Meme.Recall(ctx, recalls, repository.RecallScope{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), Exclude: id})
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform similarity search: %w", err)
 	}
@@ -119,7 +114,7 @@ type SearchParams struct {
 	Viewer   *rbac.Identity
 	Query    string
 	Image    *inference.ImageInput
-	Mine     bool   // Search the viewer's library instead of public memes
+	Mine     bool   // Search only the viewer's library instead of every meme they may see
 	FolderID string // With Mine, restricts the search to a folder subtree
 	Limit    int
 }
@@ -127,7 +122,7 @@ type SearchParams struct {
 // Search recalls candidates by text (semantic, metaphor, CLIP and OCR channels) or by
 // image (CLIP), then reranks them against the text query if there is one.
 func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.SearchResult, error) {
-	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Public: !params.Mine, Owned: params.Mine}
+	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Admin: params.Viewer.IsAdmin(), Mine: params.Mine}
 	if params.Mine && params.Viewer.UserID == "" {
 		return nil, apperror.Unauthorized("登录后才能搜索我的库")
 	}

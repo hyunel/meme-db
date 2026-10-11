@@ -32,7 +32,7 @@ export function HomeView() {
           <p className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
             {'已收录 '}
             <span className="font-medium text-foreground tabular-nums">{popular?.total ?? '…'}</span>
-            {' 张公开表情包，支持以图搜图'}
+            {' 张表情包，支持以图搜图'}
           </p>
           <h1 className="text-4xl font-semibold tracking-tight text-balance md:text-6xl">
             找到那张<span className="relative whitespace-nowrap">
