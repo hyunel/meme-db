@@ -97,7 +97,7 @@ export function FolderPickerDialog({
           <DialogDescription>浏览并选择目标文件夹，然后点击「{verb}到此处」。</DialogDescription>
         </DialogHeader>
 
-        <nav aria-label="目标位置路径" className="flex items-center gap-1 overflow-x-auto text-sm">
+        <nav aria-label="目标位置路径" className="scroll-row -mx-1 flex items-center gap-1 px-1 text-sm">
           <Button variant="ghost" size="icon-sm" disabled={cur === null} onClick={() => go(path.at(-2)?.id ?? null)} aria-label="返回上一级">
             <ChevronLeft />
           </Button>
