@@ -47,4 +47,5 @@ class OpenAIVLM(VLMModel):
                 response_format={"type": "json_object"}
             )
             captions.append(response.choices[0].message.content)
+
         return captions

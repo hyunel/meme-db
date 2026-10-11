@@ -33,6 +33,7 @@ func IdentityMiddleware(provider IdentityProvider) echo.MiddlewareFunc {
 					}
 				}
 			}
+
 			c.Set(identityKey, identity)
 			return next(c)
 		}

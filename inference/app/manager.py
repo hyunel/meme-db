@@ -23,6 +23,7 @@ class ModelManager:
 
     def load_models(self) -> "ModelManager":
         logger.info("Initializing models...")
+
         classes = {
             ModelType.CLIP: CLIPModel,
             ModelType.RERANKER: RerankerModel,
@@ -31,6 +32,7 @@ class ModelManager:
         }
         for model_type, model_class in classes.items():
             self.models[model_type] = model_class(self.config)
+
         logger.info("All models loaded successfully.")
         return self
 
