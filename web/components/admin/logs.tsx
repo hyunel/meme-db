@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ArrowUp, Check, ChevronDown, Copy, Download, Plus, Radio, ScrollText, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -104,13 +105,23 @@ function useLogs(query: LogQuery, live: boolean) {
 }
 
 export function AdminLogs() {
+  const params = useSearchParams()
   const [live, setLive] = useState(false)
-  const [minLevel, setMinLevel] = useState<LogLevel>('debug')
-  const [q, setQ] = useState('')
+  const [minLevel, setMinLevel] = useState<LogLevel>(() => {
+    const l = params.get('level') as LogLevel | null
+    return levelOptions.some(([v]) => v === l) ? l! : 'debug'
+  })
+  const [q, setQ] = useState(params.get('q') ?? '')
   const dq = useDebounced(q.trim().toLowerCase())
   const [range, setRange] = useState<RangeKey>('all')
   const from = useMemo(() => rangeStart(range), [range])
-  const [conds, setConds] = useState<Cond[]>([])
+  // Linked filters: ?c=key:value
+  const [conds, setConds] = useState<Cond[]>(() =>
+    params.getAll('c').flatMap((raw, i) => {
+      const at = raw.indexOf(':')
+      return at > 0 ? [{ id: -1 - i, key: raw.slice(0, at), value: raw.slice(at + 1) }] : []
+    }),
+  )
   const [draft, setDraft] = useState({ key: '', value: '' })
   // While live tailing, scrolling or selecting text pauses the view at this entry.
   const [frozenId, setFrozenId] = useState<number | null>(null)
