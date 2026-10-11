@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { AdminPageHeader, DataList, FilterSelect, Pagination, RefreshControls, SearchInput, Toolbar, useDebounced, usePaging, type Column } from './admin-ui'
-import { RoleBadge, UserStatusBadge } from './labels'
+import { RoleBadge, UserStatusBadge, roleLabel } from './labels'
 import { ApiError, api, qs, refresh } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
@@ -25,9 +25,6 @@ import { cn } from '@/lib/utils'
 
 type DialogKind = 'role' | 'disable' | 'password' | 'delete'
 
-const roleLabel = (r: Role) => (r === 'admin' ? '管理员' : '普通用户')
-
-/** Shared row actions + dialogs for the list and detail page. */
 function useUserActions(onDeleted?: () => void) {
   const me = useSession().user
   const [dlg, setDlg] = useState<{ kind: DialogKind; user: User } | null>(null)

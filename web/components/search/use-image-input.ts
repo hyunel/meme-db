@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-/** Drag-and-drop and paste handlers that hand an image file to onImage. */
 export function useImageInput(onImage: (file: File | undefined) => void) {
   const [dragging, setDragging] = useState(false)
   return {

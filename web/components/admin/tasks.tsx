@@ -46,9 +46,7 @@ const sortOptions = [
   ['finished', '按结束时间'],
 ] as const
 
-const isQueued = (t: Task) => t.status === 'pending'
-const canRunNow = (t: Task, now: number) => isQueued(t) && toMs(t.run_at) > now
-const assetOf = (t: Task) => (typeof t.payload.asset_id === 'string' ? t.payload.asset_id : null)
+const canRunNow = (t: Task, now: number) => t.status === 'pending' && toMs(t.run_at) > now
 
 type RetryTarget = { ids: string[] } | { filter: Record<string, unknown> }
 type Pending = { kind: 'retry'; target: RetryTarget; count: number; scope: string } | { kind: 'cancel'; task: Task } | null
@@ -134,7 +132,7 @@ function TaskActionItems({ task, now, actions }: { task: Task; now: number; acti
           立即执行
         </DropdownMenuItem>
       )}
-      {isQueued(task) && (
+      {task.status === 'pending' && (
         <DropdownMenuItem variant="destructive" onClick={() => actions.cancel(task)}>
           <Ban />
           取消
@@ -367,10 +365,13 @@ export function AdminTaskDetail({ id }: { id: string }) {
 
   return (
     <>
-      <BackLink />
+      <Link href="/admin/tasks" className="-mb-2 flex h-10 w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="size-4" aria-hidden />
+        任务列表
+      </Link>
       <Loadable result={detail} notFound={{ title: '任务不存在', description: '该任务可能已被清理。' }}>
         {(task) => {
-          const asset = assetOf(task)
+          const asset = typeof task.payload.asset_id === 'string' ? task.payload.asset_id : null
           const timeline: TimelineEvent[] = [
             { at: task.created_at, label: '创建', tone: 'muted' },
             ...task.history.map((h, i): TimelineEvent => ({
@@ -417,7 +418,7 @@ export function AdminTaskDetail({ id }: { id: string }) {
                         立即执行
                       </Button>
                     )}
-                    {isQueued(task) && (
+                    {task.status === 'pending' && (
                       <Button variant="outline" className="h-10 text-destructive md:h-9" onClick={() => actions.cancel(task)}>
                         <Ban aria-hidden />
                         取消
@@ -539,14 +540,5 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-function BackLink() {
-  return (
-    <Link href="/admin/tasks" className="-mb-2 flex h-10 w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowLeft className="size-4" aria-hidden />
-      任务列表
-    </Link>
   )
 }

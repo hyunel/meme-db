@@ -40,8 +40,7 @@ function attrHref(key: string, value: string) {
 
 type LogQuery = { level: LogLevel; q: string; from?: number; attr: string[] }
 
-/** Stored log entries matching query, newest first: a first page, older pages on
- * demand (loadOlder) and newer entries as they arrive (poll). */
+/** Newest first: older pages on demand (loadOlder), newer entries as they arrive (poll). */
 function useLogs(query: LogQuery, live: boolean) {
   const key = JSON.stringify(query)
   const [data, setData] = useState<{ key: string; logs: LogEntry[]; hasMore: boolean; error?: string }>()

@@ -5,12 +5,7 @@ import { useState } from 'react'
 /** The library root as a drop target. */
 export const ROOT = ''
 
-/**
- * Drag-and-drop moving of library items. Dragging a selected item drags the whole
- * selection; folders and breadcrumbs (ROOT for the library itself) are drop targets.
- * Items are found in the DOM by data-node-id, and their data-thumb element makes up the
- * drag preview.
- */
+/** Dragging a selected item drags the whole selection. Items are found by data-node-id, previews by data-thumb. */
 export function useDragMove({ current, selected, onMove }: { current: string; selected: Set<string>; onMove: (ids: string[], target: string) => void }) {
   const [dragging, setDragging] = useState<string[] | null>(null)
   const [over, setOver] = useState<string | null>(null)
@@ -57,7 +52,6 @@ export function useDragMove({ current, selected, onMove }: { current: string; se
   }
 }
 
-/** Shows up to three of the dragged items as a stack, with a count badge for several. */
 function setDragPreview(dt: DataTransfer, ids: string[]) {
   // The pointer sits at the top-left corner; the transparent padding keeps the stack clear of it.
   const preview = document.createElement('div')
@@ -86,7 +80,7 @@ function setDragPreview(dt: DataTransfer, ids: string[]) {
   setTimeout(() => preview.remove()) // The browser has captured the image by then
 }
 
-/** Clones a thumbnail, with videos as their current frame (a cloned video shows nothing yet). */
+// Videos become their current frame, as a cloned video shows nothing yet.
 function cloneThumb(thumb: HTMLElement) {
   const clone = thumb.cloneNode(true) as HTMLElement
   const videos = thumb.querySelectorAll('video')

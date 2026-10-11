@@ -35,7 +35,6 @@ export function useDebounced<T>(value: T, ms = 300) {
   return v
 }
 
-/** Ticks a clock so relative/elapsed values re-render while enabled. */
 export function useNow(enabled: boolean, ms = 1000) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -159,7 +158,7 @@ export function ExpandableText({ text, max = 40 }: { text: string; max?: number 
 
 /* ------------------------------- pagination ------------------------------- */
 
-/** Page state of a server-paged list; it returns to page 1 whenever resetKey changes. */
+/** Returns to page 1 whenever resetKey changes. */
 export function usePaging(resetKey: string, initialSize = 20) {
   const [state, setState] = useState({ key: resetKey, page: 1 })
   const [pageSize, setPageSize] = useState(initialSize)
@@ -167,7 +166,6 @@ export function usePaging(resetKey: string, initialSize = 20) {
   return {
     page,
     pageSize,
-    /** Query parameters for the list endpoint. */
     query: { page, page_size: pageSize },
     /** Changes whenever the visible rows may change; selections reset with it. */
     pageKey: `${resetKey}|${page}|${pageSize}`,

@@ -13,7 +13,6 @@ async function fetchAnimation(url: string, mime: string, signal: AbortSignal) {
   return new Response(body).json()
 }
 
-/** Plays a Lottie animation while it is on screen; it is only fetched once scrolled into view. */
 export function LottiePlayer({ url, mime, label, className }: { url: string; mime: string; label: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)

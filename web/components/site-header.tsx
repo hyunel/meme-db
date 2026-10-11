@@ -26,7 +26,6 @@ const mainNav = [
   { href: '/favorites', label: '收藏', icon: Heart, auth: true },
 ]
 
-/** The main sections the viewer can use: those needing an account only once signed in. */
 export function useMainNav() {
   const { user } = useSession()
   return mainNav.filter((n) => !n.auth || user)

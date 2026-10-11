@@ -34,7 +34,6 @@ export interface MemeTag {
   mine: boolean
 }
 
-/** Where a meme sits in the viewer's library. */
 export interface EntryRef {
   id: string
   folder_id: string | null
@@ -77,7 +76,6 @@ export interface Folder {
   created_at: string
 }
 
-/** A file in the viewer's library. */
 export interface Entry {
   id: string
   parent_id: string | null

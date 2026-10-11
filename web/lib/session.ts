@@ -39,7 +39,6 @@ export function getSession() {
   return session
 }
 
-/** Clears everything this device keeps for the user: token, recent searches and cached data. */
 function clearLocal() {
   try {
     Object.keys(localStorage)
