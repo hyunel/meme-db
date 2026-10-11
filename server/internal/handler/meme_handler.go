@@ -107,13 +107,18 @@ type MemeRequest struct {
 	ID string `param:"id" validate:"required,uuid"`
 }
 
+type GetMemeRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Share string `query:"share" validate:"omitempty,uuid"` // A private link
+}
+
 func (h *MemeHandler) Get(c echo.Context) error {
-	var req MemeRequest
+	var req GetMemeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	meme, err := h.memeService.Get(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	meme, err := h.memeService.Get(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share)
 	if err != nil {
 		return err
 	}
@@ -122,6 +127,7 @@ func (h *MemeHandler) Get(c echo.Context) error {
 
 type SimilarMemesRequest struct {
 	ID    string `param:"id" validate:"required,uuid"`
+	Share string `query:"share" validate:"omitempty,uuid"`
 	Limit int    `query:"limit" validate:"omitempty,min=1,max=50"`
 }
 
@@ -131,7 +137,7 @@ func (h *MemeHandler) Similar(c echo.Context) error {
 		return err
 	}
 
-	memes, err := h.memeService.Similar(c.Request().Context(), rbac.GetIdentity(c), req.ID, limitOr(req.Limit, 10))
+	memes, err := h.memeService.Similar(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share, limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}
@@ -145,6 +151,71 @@ func (h *MemeHandler) Retry(c echo.Context) error {
 	}
 
 	if err := h.memeService.Retry(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ShareLink returns the viewer's private link to the meme, or null.
+func (h *MemeHandler) ShareLink(c echo.Context) error {
+	var req MemeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	link, err := h.memeService.ShareLink(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, link)
+}
+
+func (h *MemeHandler) CreateShareLink(c echo.Context) error {
+	var req MemeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	link, err := h.memeService.CreateShareLink(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, link)
+}
+
+func (h *MemeHandler) ShareLinks(c echo.Context) error {
+	links, err := h.memeService.ShareLinks(c.Request().Context(), rbac.GetIdentity(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, links)
+}
+
+type ViewShareLinkRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Share string `json:"share" validate:"required,uuid"`
+}
+
+// ViewShareLink counts a page load of a meme opened by a private link; the page reports it once, unlike its refetches.
+func (h *MemeHandler) ViewShareLink(c echo.Context) error {
+	var req ViewShareLinkRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.memeService.ViewShareLink(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *MemeHandler) DeleteShareLink(c echo.Context) error {
+	var req MemeRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.memeService.DeleteShareLink(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)

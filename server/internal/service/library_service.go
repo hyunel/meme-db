@@ -216,8 +216,9 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 	return s.addFile(ctx, viewer, parentID, asset.ID, filepath.Base(file.Filename))
 }
 
-func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, memeID string, parentID *string) (*EntryDetail, bool, error) {
-	meme, err := s.memes.Get(ctx, viewer, memeID)
+// AddMeme puts a meme the viewer may see, or one a private link (share) opens, into their library.
+func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, memeID string, parentID *string, share string) (*EntryDetail, bool, error) {
+	meme, err := s.memes.Get(ctx, viewer, memeID, share)
 	if err != nil {
 		return nil, false, err
 	}
@@ -229,7 +230,11 @@ func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, mem
 	if meme.Title != "" {
 		name = meme.Title
 	}
-	return s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension)
+	entry, created, err := s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension)
+	if err == nil && created && share != "" && len(meme.Entries) == 0 {
+		err = s.repo.Share.Record(ctx, share, memeID, viewer.UserID, true) // The link brought the meme into a new library
+	}
+	return entry, created, err
 }
 
 // addFile reports whether it created the entry; a file already in the folder is returned instead, so adding can be retried.

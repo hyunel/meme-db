@@ -129,6 +129,18 @@ CREATE TABLE IF NOT EXISTS library.favorites (
 CREATE INDEX IF NOT EXISTS idx_favorites_asset ON library.favorites(asset_id) WHERE asset_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_favorites_node ON library.favorites(node_id) WHERE node_id IS NOT NULL;
 
+-- Private links: whoever holds one may open the meme while its creator keeps it in their library.
+CREATE TABLE IF NOT EXISTS library.share_links (
+    token UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- Random, unlike the time-ordered ids, so it cannot be guessed
+    owner_id UUID NOT NULL REFERENCES iam.users(id) ON DELETE CASCADE,
+    asset_id UUID NOT NULL REFERENCES core.assets(id) ON DELETE CASCADE,
+    view_count INT NOT NULL DEFAULT 0,        -- Page loads by people other than its creator
+    save_count INT NOT NULL DEFAULT 0,        -- People who saved the meme to their library through it
+    last_viewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (owner_id, asset_id)
+);
+
 -- Spellings that differ only in case, width or separators share a key.
 CREATE OR REPLACE FUNCTION library.label_key(name TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE
 RETURN btrim(regexp_replace(lower(normalize(name, NFKC)), '[\s_/"''“”‘’《》「」『』-]+', ' ', 'g'));

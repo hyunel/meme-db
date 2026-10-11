@@ -82,29 +82,3 @@ export async function downloadMany(memes: Meme[]) {
   if (ok === memes.length) toast.success(`已开始下载 ${ok} 个文件`)
   else toast.error(`${memes.length - ok} 个文件下载失败，已下载 ${ok} 个`)
 }
-
-export async function shareMeme(meme: Meme) {
-  const url = `${window.location.origin}/m/${meme.id}`
-  const warn = meme.is_public ? '' : '该表情包未公开，其他人可能无法打开此链接。'
-  try {
-    if (navigator.share) {
-      let files: File[] | undefined
-      try {
-        const blob = await fetchBlob(meme)
-        const file = new File([blob], `${fileBase(meme)}.${extOf(meme)}`, { type: blob.type })
-        if (navigator.canShare?.({ files: [file] })) files = [file]
-      } catch {}
-      await navigator.share({ title: 'MemeDB 表情包', url, files })
-      if (warn) toast.warning(warn)
-      return
-    }
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') return
-  }
-  try {
-    await navigator.clipboard.writeText(url)
-    toast.success('链接已复制到剪贴板', { description: warn || undefined })
-  } catch {
-    toast.error('复制失败，请手动复制地址栏中的链接')
-  }
-}

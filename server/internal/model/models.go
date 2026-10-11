@@ -137,6 +137,22 @@ type Meme struct {
 	AnalyzedAt    *time.Time `json:"analyzed_at"`
 }
 
+type ShareLink struct {
+	Token        string     `json:"token" db:"token"`
+	ViewCount    int        `json:"view_count" db:"view_count"`
+	SaveCount    int        `json:"save_count" db:"save_count"`
+	LastViewedAt *time.Time `json:"last_viewed_at" db:"last_viewed_at"`
+	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
+}
+
+// SharedMeme is one of the viewer's private links with the meme it opens, which is nil once the viewer may not see it.
+type SharedMeme struct {
+	ShareLink
+	MemeID string `json:"meme_id" db:"asset_id"`
+	Live   bool   `json:"live" db:"live"` // Whether the viewer still keeps the meme in their library, which the link needs
+	Meme   *Meme  `json:"meme" db:"-"`
+}
+
 type MemeTag struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

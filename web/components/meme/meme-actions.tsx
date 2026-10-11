@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { DownloadDialog } from './download-dialog'
 import { LibraryDialog } from './library-dialog'
+import { useShareMeme } from './share-dialog'
 import { api, refresh } from '@/lib/api'
-import { shareMeme } from '@/lib/meme-transfer'
 import type { Meme } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -80,19 +80,20 @@ export function FavoriteButton({
 }
 
 /** Opens the dialog choosing where the meme goes in the viewer's library, once they are signed in. */
-function useLibraryDialog(meme: Meme) {
+function useLibraryDialog(meme: Meme, share?: string) {
   const requireLogin = useRequireLogin()
   const [open, setOpen] = useState(false)
   return {
     count: meme.entries.length,
     open: () => requireLogin('登录后即可把表情包加入你的私人库。') && setOpen(true),
-    dialog: open && <LibraryDialog meme={meme} onOpenChange={setOpen} />,
+    dialog: open && <LibraryDialog meme={meme} share={share} onOpenChange={setOpen} />,
   }
 }
 
 export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme; className?: string; allowAdd?: boolean }) {
   const [downloadOpen, setDownloadOpen] = useState(false)
   const lib = useLibraryDialog(meme)
+  const share = useShareMeme(meme)
   return (
     <>
       <DropdownMenu>
@@ -113,7 +114,7 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onClick={() => shareMeme(meme)}>
+          <DropdownMenuItem onClick={share.start}>
             <Share2 />
             分享
           </DropdownMenuItem>
@@ -134,12 +135,13 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
       </DropdownMenu>
       {downloadOpen && <DownloadDialog meme={meme} open onOpenChange={setDownloadOpen} />}
       {allowAdd && lib.dialog}
+      {share.dialog}
     </>
   )
 }
 
-export function LibraryButton({ meme, className }: { meme: Meme; className?: string }) {
-  const lib = useLibraryDialog(meme)
+export function LibraryButton({ meme, share, className }: { meme: Meme; share?: string; className?: string }) {
+  const lib = useLibraryDialog(meme, share)
   return (
     <>
       <Button type="button" variant={lib.count ? 'secondary' : 'default'} onClick={lib.open} className={className}>

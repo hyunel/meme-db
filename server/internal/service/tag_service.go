@@ -72,7 +72,7 @@ func (s *TagService) resolve(ctx context.Context, name string) (string, error) {
 }
 
 func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeID, name string) (*model.MemeTag, error) {
-	if _, err := s.memes.Get(ctx, viewer, memeID); err != nil {
+	if _, err := s.memes.Get(ctx, viewer, memeID, ""); err != nil {
 		return nil, err
 	}
 	labelID, err := s.resolve(ctx, name)

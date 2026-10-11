@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Compass, Heart, LayoutDashboard, Library, LogOut, Search, Settings, Upload, UserRound } from 'lucide-react'
+import { Compass, Heart, LayoutDashboard, Library, Link2, LogOut, Search, Settings, Upload, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -108,6 +108,10 @@ export function SiteHeader() {
                   <DropdownMenuItem render={<Link href={`/u/${user.username}`} />}>
                     <UserRound />
                     我的主页
+                  </DropdownMenuItem>
+                  <DropdownMenuItem render={<Link href="/shares" />}>
+                    <Link2 />
+                    我的分享
                   </DropdownMenuItem>
                   <DropdownMenuItem render={<Link href="/settings" />}>
                     <Settings />

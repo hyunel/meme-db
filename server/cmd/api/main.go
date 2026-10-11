@@ -203,6 +203,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/memes/:id", h.meme.Get)
 	api.GET("/memes/:id/similar", h.meme.Similar)
 	api.GET("/memes/:id/folders", h.library.MemeFolders)
+	api.POST("/memes/:id/share/views", h.meme.ViewShareLink)
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
@@ -222,6 +223,10 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	session.DELETE("/tokens/:id", h.auth.DeleteToken)
 
 	priv.POST("/memes/:id/retry", h.meme.Retry)
+	priv.GET("/shares", h.meme.ShareLinks)
+	priv.GET("/memes/:id/share", h.meme.ShareLink)
+	priv.PUT("/memes/:id/share", h.meme.CreateShareLink)
+	priv.DELETE("/memes/:id/share", h.meme.DeleteShareLink)
 	priv.POST("/memes/:id/tags", h.meme.AddTag)
 	priv.DELETE("/memes/:id/tags/:tagId", h.meme.RemoveTag)
 

@@ -95,6 +95,7 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 type AddEntryRequest struct {
 	MemeID   string `json:"meme_id" validate:"required,uuid"`
 	ParentID string `json:"parent_id" validate:"omitempty,uuid"`
+	Share    string `json:"share" validate:"omitempty,uuid"` // A private link the meme was opened by
 }
 
 func (h *LibraryHandler) AddEntry(c echo.Context) error {
@@ -103,7 +104,7 @@ func (h *LibraryHandler) AddEntry(c echo.Context) error {
 		return err
 	}
 
-	entry, created, err := h.libraryService.AddMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, optionalID(req.ParentID))
+	entry, created, err := h.libraryService.AddMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, optionalID(req.ParentID), req.Share)
 	if err != nil {
 		return err
 	}

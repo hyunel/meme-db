@@ -21,6 +21,7 @@ type Repos struct {
 	Node     *NodeRepository
 	Tag      *TagRepository
 	Favorite *FavoriteRepository
+	Share    *ShareRepository
 	Stats    *StatsRepository
 	Log      *LogRepository
 }
@@ -35,6 +36,7 @@ func NewRepos(db db.DBTX) *Repos {
 		Node:     &NodeRepository{db: db},
 		Tag:      &TagRepository{db: db},
 		Favorite: &FavoriteRepository{db: db},
+		Share:    &ShareRepository{db: db},
 		Stats:    &StatsRepository{db: db},
 		Log:      &LogRepository{db: db},
 	}

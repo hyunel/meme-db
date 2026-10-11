@@ -60,6 +60,24 @@ export interface EntryRef {
   folder_id: string | null
 }
 
+export interface ShareLink {
+  token: string
+  /** Page loads by people other than its creator */
+  view_count: number
+  /** People who saved the meme to their library through it */
+  save_count: number
+  last_viewed_at: string | null
+  created_at: string
+}
+
+export interface SharedMeme extends ShareLink {
+  meme_id: string
+  /** Whether the meme is still in the viewer's library, which the link needs */
+  live: boolean
+  /** Null once the viewer may not see the meme */
+  meme: Meme | null
+}
+
 export interface FolderRef {
   id: string
   parent_id: string | null

@@ -54,10 +54,24 @@ func (s *MemeService) Memes(ctx context.Context, viewer *rbac.Identity, ids []st
 	return orderByID(memes, ids, func(m *model.Meme) string { return m.ID }), nil
 }
 
-func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id string) (*model.Meme, error) {
+// Get finds a meme the viewer may see, or one a private link (share) opens.
+func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id, share string) (*model.Meme, error) {
 	memes, err := s.Memes(ctx, viewer, []string{id})
 	if err != nil {
 		return nil, err
+	}
+	if len(memes) == 0 && share != "" {
+		opens, err := s.repo.Share.Opens(ctx, share, id)
+		if err != nil {
+			return nil, err
+		}
+		if opens {
+			// The link stands in for the visibility check.
+			if memes, err = s.repo.Meme.Memes(ctx, viewer.UserID, true, []string{id}, s.cfg.TagMinUsage); err != nil {
+				return nil, err
+			}
+			s.assets.signMemes(memes)
+		}
 	}
 	if len(memes) == 0 {
 		return nil, apperror.NotFound("表情包不存在或尚未公开")
@@ -77,8 +91,8 @@ func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag st
 	return &model.Page[*model.Meme]{Items: memes, Total: total}, nil
 }
 
-func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id string, limit int) ([]*model.Meme, error) {
-	if _, err := s.Get(ctx, viewer, id); err != nil {
+func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id, share string, limit int) ([]*model.Meme, error) {
+	if _, err := s.Get(ctx, viewer, id, share); err != nil {
 		return nil, err
 	}
 	metaphor, semantic, clip, err := s.repo.Meme.Vectors(ctx, id)
@@ -107,6 +121,55 @@ func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id str
 		ids = append(ids, c.AssetID)
 	}
 	return s.Memes(ctx, viewer, ids)
+}
+
+func (s *MemeService) ShareLink(ctx context.Context, viewer *rbac.Identity, id string) (*model.ShareLink, error) {
+	return s.repo.Share.Get(ctx, viewer.UserID, id)
+}
+
+// CreateShareLink returns the viewer's private link to a meme in their library, making one if there is none.
+func (s *MemeService) CreateShareLink(ctx context.Context, viewer *rbac.Identity, id string) (*model.ShareLink, error) {
+	meme, err := s.Get(ctx, viewer, id, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(meme.Entries) == 0 {
+		return nil, apperror.Forbidden("只能为我的库中的表情包创建私密链接")
+	}
+	return s.repo.Share.Create(ctx, viewer.UserID, id)
+}
+
+// ShareLinks lists the viewer's private links, newest first.
+func (s *MemeService) ShareLinks(ctx context.Context, viewer *rbac.Identity) ([]*model.SharedMeme, error) {
+	links, err := s.repo.Share.List(ctx, viewer.UserID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(links))
+	for i, l := range links {
+		ids[i] = l.MemeID
+	}
+	memes, err := s.Memes(ctx, viewer, ids)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*model.Meme, len(memes))
+	for _, m := range memes {
+		byID[m.ID] = m
+	}
+	for _, l := range links {
+		l.Meme = byID[l.MemeID]
+	}
+	return links, nil
+}
+
+// ViewShareLink counts a page load of a meme opened by a private link.
+func (s *MemeService) ViewShareLink(ctx context.Context, viewer *rbac.Identity, id, share string) error {
+	return s.repo.Share.Record(ctx, share, id, viewer.UserID, false)
+}
+
+func (s *MemeService) DeleteShareLink(ctx context.Context, viewer *rbac.Identity, id string) error {
+	return s.repo.Share.Delete(ctx, viewer.UserID, id)
 }
 
 // Recall limits of the search channels; a debug search may override them.
@@ -275,7 +338,7 @@ func (s *MemeService) rerank(ctx context.Context, query string, candidates []*mo
 }
 
 func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id string) error {
-	meme, err := s.Get(ctx, viewer, id)
+	meme, err := s.Get(ctx, viewer, id, "")
 	if err != nil {
 		return err
 	}

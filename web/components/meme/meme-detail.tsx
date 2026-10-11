@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Library, Loader2, Plus, RotateCw, Share2, UserRound, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Library, Loader2, Link2, Plus, RotateCw, UserRound, X, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,11 +12,11 @@ import { MemeMedia } from './meme-media'
 import { MemeGrid } from './meme-card'
 import { FavoriteButton, LibraryButton } from './meme-actions'
 import { DownloadDialog } from './download-dialog'
+import { ShareButton } from './share-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, qs } from '@/lib/api'
 import { isProcessing, kindOf, memeTitle } from '@/lib/media'
-import { shareMeme } from '@/lib/meme-transfer'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { EntryDetail, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
@@ -104,24 +104,35 @@ function MemePlaces({ meme, entry, mine }: { meme: Meme; entry?: EntryDetail; mi
   )
 }
 
-/** Opened from an entry, the meme goes by the entry's name and links back to where it lives. */
-export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
+/** Opened from an entry, the meme goes by the entry's name and links back to where it lives; share is a private link that opens it. */
+export function MemeDetail({ id, entryId, share }: { id: string; entryId?: string; share?: string }) {
   const router = useRouter()
   const { user } = useSession()
-  const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}`, {
+  const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}${qs({ share })}`, {
     refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
-  const { data: related } = useSWR<Meme[]>(meme?.status === 'success' ? `/memes/${id}/similar?limit=10` : null)
+  const { data: related } = useSWR<Meme[]>(meme?.status === 'success' ? `/memes/${id}/similar${qs({ share, limit: 10 })}` : null)
   const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}` : null)
   const entry = opened?.meme.id === id ? opened : undefined // A hand-edited link may pair an entry with another meme
   const mine = Boolean(entry && entry.owner.id === user?.id)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  // Counts one view per page load for the link's stats; refetches of the meme must not.
+  const viewed = useRef(false)
+  useEffect(() => {
+    if (!share || !meme || viewed.current) return
+    viewed.current = true
+    api(`/memes/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
+  }, [id, share, meme])
   const [tagPending, setTagPending] = useState(false)
 
   if (error) {
     return error instanceof ApiError && error.status === 404 ? (
-      <NotFoundState title="表情包不存在" description="它可能已被删除，或尚未公开。" />
+      share ? (
+        <NotFoundState title="链接已失效" description="分享者可能停用了这个链接，或把表情包移出了自己的库。" />
+      ) : (
+        <NotFoundState title="表情包不存在" description="它可能已被删除，或尚未公开。" />
+      )
     ) : (
       <div className="mx-auto max-w-lg px-4 py-24">
         <ErrorState onRetry={() => mutate()} />
@@ -130,6 +141,8 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
   }
   if (!meme || openingEntry) return <PageLoading />
 
+  // Opened only by a private link: the viewer may look and save it, but not favorite or tag it.
+  const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0
   const systemTags = meme.tags.filter((t) => !t.mine)
   const myTags = meme.tags.filter((t) => t.mine)
 
@@ -199,6 +212,12 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
                 <h1 className="text-pretty text-2xl font-semibold tracking-tight wrap-anywhere">{entry?.name ?? memeTitle(meme)}</h1>
                 {entry && meme.title && <p className="text-sm text-muted-foreground">{meme.title}</p>}
               </div>
+              {viaLink && (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Link2 className="size-4 shrink-0" aria-hidden />
+                  通过私密链接查看
+                </p>
+              )}
               {meme.summary && <p className="text-sm leading-relaxed text-pretty">{meme.summary}</p>}
               {meme.status !== 'success' && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -219,17 +238,14 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <LibraryButton meme={meme} className="h-11 md:h-9" />
-              <div className="grid grid-cols-3 gap-2">
-                <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />
+              <LibraryButton meme={meme} share={share} className="h-11 md:h-9" />
+              <div className={cn('grid gap-2', viaLink ? 'grid-cols-2' : 'grid-cols-3')}>
+                {!viaLink && <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />}
                 <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
                   <Download data-icon="inline-start" />
                   下载
                 </Button>
-                <Button variant="outline" className="h-11 md:h-9" onClick={() => shareMeme(meme)}>
-                  <Share2 data-icon="inline-start" />
-                  分享
-                </Button>
+                <ShareButton meme={meme} share={share} className="h-11 md:h-9" />
               </div>
             </div>
 
@@ -257,7 +273,7 @@ export function MemeDetail({ id, entryId }: { id: string; entryId?: string }) {
                 ))}
                 {meme.tags.length === 0 && <li className="text-sm text-muted-foreground">暂无标签</li>}
               </ul>
-              {user && (
+              {user && !viaLink && (
                 <form onSubmit={addTag} className="flex gap-2">
                   <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="添加我的标签" aria-label="添加我的标签" maxLength={20} className="h-10 text-base md:h-9 md:text-sm" />
                   <Button type="submit" variant="secondary" disabled={!tagInput.trim() || tagPending} className="h-10 md:h-9">

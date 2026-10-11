@@ -55,7 +55,7 @@ func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Fav
 
 func (s *FavoriteService) Add(ctx context.Context, viewer *rbac.Identity, kind, id string) error {
 	if kind == FavoriteMeme {
-		if _, err := s.memes.Get(ctx, viewer, id); err != nil {
+		if _, err := s.memes.Get(ctx, viewer, id, ""); err != nil {
 			return err
 		}
 		return s.repo.Favorite.Add(ctx, viewer.UserID, &id, nil)

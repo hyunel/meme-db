@@ -32,8 +32,8 @@ function placesOf(folders: FolderRef[]): Place[] {
   return places
 }
 
-/** Picks the places in the viewer's library that hold the meme; nothing changes until the choice is saved. */
-export function LibraryDialog({ meme, onOpenChange }: { meme: Meme; onOpenChange: (open: boolean) => void }) {
+/** Picks the places in the viewer's library that hold the meme; nothing changes until the choice is saved. share is the private link it was opened by. */
+export function LibraryDialog({ meme, share, onOpenChange }: { meme: Meme; share?: string; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
   const pathname = usePathname()
   const { data: folders, mutate } = useSWR<FolderRef[]>('/library/folders')
@@ -79,7 +79,7 @@ export function LibraryDialog({ meme, onOpenChange }: { meme: Meme; onOpenChange
   const save = async () => {
     setPending(true)
     try {
-      await Promise.all(adds.map((k) => api('/library/entries', { method: 'POST', json: { meme_id: meme.id, parent_id: k === ROOT ? null : k } })))
+      await Promise.all(adds.map((k) => api('/library/entries', { method: 'POST', json: { meme_id: meme.id, parent_id: k === ROOT ? null : k, share } })))
       if (removes.length) await api('/library/nodes', { method: 'DELETE', json: { ids: removes } })
       onOpenChange(false)
       const only = adds.length === 1 && !removes.length ? places.find((p) => p.key === adds[0]) : undefined
