@@ -1,4 +1,4 @@
-import type { LogLevel, Task, TaskState } from '@/lib/types'
+import type { LogLevel, Role, Task, TaskState } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export const taskStateLabel: Record<TaskState, string> = {
@@ -46,10 +46,12 @@ export function LevelBadge({ level }: { level: LogLevel }) {
   return <span className={cn('inline-flex h-5 w-12 items-center justify-center rounded font-mono text-[10px] font-semibold uppercase', levelTone[level])}>{level}</span>
 }
 
-export function RoleBadge({ role }: { role: 'admin' | 'user' }) {
+export const roleLabel = (role: Role) => (role === 'admin' ? '管理员' : '普通用户')
+
+export function RoleBadge({ role }: { role: Role }) {
   return (
     <span className={cn('inline-flex h-6 items-center rounded-full px-2 text-xs font-medium', role === 'admin' ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}>
-      {role === 'admin' ? '管理员' : '普通用户'}
+      {roleLabel(role)}
     </span>
   )
 }

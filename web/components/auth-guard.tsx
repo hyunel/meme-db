@@ -5,17 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
 import { ForbiddenState, PageLoading } from '@/components/states'
 
-function loginUrl(expired: boolean) {
-  const back = window.location.pathname + window.location.search
-  return `/login?redirect=${encodeURIComponent(back)}${expired ? '&expired=1' : ''}`
-}
-
 export function RequireAuth({ children, admin = false }: { children: React.ReactNode; admin?: boolean }) {
   const { user, ready, expired } = useSession()
   const router = useRouter()
 
   useEffect(() => {
-    if (ready && !user) router.replace(loginUrl(expired))
+    if (!ready || user) return
+    const back = window.location.pathname + window.location.search
+    router.replace(`/login?redirect=${encodeURIComponent(back)}${expired ? '&expired=1' : ''}`)
   }, [ready, user, expired, router])
 
   if (!ready || !user) return <PageLoading />

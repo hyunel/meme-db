@@ -3,7 +3,6 @@
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
 import { ApiError } from '@/lib/api'
 
-/** Renders the loading and error states of a fetch, then children with its data. */
 export function Loadable<T>({
   result,
   notFound,

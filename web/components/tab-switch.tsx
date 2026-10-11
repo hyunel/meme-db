@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
 
-/** A row of tabs, each with an optional count; the selected one is filled. */
 export function TabSwitch<T extends string>({
   label,
   value,

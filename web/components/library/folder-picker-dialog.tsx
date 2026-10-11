@@ -12,7 +12,6 @@ import { cn } from '@/lib/utils'
 
 export type PickerMode = 'move' | 'copy'
 
-/** Lets the user browse their library and pick a target folder (null = the root). */
 export function FolderPickerDialog({
   open,
   onOpenChange,

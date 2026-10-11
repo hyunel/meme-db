@@ -17,7 +17,6 @@ export function setToken(token: string | null) {
   } catch {}
 }
 
-/** An API error with its user-facing message and, for form errors, the offending field. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -30,7 +29,6 @@ export class ApiError extends Error {
 
 let onUnauthorized = () => {}
 
-/** Registers what happens when the server rejects the stored token. */
 export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler
 }
@@ -77,7 +75,6 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
   return res.status === 204 ? (undefined as T) : res.json()
 }
 
-/** SWR fetcher for GET paths. */
 export const fetcher = <T>(path: string) => api<T>(path)
 
 /** Revalidates cached GET data after a change; searches are left alone as they are costly. */

@@ -8,7 +8,6 @@ import { MemeMedia } from '@/components/meme/meme-media'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { cn } from '@/lib/utils'
 
-/** Up to four of a folder's memes in a 2×2 grid. */
 export function FolderMosaic({ previews, className }: { previews: MemeThumb[]; className?: string }) {
   return (
     <div className={cn('grid grid-cols-2 grid-rows-2 gap-1.5 overflow-hidden rounded-lg', className)}>
