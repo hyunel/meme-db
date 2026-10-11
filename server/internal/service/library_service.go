@@ -14,7 +14,6 @@ import (
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-// LibraryService manages users' libraries (folders and files) and their public views.
 type LibraryService struct {
 	repo   *repository.Provider
 	memes  *MemeService
@@ -25,7 +24,6 @@ func NewLibraryService(repo *repository.Provider, memes *MemeService, assets *As
 	return &LibraryService{repo: repo, memes: memes, assets: assets}
 }
 
-// Folders returns folder views for ids, in the order of ids.
 func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Folder, error) {
 	folders, err := s.repo.Node.Folders(ctx, viewer.UserID, ids)
 	if err != nil {
@@ -35,10 +33,6 @@ func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids
 	return orderByID(folders, ids, func(f *model.Folder) string { return f.ID }), nil
 }
 
-// ==============================================================================
-// Owner's library
-// ==============================================================================
-
 type LibraryView struct {
 	Folder    *model.Folder   `json:"folder"`    // Nil at the root
 	Ancestors []model.Crumb   `json:"ancestors"` // Root first, excluding Folder
@@ -46,7 +40,6 @@ type LibraryView struct {
 	Entries   []*model.Entry  `json:"entries"`
 }
 
-// Get lists a folder of the viewer's library (nil = the root).
 func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderID *string) (*LibraryView, error) {
 	view := &LibraryView{Ancestors: []model.Crumb{}, Entries: []*model.Entry{}}
 	parentPublic := false
@@ -121,7 +114,6 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 	return folders[0], nil
 }
 
-// Upload stores a file and adds it to the viewer's library.
 func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, file *multipart.FileHeader) (*model.EntryRef, error) {
 	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
 	if err != nil {
@@ -130,7 +122,6 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 	return s.addFile(ctx, viewer.UserID, parentID, asset.ID, filepath.Base(file.Filename))
 }
 
-// AddMeme adds a meme the viewer can see to their library.
 func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, memeID string, parentID *string) (*model.EntryRef, error) {
 	meme, err := s.memes.Get(ctx, viewer, memeID)
 	if err != nil {
@@ -191,7 +182,6 @@ func (s *LibraryService) Delete(ctx context.Context, viewer *rbac.Identity, ids 
 	return s.repo.Node.Delete(ctx, viewer.UserID, ids)
 }
 
-// Move moves nodes into a folder (nil = the root); names taken there get a numeric suffix.
 func (s *LibraryService) Move(ctx context.Context, viewer *rbac.Identity, ids []string, targetID *string) error {
 	nodes, target, taken, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
 	if err != nil {
@@ -199,12 +189,13 @@ func (s *LibraryService) Move(ctx context.Context, viewer *rbac.Identity, ids []
 	}
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
 		for _, n := range nodes {
-			if equalIDs(n.ParentID, targetID) {
-				continue
+			path := childPath(target, n.ID)
+			if path == n.Path {
+				continue // Already there
 			}
 			name := uniqueName(taken, n.Name)
 			taken[name] = true
-			if err := r.Node.Move(ctx, n.ID, targetID, childPath(target, n.ID), name); err != nil {
+			if err := r.Node.Move(ctx, n.ID, targetID, path, name); err != nil {
 				return err
 			}
 		}
@@ -212,7 +203,6 @@ func (s *LibraryService) Move(ctx context.Context, viewer *rbac.Identity, ids []
 	})
 }
 
-// Copy copies nodes and their subtrees into a folder (nil = the root) as private items.
 func (s *LibraryService) Copy(ctx context.Context, viewer *rbac.Identity, ids []string, targetID *string) error {
 	nodes, _, taken, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
 	if err != nil {
@@ -230,8 +220,6 @@ func (s *LibraryService) Copy(ctx context.Context, viewer *rbac.Identity, ids []
 	})
 }
 
-// prepareTransfer loads the owner's nodes to move or copy, the target folder (nil = the
-// root) and the names taken in it, rejecting a target inside one of the nodes.
 func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, ids []string, targetID *string) ([]*model.Node, *model.Node, map[string]bool, error) {
 	nodes, err := s.ownedNodes(ctx, ownerID, ids)
 	if err != nil {
@@ -314,7 +302,6 @@ func (s *LibraryService) takenNames(ctx context.Context, ownerID string, parentI
 	return taken, err
 }
 
-// splitChildren returns the IDs of the folders among nodes and the asset IDs of the files.
 func splitChildren(nodes []*model.Node) (folderIDs, assetIDs []string) {
 	for _, n := range nodes {
 		if n.Type == model.NodeTypeFolder {
@@ -326,7 +313,6 @@ func splitChildren(nodes []*model.Node) (folderIDs, assetIDs []string) {
 	return folderIDs, assetIDs
 }
 
-// uniqueName returns name, or "base (n).ext" with the smallest n not yet taken.
 func uniqueName(taken map[string]bool, name string) string {
 	if !taken[name] {
 		return name
@@ -340,7 +326,6 @@ func uniqueName(taken map[string]bool, name string) string {
 	}
 }
 
-// childPath is the ltree path of node id placed under parent (nil = the root).
 func childPath(parent *model.Node, id string) string {
 	label := strings.ReplaceAll(id, "-", "")
 	if parent == nil {
@@ -360,15 +345,6 @@ func visibility(isPublic, parentPublic bool) string {
 	}
 }
 
-func equalIDs(a, b *string) bool {
-	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
-}
-
-// ==============================================================================
-// Public views
-// ==============================================================================
-
-// PublicFolders lists the topmost public folders, most favorited first.
 func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, limit int) ([]*model.Folder, error) {
 	ids, err := s.repo.Node.PublicRootFolders(ctx, "", limit)
 	if err != nil {
@@ -384,7 +360,6 @@ type FolderPage struct {
 	Memes     []*model.Meme   `json:"memes"`
 }
 
-// PublicFolder shows a folder that is public (or the viewer's own) with its contents.
 func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*FolderPage, error) {
 	notFound := apperror.NotFound("合集不存在或未公开")
 	node, err := s.repo.Node.Get(ctx, id)

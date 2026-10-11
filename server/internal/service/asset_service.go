@@ -39,7 +39,6 @@ func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider, notifier
 	return &AssetService{cfg: cfg, repo: repo, notifier: notifier}
 }
 
-// UploadConfig describes what uploads accept, for clients to check files up front.
 type UploadConfig struct {
 	MaxSizeMB float64 `json:"max_size_mb"`
 	Accept    string  `json:"accept"` // For <input type="file" accept>
@@ -59,9 +58,6 @@ func (s *AssetService) UploadConfig() UploadConfig {
 	return UploadConfig{MaxSizeMB: s.cfg.MaxSizeMB, Accept: strings.Join(accept, ",")}
 }
 
-// ValidateUpload checks a file against the size limit and the allowed types, and returns
-// its detected MIME type. Each allowed type is "mime/pattern[,.ext...]": the content must
-// match the pattern and, if extensions are listed, the file name must have one of them.
 func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
 	if fileHeader.Size > int64(s.cfg.MaxSizeMB*1024*1024) {
 		return "", apperror.BadRequest(fmt.Sprintf("文件超过 %g MB 的大小限制", s.cfg.MaxSizeMB))
@@ -96,6 +92,7 @@ func detectMIME(head []byte) string {
 	return mime
 }
 
+// A rule is "mime/pattern[,.ext...]"; listed extensions further restrict the file name.
 func matchesType(rule, mime, ext string) bool {
 	parts := strings.Split(rule, ",")
 	pattern := strings.TrimSpace(parts[0])
@@ -111,8 +108,6 @@ func matchesType(rule, mime, ext string) bool {
 	})
 }
 
-// CreateAsset stores a file uploaded by uploaderID, deduplicated by content, and queues
-// new content for analysis.
 func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileHeader *multipart.FileHeader) (*model.Asset, error) {
 	mimeType, err := s.ValidateUpload(fileHeader)
 	if err != nil {
@@ -188,7 +183,6 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 	return asset, nil
 }
 
-// RemoveFiles deletes stored files of deleted assets.
 func (s *AssetService) RemoveFiles(paths []string) {
 	for _, p := range paths {
 		if err := os.Remove(filepath.Join(s.cfg.StoragePath, p)); err != nil && !os.IsNotExist(err) {
@@ -197,7 +191,6 @@ func (s *AssetService) RemoveFiles(paths []string) {
 	}
 }
 
-// URL returns a signed, cacheable URL of an asset's content.
 func (s *AssetService) URL(assetID string) string {
 	return fmt.Sprintf("/api/assets/%s?token=%s", assetID, s.sign(assetID))
 }
@@ -208,7 +201,6 @@ func (s *AssetService) sign(assetID string) string {
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:8])
 }
 
-// Content resolves a signed asset URL to the asset and the path of its file.
 func (s *AssetService) Content(ctx context.Context, assetID, token string) (*model.Asset, string, error) {
 	if !hmac.Equal([]byte(token), []byte(s.sign(assetID))) {
 		return nil, "", apperror.Unauthorized("无效的访问令牌")
@@ -223,14 +215,12 @@ func (s *AssetService) Content(ctx context.Context, assetID, token string) (*mod
 	return asset, filepath.Join(s.cfg.StoragePath, asset.StoragePath), nil
 }
 
-// signMemes fills in the content URLs of memes.
 func (s *AssetService) signMemes(memes []*model.Meme) {
 	for _, m := range memes {
 		m.URL = s.URL(m.ID)
 	}
 }
 
-// signFolders fills in the content URLs of folder previews.
 func (s *AssetService) signFolders(folders []*model.Folder) {
 	for _, f := range folders {
 		for i := range f.Previews {

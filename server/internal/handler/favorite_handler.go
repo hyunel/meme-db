@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -16,7 +17,7 @@ func NewFavoriteHandler(favService *service.FavoriteService) *FavoriteHandler {
 }
 
 func (h *FavoriteHandler) List(c echo.Context) error {
-	favs, err := h.favService.List(c.Request().Context(), Viewer(c))
+	favs, err := h.favService.List(c.Request().Context(), rbac.GetIdentity(c))
 	if err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func (h *FavoriteHandler) Add(c echo.Context) error {
 		return err
 	}
 
-	if err := h.favService.Add(c.Request().Context(), Viewer(c), req.Kind, req.ID); err != nil {
+	if err := h.favService.Add(c.Request().Context(), rbac.GetIdentity(c), req.Kind, req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -46,15 +47,14 @@ func (h *FavoriteHandler) Remove(c echo.Context) error {
 		return err
 	}
 
-	if err := h.favService.Remove(c.Request().Context(), Viewer(c), req.Kind, req.ID); err != nil {
+	if err := h.favService.Remove(c.Request().Context(), rbac.GetIdentity(c), req.Kind, req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
 }
 
-// ClearStale removes favorites the user can no longer see.
 func (h *FavoriteHandler) ClearStale(c echo.Context) error {
-	if err := h.favService.ClearStale(c.Request().Context(), Viewer(c)); err != nil {
+	if err := h.favService.ClearStale(c.Request().Context(), rbac.GetIdentity(c)); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)

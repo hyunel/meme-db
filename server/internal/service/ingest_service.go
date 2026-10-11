@@ -22,18 +22,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Notifier wakes the task worker once enqueued tasks are committed.
 type Notifier interface {
 	Notify()
 }
 
-// AnalyzeMemePayload is the payload of model.JobAnalyzeMeme tasks.
 type AnalyzeMemePayload struct {
 	AssetID string `json:"asset_id"`
 }
 
-// enqueueAnalysis schedules one analysis task per asset. Call it within the transaction
-// that moves the memes to pending, so a pending meme always has a task.
+// enqueueAnalysis must run in the transaction that sets the memes pending, so a pending meme always has a task.
 func enqueueAnalysis(ctx context.Context, r *repository.Repos, priority int, assetIDs ...string) error {
 	payloads := make([]any, len(assetIDs))
 	for i, id := range assetIDs {
@@ -51,9 +48,6 @@ type IngestServiceConfig struct {
 	RetrievalPrompt string
 }
 
-// IngestService handles model.JobAnalyzeMeme tasks: it analyzes a meme with the
-// inference service and keeps meme_info.processing_status in sync with the task.
-// The analysis also sets the meme's system tags.
 type IngestService struct {
 	cfg         IngestServiceConfig
 	repo        *repository.Provider
@@ -83,8 +77,7 @@ func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
 	}
 
 	if err := s.analyze(ctx, asset); err != nil {
-		// Retrying cannot fix a missing file or an image the inference service rejects.
-		// Everything else is retried, including malformed VLM JSON (LLM output is nondeterministic).
+		// A missing file or a rejected image never recovers; anything else, even malformed VLM JSON, may.
 		if errors.Is(err, fs.ErrNotExist) || status.Code(err) == codes.InvalidArgument {
 			return worker.Permanent(err)
 		}
@@ -179,7 +172,6 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 	})
 }
 
-// systemTags derives browseable tags from an analysis: named entities and visual styles.
 func systemTags(out *inference.VLMOutput) []string {
 	seen := make(map[string]bool)
 	var tags []string

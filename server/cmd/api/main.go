@@ -33,7 +33,6 @@ func main() {
 
 	logEntries := logger.Setup()
 
-	// 1. Load Config
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		slog.Error("Failed to load config", "error", err)
@@ -43,7 +42,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 2. Connect DB
 	pool, err := db.NewDB(cfg.Database.URL)
 	if err != nil {
 		slog.Error("Failed to connect to DB", "error", err)
@@ -51,10 +49,8 @@ func main() {
 	}
 	defer pool.Close()
 
-	// 3. Setup Repositories (Provider)
 	repo := repository.NewProvider(pool)
 
-	// 4. Setup External Clients
 	inferClient, err := inference.NewClient(cfg.Inference.GRPCAddr)
 	if err != nil {
 		slog.Error("Failed to create inference client", "error", err)
@@ -62,7 +58,6 @@ func main() {
 	}
 	defer inferClient.Close()
 
-	// 5. Setup Task Worker & Services
 	taskWorker := worker.NewWorker(cfg.Worker, repo.Task)
 
 	authService := service.NewAuthService(service.AuthServiceConfig{
@@ -94,7 +89,6 @@ func main() {
 	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
 	logService := service.NewLogService(repo, cfg.Log.Retention)
 
-	// 6. Start Task Worker
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 
 	workerDone := make(chan struct{})
@@ -111,7 +105,6 @@ func main() {
 		logService.Run(logCtx, logEntries)
 	}()
 
-	// 7. Setup Handlers
 	h := handlers{
 		auth:     handler.NewAuthHandler(authService, userService),
 		asset:    handler.NewAssetHandler(assetService),
@@ -122,7 +115,6 @@ func main() {
 		task:     handler.NewTaskHandler(taskService),
 	}
 
-	// 8. Setup Echo
 	e := echo.New()
 	e.Validator = validator.New()
 	e.HidePort = true
@@ -148,13 +140,10 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	// Global identity middleware - sets identity for all requests
-	e.Use(rbac.IdentityMiddleware(h.auth.IdentityProvider()))
+	e.Use(rbac.IdentityMiddleware(authService))
 
-	// 9. Setup Routes
 	setupRoutes(e, h)
 
-	// Start Server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	go func() {
 		slog.Info("Starting server", "addr", addr)
@@ -164,8 +153,7 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown: stop HTTP first, then let the worker release in-flight tasks and
-	// the remaining logs be stored before the deferred inference client and DB pool closes run.
+	// Stop HTTP, then the worker (releasing in-flight tasks), then the log writer; deferred closes run last.
 	<-ctx.Done()
 	slog.Info("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -191,7 +179,7 @@ type handlers struct {
 func setupRoutes(e *echo.Echo, h handlers) {
 	api := e.Group("/api")
 
-	// ===== Public Routes (guest readable) =====
+	// Guest-readable
 	api.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -210,7 +198,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/folders/:id", h.library.PublicFolder)
 	api.GET("/users/:username", h.library.Profile)
 
-	// ===== Protected Routes (authenticated) =====
+	// Signed-in users
 	priv := api.Group("", rbac.RequireAuth())
 
 	priv.GET("/auth/me", h.auth.GetMe)
@@ -237,7 +225,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	lib.POST("/nodes/move", h.library.Move)
 	lib.POST("/nodes/copy", h.library.Copy)
 
-	// ===== Admin Routes =====
+	// Admins
 	admin := priv.Group("/admin", rbac.RequireAdmin())
 
 	admin.GET("/stats", h.admin.Stats)

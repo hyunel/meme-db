@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Repos provides access to all repositories over one connection or transaction.
 type Repos struct {
 	User     *UserRepository
 	Meme     *MemeRepository
@@ -25,7 +24,6 @@ type Repos struct {
 	Log      *LogRepository
 }
 
-// NewRepos creates a new Repos instance with the given database connection.
 func NewRepos(db db.DBTX) *Repos {
 	return &Repos{
 		User:     &UserRepository{db: db},
@@ -40,29 +38,21 @@ func NewRepos(db db.DBTX) *Repos {
 	}
 }
 
-// Page selects a window of a list.
 type Page struct {
 	Limit  int
 	Offset int
 }
 
-// TimeRange bounds a timestamp column; zero values leave that side open.
 type TimeRange struct {
 	From time.Time
 	To   time.Time
 }
 
-// ==============================================================================
-// Query helpers
-// ==============================================================================
-
-// filter accumulates AND-ed SQL conditions with positional arguments.
 type filter struct {
 	conds []string
 	args  []any
 }
 
-// arg binds v and returns its placeholder.
 func (f *filter) arg(v any) string {
 	f.args = append(f.args, v)
 	return fmt.Sprintf("$%d", len(f.args))
@@ -88,7 +78,6 @@ func (f *filter) clause() string {
 	return "WHERE " + strings.Join(f.conds, " AND ")
 }
 
-// prefixed qualifies a comma-separated column list with a table alias.
 func prefixed(alias, columns string) string {
 	cols := strings.Split(columns, ",")
 	for i, c := range cols {
@@ -101,7 +90,6 @@ func (p Page) clause() string {
 	return fmt.Sprintf("LIMIT %d OFFSET %d", p.Limit, p.Offset)
 }
 
-// collectOne returns the single row of a query, or nil if there is none.
 func collectOne[T any](rows pgx.Rows, err error) (*T, error) {
 	if err != nil {
 		return nil, err
@@ -127,7 +115,6 @@ func collectScalars[T any](rows pgx.Rows, err error) ([]T, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[T])
 }
 
-// collectIDsWithTotal collects (id, total) rows, where total is a count(*) OVER () column.
 func collectIDsWithTotal(rows pgx.Rows, err error) ([]string, int, error) {
 	if err != nil {
 		return nil, 0, err
@@ -148,13 +135,11 @@ func count(ctx context.Context, q db.DBTX, query string, args ...any) (int, erro
 	return n, err
 }
 
-// IsUniqueViolation reports whether err is a unique constraint violation.
 func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// nullable maps an empty ID (e.g. a guest viewer) to SQL NULL.
 func nullable(id string) *string {
 	if id == "" {
 		return nil

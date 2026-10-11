@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Request priorities for the inference service's schedulers; higher runs first.
 const (
 	PriorityBackground  int32 = 0
 	PriorityInteractive int32 = 10
@@ -48,7 +47,6 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// Health reports whether the connection to the inference service is usable, and its state.
 func (c *Client) Health() (bool, string) {
 	state := c.conn.GetState()
 	if state == connectivity.Idle {
@@ -57,7 +55,6 @@ func (c *Client) Health() (bool, string) {
 	return state != connectivity.TransientFailure && state != connectivity.Shutdown, state.String()
 }
 
-// WithPriority returns a client sharing the same connection whose requests carry the given priority.
 func (c *Client) WithPriority(priority int32) *Client {
 	clone := *c
 	clone.priority = priority
@@ -122,8 +119,6 @@ func (c *Client) Rerank(ctx context.Context, query string, document string, task
 	return resp.Score, nil
 }
 
-// ImageCaption waits for the connection to become ready instead of failing fast, so an
-// inference service restart does not burn ingestion retry attempts. Bound it with ctx.
 func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInput) (*ImageCaptionResult, error) {
 	resp, err := c.client.ImageCaption(ctx, &pb.ImageCaptionRequest{
 		Options: c.options(),
@@ -132,7 +127,7 @@ func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInp
 			Data:       image.Data,
 			FileFormat: image.Format,
 		},
-	}, grpc.WaitForReady(true))
+	}, grpc.WaitForReady(true)) // Wait out an inference restart instead of burning ingestion retries
 	if err != nil {
 		return nil, err
 	}

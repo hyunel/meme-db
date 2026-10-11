@@ -8,14 +8,12 @@ import (
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-// TaskQueue performs administrative transitions that must run the job types' hooks.
 type TaskQueue interface {
 	Requeue(ctx context.Context, ids []string) (int, error)
 	Cancel(ctx context.Context, id string) (bool, error)
 	RunNow(ctx context.Context, id string) (bool, error)
 }
 
-// TaskService lets administrators inspect and steer background tasks.
 type TaskService struct {
 	repo  *repository.Provider
 	queue TaskQueue
@@ -33,7 +31,6 @@ func (s *TaskService) List(ctx context.Context, f repository.TaskFilter, page re
 	return &model.Page[*model.Task]{Items: tasks, Total: total}, nil
 }
 
-// Summary counts tasks per job type; the *InRange counts cover tasks finished within finished.
 func (s *TaskService) Summary(ctx context.Context, finished repository.TimeRange) ([]*model.TaskTypeCounts, error) {
 	return s.repo.Task.Summary(ctx, finished)
 }
@@ -58,12 +55,10 @@ func (s *TaskService) Get(ctx context.Context, id string) (*TaskDetail, error) {
 	return &TaskDetail{Task: task, Runs: runs}, nil
 }
 
-// Retry requeues the failed tasks among ids and returns how many were requeued.
 func (s *TaskService) Retry(ctx context.Context, ids []string) (int, error) {
 	return s.queue.Requeue(ctx, ids)
 }
 
-// RetryMatching requeues every failed task matching f.
 func (s *TaskService) RetryMatching(ctx context.Context, f repository.TaskFilter) (int, error) {
 	f.States = []string{model.TaskStatusFailed}
 	ids, err := s.repo.Task.IDs(ctx, f)

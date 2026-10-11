@@ -43,7 +43,6 @@ func NewMemeService(
 	}
 }
 
-// Memes returns the memes among ids that viewer may see, in the order of ids.
 func (s *MemeService) Memes(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Meme, error) {
 	memes, err := s.repo.Meme.Memes(ctx, viewer.UserID, viewer.IsAdmin(), ids)
 	if err != nil {
@@ -64,8 +63,6 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	return memes[0], nil
 }
 
-// Popular lists the memes the viewer may see, optionally only those tagged tag, most
-// popular first.
 func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag string, limit int) (*model.Page[*model.Meme], error) {
 	ids, total, err := s.repo.Meme.PopularIDs(ctx, viewer.UserID, viewer.IsAdmin(), tag, limit)
 	if err != nil {
@@ -78,7 +75,6 @@ func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag st
 	return &model.Page[*model.Meme]{Items: memes, Total: total}, nil
 }
 
-// Similar finds memes close to a meme the viewer can see, among the memes they may see.
 func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id string, limit int) ([]*model.Meme, error) {
 	if _, err := s.Get(ctx, viewer, id); err != nil {
 		return nil, err
@@ -119,8 +115,6 @@ type SearchParams struct {
 	Limit    int
 }
 
-// Search recalls candidates by text (semantic, metaphor, CLIP and OCR channels) or by
-// image (CLIP), then reranks them against the text query if there is one.
 func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.SearchResult, error) {
 	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Admin: params.Viewer.IsAdmin(), Mine: params.Mine}
 	if params.Mine && params.Viewer.UserID == "" {
@@ -205,7 +199,6 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) ([]model.
 	return results, nil
 }
 
-// rerank scores candidates against the text query; without one, recall similarity is the score.
 func (s *MemeService) rerank(ctx context.Context, query string, candidates []*model.SearchCandidate) ([]float32, error) {
 	scores := make([]float32, len(candidates))
 	if query == "" {
@@ -234,7 +227,6 @@ func (s *MemeService) rerank(ctx context.Context, query string, candidates []*mo
 	return scores, nil
 }
 
-// Retry re-queues a meme whose analysis failed; the viewer must have it in their library.
 func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id string) error {
 	meme, err := s.Get(ctx, viewer, id)
 	if err != nil {
@@ -247,12 +239,10 @@ func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id strin
 	return err
 }
 
-// Reprocess re-analyzes memes that are not already queued and returns how many were queued.
 func (s *MemeService) Reprocess(ctx context.Context, ids []string) (int, error) {
 	return s.reanalyze(ctx, ids, model.ProcessingStatusSuccess, model.ProcessingStatusFailed)
 }
 
-// ReprocessMatching re-analyzes every meme matching f.
 func (s *MemeService) ReprocessMatching(ctx context.Context, f repository.MemeFilter) (int, error) {
 	ids, _, err := s.repo.Meme.FilterIDs(ctx, f, nil)
 	if err != nil {
@@ -278,7 +268,6 @@ func (s *MemeService) reanalyze(ctx context.Context, ids []string, from ...strin
 	return len(reset), nil
 }
 
-// List lists memes for administration, newest first.
 func (s *MemeService) List(ctx context.Context, viewer *rbac.Identity, f repository.MemeFilter, page repository.Page) (*model.Page[*model.Meme], error) {
 	ids, total, err := s.repo.Meme.FilterIDs(ctx, f, &page)
 	if err != nil {
@@ -291,7 +280,6 @@ func (s *MemeService) List(ctx context.Context, viewer *rbac.Identity, f reposit
 	return &model.Page[*model.Meme]{Items: memes, Total: total}, nil
 }
 
-// Delete permanently deletes memes, removing them from every library.
 func (s *MemeService) Delete(ctx context.Context, ids []string) (int, error) {
 	paths, err := s.repo.Asset.Delete(ctx, ids)
 	if err != nil {

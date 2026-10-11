@@ -9,7 +9,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// TaskHandler lets administrators inspect and steer background tasks.
 type TaskHandler struct {
 	taskService *service.TaskService
 }
@@ -56,8 +55,6 @@ func (h *TaskHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, page)
 }
 
-// Summary counts tasks per job type and state; the in-range counts cover tasks finished
-// within the requested range.
 func (h *TaskHandler) Summary(c echo.Context) error {
 	var req RangeQuery
 	if err := BindAndValidate(c, &req); err != nil {
@@ -88,13 +85,11 @@ func (h *TaskHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, task)
 }
 
-// RetryTasksRequest selects tasks by IDs, or all failed tasks matching a filter.
 type RetryTasksRequest struct {
 	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
 	Filter *TaskFilterParams `json:"filter"`
 }
 
-// Retry requeues the selected failed tasks.
 func (h *TaskHandler) Retry(c echo.Context) error {
 	var req RetryTasksRequest
 	if err := BindAndValidate(c, &req); err != nil {

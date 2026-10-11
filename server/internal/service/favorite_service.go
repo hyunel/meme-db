@@ -32,7 +32,6 @@ type Favorites struct {
 	StaleFolders []string `json:"stale_folders"`
 }
 
-// List returns the viewer's favorites, newest first.
 func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Favorites, error) {
 	assetIDs, nodeIDs, err := s.repo.Favorite.List(ctx, viewer.UserID)
 	if err != nil {
@@ -54,7 +53,6 @@ func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Fav
 	}, nil
 }
 
-// Add favorites a meme or folder the viewer can see.
 func (s *FavoriteService) Add(ctx context.Context, viewer *rbac.Identity, kind, id string) error {
 	if kind == FavoriteMeme {
 		if _, err := s.memes.Get(ctx, viewer, id); err != nil {
@@ -79,7 +77,6 @@ func (s *FavoriteService) Remove(ctx context.Context, viewer *rbac.Identity, kin
 	return s.repo.Favorite.Remove(ctx, viewer.UserID, nil, []string{id})
 }
 
-// ClearStale removes the favorites the viewer can no longer see.
 func (s *FavoriteService) ClearStale(ctx context.Context, viewer *rbac.Identity) error {
 	favs, err := s.List(ctx, viewer)
 	if err != nil {
@@ -88,7 +85,6 @@ func (s *FavoriteService) ClearStale(ctx context.Context, viewer *rbac.Identity)
 	return s.repo.Favorite.Remove(ctx, viewer.UserID, favs.StaleMemes, favs.StaleFolders)
 }
 
-// visibleFolders returns the folders among ids that are public or the viewer's own.
 func (s *FavoriteService) visibleFolders(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Folder, error) {
 	folders, err := s.library.Folders(ctx, viewer, ids)
 	if err != nil {

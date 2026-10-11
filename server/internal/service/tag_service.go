@@ -19,7 +19,6 @@ func NewTagService(repo *repository.Provider, memes *MemeService) *TagService {
 	return &TagService{repo: repo, memes: memes}
 }
 
-// AddToMeme adds one of the viewer's own tags to a meme they can see.
 func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeID, name string) (*model.MemeTag, error) {
 	if _, err := s.memes.Get(ctx, viewer, memeID); err != nil {
 		return nil, err
@@ -41,7 +40,6 @@ func (s *TagService) RemoveFromMeme(ctx context.Context, viewer *rbac.Identity, 
 	return s.repo.Tag.RemoveUserTag(ctx, memeID, tagID, viewer.UserID)
 }
 
-// Hot returns the system tags used most on the memes the viewer may see.
 func (s *TagService) Hot(ctx context.Context, viewer *rbac.Identity, limit int) ([]string, error) {
 	tags, err := s.repo.Tag.Hot(ctx, viewer.UserID, viewer.IsAdmin(), limit)
 	if tags == nil {
@@ -66,7 +64,6 @@ func (s *TagService) Rename(ctx context.Context, id, name string) error {
 	return err
 }
 
-// Merge moves every use of the source tags onto the target tag and deletes the sources.
 func (s *TagService) Merge(ctx context.Context, sourceIDs []string, targetID string) error {
 	if slices.Contains(sourceIDs, targetID) {
 		return apperror.BadRequest("目标标签不能是被合并的标签")

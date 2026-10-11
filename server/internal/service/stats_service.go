@@ -10,12 +10,10 @@ import (
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
-// HealthReporter reports the state of a connection to an external service.
 type HealthReporter interface {
 	Health() (ok bool, detail string)
 }
 
-// StatsService builds the admin dashboard.
 type StatsService struct {
 	repo        *repository.Provider
 	inference   HealthReporter
@@ -28,8 +26,6 @@ func NewStatsService(repo *repository.Provider, inference HealthReporter, storag
 
 const maxTrendDays = 366
 
-// Overview summarizes the site; range-dependent figures cover [from, to], with daily
-// trend buckets in time zone tz.
 func (s *StatsService) Overview(ctx context.Context, from, to time.Time, tz string) (*model.Overview, error) {
 	if to.Sub(from) > maxTrendDays*24*time.Hour {
 		from = to.Add(-maxTrendDays * 24 * time.Hour)

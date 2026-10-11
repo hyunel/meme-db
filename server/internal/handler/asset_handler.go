@@ -42,7 +42,6 @@ func (h *AssetHandler) GetAssetContent(c echo.Context) error {
 	return c.File(path)
 }
 
-// GetConfig returns the settings clients need, such as upload limits.
 func (h *AssetHandler) GetConfig(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{"upload": h.assetService.UploadConfig()})
 }

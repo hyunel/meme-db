@@ -7,10 +7,6 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-// ==============================================================================
-// Domain Entities
-// ==============================================================================
-
 type Asset struct {
 	ID          string    `json:"id" db:"id"`
 	FileHash    string    `json:"-" db:"file_hash"`
@@ -92,18 +88,12 @@ type Task struct {
 	History []TaskAttempt `json:"history" db:"history"` // Finished attempts, oldest first
 }
 
-// TaskAttempt records the outcome of one attempt of a task.
 type TaskAttempt struct {
 	At    time.Time `json:"at"`
 	OK    bool      `json:"ok"`
 	Error *string   `json:"error"`
 }
 
-// ==============================================================================
-// Views (DTOs)
-// ==============================================================================
-
-// TaskTypeCounts counts the tasks of one job type by state.
 type TaskTypeCounts struct {
 	JobType          string `json:"job_type" db:"job_type"`
 	Pending          int    `json:"pending" db:"pending"`
@@ -115,7 +105,6 @@ type TaskTypeCounts struct {
 	FailedInRange    int    `json:"failed_in_range" db:"failed_in_range"`
 }
 
-// Meme is an asset with its analysis, resolved for the requesting viewer.
 type Meme struct {
 	ID            string     `json:"id"`
 	URL           string     `json:"url"`
@@ -164,7 +153,6 @@ type PublicUser struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Folder is a library folder with its effective visibility and summary.
 type Folder struct {
 	ID            string      `json:"id"`
 	ParentID      *string     `json:"parent_id"`
@@ -178,7 +166,6 @@ type Folder struct {
 	CreatedAt     time.Time   `json:"created_at"`
 }
 
-// Entry is a file in a user's library.
 type Entry struct {
 	ID         string    `json:"id"`
 	ParentID   *string   `json:"parent_id"`
@@ -211,7 +198,6 @@ type SearchResult struct {
 	Similarity float32 `json:"similarity"`
 }
 
-// SearchCandidate is the intermediate result from DB recall.
 type SearchCandidate struct {
 	AssetID    string          `db:"asset_id"`
 	VLMJSON    json.RawMessage `db:"vlm_json"`
@@ -219,7 +205,6 @@ type SearchCandidate struct {
 	RecallType string          `db:"recall_type"`
 }
 
-// Overview is the admin dashboard summary.
 type Overview struct {
 	Users struct {
 		Total  int `json:"total"`
@@ -259,7 +244,6 @@ type ServiceStatus struct {
 	Detail string `json:"detail"`
 }
 
-// LogEntry is a stored service log record.
 type LogEntry struct {
 	ID      int64             `json:"id" db:"id"`
 	Time    time.Time         `json:"time" db:"time"`
@@ -268,7 +252,6 @@ type LogEntry struct {
 	Attrs   map[string]string `json:"attrs" db:"attrs"`
 }
 
-// Page is one page of a filtered list.
 type Page[T any] struct {
 	Items []T `json:"items"`
 	Total int `json:"total"`

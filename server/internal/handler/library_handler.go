@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -18,7 +19,6 @@ func NewLibraryHandler(libraryService *service.LibraryService) *LibraryHandler {
 	return &LibraryHandler{libraryService: libraryService}
 }
 
-// nodeName validates a folder or file name.
 func nodeName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 255 {
@@ -37,7 +37,7 @@ func (h *LibraryHandler) Get(c echo.Context) error {
 		return err
 	}
 
-	view, err := h.libraryService.Get(c.Request().Context(), Viewer(c), optionalID(req.FolderID))
+	view, err := h.libraryService.Get(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.FolderID))
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (h *LibraryHandler) CreateFolder(c echo.Context) error {
 		return err
 	}
 
-	folder, err := h.libraryService.CreateFolder(c.Request().Context(), Viewer(c), optionalID(req.ParentID), name)
+	folder, err := h.libraryService.CreateFolder(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), name)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 		return err
 	}
 
-	entry, err := h.libraryService.Upload(c.Request().Context(), Viewer(c), optionalID(req.ParentID), req.File)
+	entry, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), req.File)
 	if err != nil {
 		return err
 	}
@@ -89,14 +89,13 @@ type AddEntryRequest struct {
 	ParentID string `json:"parent_id" validate:"omitempty,uuid"`
 }
 
-// AddEntry adds an existing meme to the library.
 func (h *LibraryHandler) AddEntry(c echo.Context) error {
 	var req AddEntryRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	entry, err := h.libraryService.AddMeme(c.Request().Context(), Viewer(c), req.MemeID, optionalID(req.ParentID))
+	entry, err := h.libraryService.AddMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, optionalID(req.ParentID))
 	if err != nil {
 		return err
 	}
@@ -118,7 +117,7 @@ func (h *LibraryHandler) Rename(c echo.Context) error {
 		return err
 	}
 
-	if err := h.libraryService.Rename(c.Request().Context(), Viewer(c), req.ID, name); err != nil {
+	if err := h.libraryService.Rename(c.Request().Context(), rbac.GetIdentity(c), req.ID, name); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -135,7 +134,7 @@ func (h *LibraryHandler) SetPublic(c echo.Context) error {
 		return err
 	}
 
-	if err := h.libraryService.SetPublic(c.Request().Context(), Viewer(c), req.IDs, *req.IsPublic); err != nil {
+	if err := h.libraryService.SetPublic(c.Request().Context(), rbac.GetIdentity(c), req.IDs, *req.IsPublic); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -151,7 +150,7 @@ func (h *LibraryHandler) Delete(c echo.Context) error {
 		return err
 	}
 
-	if err := h.libraryService.Delete(c.Request().Context(), Viewer(c), req.IDs); err != nil {
+	if err := h.libraryService.Delete(c.Request().Context(), rbac.GetIdentity(c), req.IDs); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -168,7 +167,7 @@ func (h *LibraryHandler) Move(c echo.Context) error {
 		return err
 	}
 
-	if err := h.libraryService.Move(c.Request().Context(), Viewer(c), req.IDs, optionalID(req.TargetID)); err != nil {
+	if err := h.libraryService.Move(c.Request().Context(), rbac.GetIdentity(c), req.IDs, optionalID(req.TargetID)); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -180,15 +179,11 @@ func (h *LibraryHandler) Copy(c echo.Context) error {
 		return err
 	}
 
-	if err := h.libraryService.Copy(c.Request().Context(), Viewer(c), req.IDs, optionalID(req.TargetID)); err != nil {
+	if err := h.libraryService.Copy(c.Request().Context(), rbac.GetIdentity(c), req.IDs, optionalID(req.TargetID)); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
 }
-
-// ==============================================================================
-// Public views
-// ==============================================================================
 
 type PublicFoldersRequest struct {
 	Limit int `query:"limit" validate:"omitempty,min=1,max=100"`
@@ -200,7 +195,7 @@ func (h *LibraryHandler) PublicFolders(c echo.Context) error {
 		return err
 	}
 
-	folders, err := h.libraryService.PublicFolders(c.Request().Context(), Viewer(c), limitOr(req.Limit, 40))
+	folders, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
@@ -217,7 +212,7 @@ func (h *LibraryHandler) PublicFolder(c echo.Context) error {
 		return err
 	}
 
-	page, err := h.libraryService.PublicFolder(c.Request().Context(), Viewer(c), req.ID)
+	page, err := h.libraryService.PublicFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID)
 	if err != nil {
 		return err
 	}
@@ -234,7 +229,7 @@ func (h *LibraryHandler) Profile(c echo.Context) error {
 		return err
 	}
 
-	profile, err := h.libraryService.Profile(c.Request().Context(), Viewer(c), req.Username)
+	profile, err := h.libraryService.Profile(c.Request().Context(), rbac.GetIdentity(c), req.Username)
 	if err != nil {
 		return err
 	}

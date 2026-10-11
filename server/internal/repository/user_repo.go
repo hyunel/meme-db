@@ -10,7 +10,6 @@ import (
 
 const userSelectColumns = `id, username, email, password_hash, role, status, created_at, updated_at`
 
-// userStatsColumns computes model.UserStats for the user aliased u.
 const userStatsColumns = `
 	(SELECT count(*) FROM library.nodes n WHERE n.owner_id = u.id AND n.type = 'FILE') AS files,
 	(SELECT count(*) FROM library.nodes n WHERE n.owner_id = u.id AND n.type = 'FOLDER') AS folders,
@@ -48,7 +47,6 @@ func (r *UserRepository) SetPassword(ctx context.Context, id, passwordHash strin
 	return err
 }
 
-// Update changes the role and/or status of a user; nil leaves a field unchanged.
 func (r *UserRepository) Update(ctx context.Context, id string, role, status *string) error {
 	query := `
 		UPDATE iam.users SET role = COALESCE($2, role), status = COALESCE($3, status), updated_at = CURRENT_TIMESTAMP
@@ -63,8 +61,6 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-// LockActiveAdmins locks the active admins until the end of the transaction and
-// returns how many there are.
 func (r *UserRepository) LockActiveAdmins(ctx context.Context) (int, error) {
 	ids, err := collectScalars[string](r.db.Query(ctx, `SELECT id::text FROM iam.users WHERE role = 'admin' AND status = 'active' FOR UPDATE`))
 	return len(ids), err

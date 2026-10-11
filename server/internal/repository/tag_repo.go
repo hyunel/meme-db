@@ -12,7 +12,6 @@ type TagRepository struct {
 	db db.DBTX
 }
 
-// Upsert returns the tag named name, creating it if needed.
 func (r *TagRepository) Upsert(ctx context.Context, name string) (*model.Tag, error) {
 	query := `
 		INSERT INTO library.tags (name) VALUES ($1)
@@ -22,7 +21,6 @@ func (r *TagRepository) Upsert(ctx context.Context, name string) (*model.Tag, er
 	return collectOne[model.Tag](r.db.Query(ctx, query, name))
 }
 
-// AddUserTag attaches a tag to an asset on behalf of userID.
 func (r *TagRepository) AddUserTag(ctx context.Context, assetID, tagID, userID string) error {
 	query := `
 		INSERT INTO library.asset_tags (asset_id, tag_id, user_id) VALUES ($1::uuid, $2::uuid, $3::uuid)
@@ -32,14 +30,12 @@ func (r *TagRepository) AddUserTag(ctx context.Context, assetID, tagID, userID s
 	return err
 }
 
-// RemoveUserTag detaches one of userID's tags from an asset.
 func (r *TagRepository) RemoveUserTag(ctx context.Context, assetID, tagID, userID string) error {
 	query := `DELETE FROM library.asset_tags WHERE asset_id = $1::uuid AND tag_id = $2::uuid AND user_id = $3::uuid`
 	_, err := r.db.Exec(ctx, query, assetID, tagID, userID)
 	return err
 }
 
-// SetSystemTags replaces the system tags of an asset; names must be distinct.
 func (r *TagRepository) SetSystemTags(ctx context.Context, assetID string, names []string) error {
 	if _, err := r.db.Exec(ctx, `DELETE FROM library.asset_tags WHERE asset_id = $1::uuid AND user_id IS NULL`, assetID); err != nil {
 		return err
@@ -56,7 +52,6 @@ func (r *TagRepository) SetSystemTags(ctx context.Context, assetID string, names
 	return err
 }
 
-// Hot returns the system tags used most on the memes viewerID may see.
 func (r *TagRepository) Hot(ctx context.Context, viewerID string, admin bool, limit int) ([]string, error) {
 	var w filter
 	w.where("at.user_id IS NULL")
@@ -71,11 +66,6 @@ func (r *TagRepository) Hot(ctx context.Context, viewerID string, admin bool, li
 	return collectScalars[string](r.db.Query(ctx, query, w.args...))
 }
 
-// ==============================================================================
-// Administration
-// ==============================================================================
-
-// List lists tags whose name contains query, with how many memes use them.
 func (r *TagRepository) List(ctx context.Context, query, sort string, page Page) ([]*model.TagUsage, int, error) {
 	var w filter
 	if query != "" {
@@ -103,7 +93,6 @@ func (r *TagRepository) Rename(ctx context.Context, id, name string) error {
 	return err
 }
 
-// Merge moves every use of the source tags onto the target and deletes the sources.
 func (r *TagRepository) Merge(ctx context.Context, sourceIDs []string, targetID string) error {
 	query := `
 		INSERT INTO library.asset_tags (asset_id, tag_id, user_id)
