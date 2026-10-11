@@ -19,6 +19,9 @@ service InferenceService {
 
   // Caption image using VLM
   rpc ImageCaption (ImageCaptionRequest) returns (ImageCaptionResponse);
+
+  // Resource usage and request statistics of the last span_seconds, in step_seconds buckets
+  rpc Metrics (MetricsRequest) returns (MetricsResponse);
 }
 
 message TaskOptions {
@@ -84,4 +87,13 @@ message ImageCaptionResponse {
   int32 width = 2;
   int32 height = 3;
   Embedding clip_embedding = 4;
+}
+
+message MetricsRequest {
+  int32 span_seconds = 1;
+  int32 step_seconds = 2;
+}
+
+message MetricsResponse {
+  bytes json = 1; // A dashboard snapshot, passed through to the admin console
 }

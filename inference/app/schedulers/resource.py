@@ -24,6 +24,7 @@ class BatchRequest:
     func: Callable = field(compare=False)
     batch: List[Any] = field(compare=False)
     future: Future = field(compare=False, default_factory=Future)
+    on_start: Optional[Callable[[], None]] = field(compare=False, default=None)
 
 class ResourceManager:
     def __init__(self, concurrency: int = 1, post_execution_callback: Optional[Callable[[], None]] = None):
@@ -56,9 +57,9 @@ class ResourceManager:
             except asyncio.QueueEmpty:
                 break
 
-    async def execute(self, func: Callable[[List[T]], List[R]], batch: List[T], priority: int) -> List[R]:
+    async def execute(self, func: Callable[[List[T]], List[R]], batch: List[T], priority: int, on_start: Optional[Callable[[], None]] = None) -> List[R]:
         # PriorityQueue is min-heap, so negate priority
-        request = BatchRequest(priority=-priority, func=func, batch=batch)
+        request = BatchRequest(priority=-priority, func=func, batch=batch, on_start=on_start)
         await self.queue.put(request)
         return await request.future
 
@@ -82,6 +83,8 @@ class ResourceManager:
         loop = asyncio.get_running_loop()
         try:
             try:
+                if request.on_start:
+                    request.on_start()
                 results = await loop.run_in_executor(None, request.func, request.batch)
                 if not request.future.done():
                     request.future.set_result(results)

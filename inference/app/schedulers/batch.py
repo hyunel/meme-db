@@ -4,6 +4,7 @@ import logging
 import uuid
 from typing import Any, List, Callable, Optional, Generic, TypeVar, Dict
 from .resource import Task, ResourceManager
+from ..metrics import TaskMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ class BatchScheduler(Generic[T, R]):
         self.process_func = process_func
         self.batch_size = batch_size
         self.max_latency = max_latency
+
+        self.metrics = TaskMetrics('batch', batch_size)
 
         self.queue: asyncio.PriorityQueue[Task[T]] = asyncio.PriorityQueue()
         self.active_tasks: Dict[str, Task[T]] = {}
@@ -65,6 +68,9 @@ class BatchScheduler(Generic[T, R]):
             if not task.future.done():
                 task.future.cancel()
 
+    def queued(self) -> int:
+        return max(0, len(self.active_tasks) - self.metrics.running)
+
     async def _get_next_valid_task(self) -> Task[T]:
         while True:
             task = await self.queue.get()
@@ -101,20 +107,29 @@ class BatchScheduler(Generic[T, R]):
         inputs = [t.item for t in valid_batch]
         batch_priority = max(-t.priority for t in valid_batch)
 
-        try:
-            results = await self.resource_manager.execute(self.process_func, inputs, batch_priority)
+        started = 0.0
+        def on_start():
+            nonlocal started
+            started = time.time()
+            self.metrics.start(len(valid_batch))
 
+        error = None
+        try:
+            results = await self.resource_manager.execute(self.process_func, inputs, batch_priority, on_start)
             if len(results) != len(inputs):
                 raise RuntimeError(f"Batch processing returned {len(results)} results for {len(inputs)} inputs")
-
-            for task, result in zip(valid_batch, results):
-                self.active_tasks.pop(task.id, None)
-                if not task.future.done():
-                    task.future.set_result(result)
-
         except Exception as e:
             logger.error(f"Batch processing failed: {e}", exc_info=True)
-            for task in valid_batch:
-                self.active_tasks.pop(task.id, None)
-                if not task.future.done():
-                    task.future.set_exception(e)
+            error = e
+        finally:
+            if started:
+                self.metrics.finish([started - t.created_at for t in valid_batch], time.time() - started, error)
+
+        for i, task in enumerate(valid_batch):
+            self.active_tasks.pop(task.id, None)
+            if task.future.done():
+                continue
+            if error:
+                task.future.set_exception(error)
+            else:
+                task.future.set_result(results[i])

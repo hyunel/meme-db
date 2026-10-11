@@ -6,6 +6,7 @@ DEFAULT_TASK = "Given a web search query, retrieve relevant passages that answer
 
 class BaseModel(ABC):
     is_gpu: bool = True
+    name: str = ''  # The loaded model, for monitoring
 
     def __init__(self, config: ModelConfig):
         self.config = config

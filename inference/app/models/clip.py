@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class CLIPModel(BaseModel):
     def _load_model(self) -> None:
-        model_id = "google/siglip2-base-patch16-224"
+        model_id = self.name = "google/siglip2-base-patch16-224"
         logger.info(f"Loading CLIP model: {model_id} on {self.config.clip.device}")
 
         self.model = AutoModel.from_pretrained(

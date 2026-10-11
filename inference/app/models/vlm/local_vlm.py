@@ -18,7 +18,7 @@ class LocalVLM(VLMModel):
     def _load_model(self) -> None:
         from transformers import AutoProcessor, AutoModelForImageTextToText
 
-        model_id = self.config.vlm.local.model
+        model_id = self.name = self.config.vlm.local.model
 
         logger.info(f"Loading local VLM: {model_id} on {self.config.vlm.device}")
 

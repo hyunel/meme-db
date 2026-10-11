@@ -688,10 +688,12 @@ dependencies = [
     { name = "grpcio" },
     { name = "llguidance" },
     { name = "lottie" },
+    { name = "nvidia-ml-py" },
     { name = "openai" },
     { name = "outlines" },
     { name = "pillow" },
     { name = "protobuf" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "torch" },
@@ -713,10 +715,12 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.76.0" },
     { name = "llguidance", specifier = ">=1.4.0" },
     { name = "lottie", specifier = ">=0.7.2" },
+    { name = "nvidia-ml-py", specifier = ">=12" },
     { name = "openai", specifier = ">=2.13.0" },
     { name = "outlines", specifier = "==1.2.*" },
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "protobuf", specifier = ">=6.33.2" },
+    { name = "psutil", specifier = ">=7" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "torch", specifier = ">=2.9.1" },
@@ -911,6 +915,15 @@ version = "0.7.1"
 source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
 wheels = [
     { url = "https://mirrors.ustc.edu.cn/pypi/packages/56/79/12978b96bd44274fe38b5dde5cfb660b1d114f70a65ef962bcbbed99b549/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f1bb701d6b930d5a7cea44c19ceb973311500847f81b634d802b7b539dc55623", size = 287193691, upload-time = "2025-02-26T00:15:44.104Z" },
+]
+
+[[package]]
+name = "nvidia-ml-py"
+version = "13.615.71"
+source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/fd/30/b25216758be3d3e2834825d8193609e2d71c770a8bd7984438c058c90268/nvidia_ml_py-13.615.71.tar.gz", hash = "sha256:bebe4e48f51b1dc75028c0815cb7bfa14a31a5bb80be70c9d980c6036953fc3d", size = 57485, upload-time = "2026-09-25T15:15:28.226Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/53/a1/1681dfa1c904d4e3e72e51b55a0ff012d50b766843ef832d584abe2113c6/nvidia_ml_py-13.615.71-py3-none-any.whl", hash = "sha256:959bf4adf6fe1308e4bd739e722236b0d1ec8392e2cefad33ff70c311380b9b6", size = 58132, upload-time = "2026-09-25T15:15:26.54Z" },
 ]
 
 [[package]]
