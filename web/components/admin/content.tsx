@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { Eye, Images, ListChecks, RotateCw, Trash2 } from 'lucide-react'
+import { Eye, Images, ListChecks, RotateCw, ScanSearch, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
@@ -147,6 +147,10 @@ export function AdminContent() {
             <DropdownMenuItem render={<Link href={`/admin/tasks?view=history&meme=${m.id}`} />}>
               <ListChecks />
               查看相关任务
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link href={`/admin/search?track=${m.id}`} />}>
+              <ScanSearch />
+              检索调试
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setPending({ kind: 'retry', ids: [m.id] })}>
               <RotateCw />

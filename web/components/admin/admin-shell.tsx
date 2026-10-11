@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft, Images, LayoutDashboard, ListChecks, ScrollText, Tags, Users } from 'lucide-react'
+import { ArrowLeft, Images, LayoutDashboard, ListChecks, ScanSearch, ScrollText, Tags, Users } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { RequireAuth } from '@/components/auth-guard'
 import { cn } from '@/lib/utils'
@@ -13,6 +13,7 @@ const nav = [
   { href: '/admin/tasks', label: '任务', icon: ListChecks },
   { href: '/admin/logs', label: '日志', icon: ScrollText },
   { href: '/admin/content', label: '内容', icon: Images },
+  { href: '/admin/search', label: '检索调试', icon: ScanSearch },
   { href: '/admin/tags', label: '标签', icon: Tags },
 ]
 
