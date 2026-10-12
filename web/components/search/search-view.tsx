@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -77,6 +77,12 @@ export function SearchView() {
     setInput(q)
   }
 
+  // The page without a query is for typing one; results are left unfocused, so no keyboard covers them.
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!hasQuery) inputRef.current?.focus()
+  }, [hasQuery])
+
   const folder = folderView?.folder
   const memes = results?.map((r) => r.meme)
   const similarity = image && results ? new Map(results.map((r) => [r.meme.id, r.similarity])) : undefined
@@ -135,6 +141,7 @@ export function SearchView() {
             关键词
           </label>
           <input
+            ref={inputRef}
             id="search-main"
             type="search"
             enterKeyHint="search"
@@ -221,6 +228,7 @@ export function SearchView() {
             className="ml-auto"
             onClick={() => {
               setInput('')
+              inputRef.current?.focus()
               router.push(scope === 'mine' ? `${pathname}?scope=mine` : pathname)
             }}
           >
