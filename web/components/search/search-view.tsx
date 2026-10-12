@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { Clock, Folder as FolderIcon, Globe, ImageIcon, Info, Library, Loader2, RotateCcw, Search, SearchX, X } from 'lucide-react'
+import { Clock, Folder as FolderIcon, Globe, ImageIcon, Info, Library, Loader2, MessageCircle, RotateCcw, ScanText, Search, SearchX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
@@ -20,6 +20,12 @@ import type { Feed, LibraryView, SearchResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Scope = 'all' | 'mine'
+
+// One example of each way to search, which runs in the scope chosen.
+const EXAMPLES = [
+  { icon: MessageCircle, title: '描述情境或情绪', query: '被夸了有点害羞' },
+  { icon: ScanText, title: '搜图中的文字', query: '收到' },
+] as const
 
 async function search(q: string, scope: Scope, folderId: string | null, image: ImageQuery | null, cursor: string | null, page: number) {
   if (cursor) {
@@ -62,7 +68,6 @@ export function SearchView() {
   const { items: results, isLoading } = feed
   const error = results ? undefined : feed.error // A later page's error shows at the end of the feed
   const { data: folderView } = useSWR<LibraryView>(folderId && user ? `/library?folder_id=${folderId}` : null)
-  const { data: hot } = useSWR<string[]>('/tags/hot?limit=10')
   const recent = useRecentSearches()
 
   const [input, setInput] = useState(q)
@@ -228,59 +233,61 @@ export function SearchView() {
       <section aria-live="polite" aria-busy={isLoading}>
         {!hasQuery ? (
           <div className="flex flex-col gap-8">
-            {user && (
+            {recent.length > 0 && (
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h2 className="flex items-center gap-2 text-sm font-medium">
                     <Clock className="size-4 text-muted-foreground" aria-hidden />
                     最近搜索
                   </h2>
-                  {recent.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearRecentSearches}>
-                      清空
-                    </Button>
-                  )}
+                  <Button variant="ghost" size="sm" onClick={clearRecentSearches}>
+                    清空
+                  </Button>
                 </div>
-                {recent.length ? (
-                  <ul className="flex flex-wrap gap-2">
-                    {recent.map((r) => (
-                      <li key={r} className="flex items-center rounded-full border bg-card">
-                        <button type="button" onClick={() => navigate({ q: r })} className="h-9 pr-1 pl-3.5 text-sm">
-                          {r}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeRecentSearch(r)}
-                          aria-label={`删除最近搜索：${r}`}
-                          className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">暂无最近搜索</p>
-                )}
+                <ul className="flex flex-wrap gap-2">
+                  {recent.map((r) => (
+                    <li key={r} className="flex items-center rounded-full border bg-card">
+                      <button type="button" onClick={() => navigate({ q: r })} className="h-9 pr-1 pl-3.5 text-sm">
+                        {r}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRecentSearch(r)}
+                        aria-label={`删除最近搜索：${r}`}
+                        className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-            {hot && hot.length > 0 && (
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium">热门标签</h2>
-              <ul className="flex flex-wrap gap-2">
-                {hot.map((t) => (
-                  <li key={t}>
-                    <Link
-                      href={`/tags/${encodeURIComponent(t)}`}
-                      className="inline-flex h-9 items-center rounded-full bg-muted px-3.5 text-sm transition-colors hover:bg-brand hover:text-brand-foreground"
+              <h2 className="text-sm font-medium">{scope === 'mine' ? '在我的库中，试试这样搜' : '试试这样搜'}</h2>
+              <ul className="grid gap-2 sm:grid-cols-3">
+                {[
+                  ...EXAMPLES.map(({ icon, title, query }) => ({ icon, title, hint: `“${query}”`, onClick: () => navigate({ q: query }) })),
+                  { icon: ImageIcon, title: '以图搜图', hint: '粘贴、拖入或选择一张图片', onClick: imageInput.open },
+                ].map(({ icon: Icon, title, hint, onClick }) => (
+                  <li key={title}>
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                     >
-                      #{t}
-                    </Link>
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/30" aria-hidden>
+                        <Icon className="size-5" />
+                      </span>
+                      <span className="flex min-w-0 flex-col">
+                        <span className="text-sm font-medium">{title}</span>
+                        <span className="truncate text-sm text-muted-foreground">{hint}</span>
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
             </div>
-            )}
           </div>
         ) : blocked && ready ? (
           <EmptyState
