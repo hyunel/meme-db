@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     icon: [
       { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
       { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.svg', type: 'image/svg+xml' }, // Pixel-aligned for tab sizes; the master logo is /icon.svg
     ],
     apple: '/apple-icon.png',
   },
