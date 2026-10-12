@@ -36,10 +36,10 @@ export function MemeCard({
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
       <Link
         href={memeHref(meme.id, entryId, share)}
-        className="relative block overflow-hidden rounded-xl border bg-checker p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
+        className="relative block overflow-hidden rounded-xl border bg-card transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
-        <MemeMedia meme={meme} className="transition-transform duration-300 group-hover:scale-[1.03]" />
+        <MemeMedia meme={meme} className="size-full transition-transform duration-300 group-hover:scale-[1.03]" />
         <span className="sr-only">查看详情</span>
         {kind !== 'image' && (
           <span className="pointer-events-none absolute top-2 left-2 rounded bg-foreground/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-background uppercase">

@@ -140,7 +140,7 @@ export function FinalRanking({ result, track, onOpen }: { result: DebugResult; t
           return (
             <div className="flex min-w-0 items-center gap-3">
               <span className="w-7 shrink-0 font-mono text-sm text-muted-foreground tabular-nums md:hidden">#{r.rank}</span>
-              <button type="button" onClick={() => onOpen(r.memeId)} className="size-12 shrink-0 overflow-hidden rounded-lg border bg-checker transition hover:ring-2 hover:ring-foreground/30" aria-label={`查看 ${r.memeId} 的候选详情`}>
+              <button type="button" onClick={() => onOpen(r.memeId)} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50 transition hover:ring-2 hover:ring-foreground/30" aria-label={`查看 ${r.memeId} 的候选详情`}>
                 <MemeMedia meme={meme} />
               </button>
               <div className="flex min-w-0 flex-col">
@@ -272,7 +272,7 @@ export function ChannelColumns({ result, track, onOpen }: { result: DebugResult;
                       )}
                     >
                       <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">{h.rank}</span>
-                      <span className="size-10 shrink-0 overflow-hidden rounded-md border bg-checker">
+                      <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/50">
                         <MemeMedia meme={meme} />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">

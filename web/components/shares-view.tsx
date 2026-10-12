@@ -107,7 +107,7 @@ export function SharesView() {
                       <FolderIcon className="size-7 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
                     </span>
                   ) : (
-                    <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-checker p-1">
+                    <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50">
                       {s.meme ? <MemeMedia meme={s.meme} /> : <ImageOff className="size-5 text-muted-foreground" aria-hidden />}
                     </span>
                   )

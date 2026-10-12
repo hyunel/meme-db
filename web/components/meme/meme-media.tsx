@@ -6,6 +6,9 @@ import { LottiePlayer } from './lottie-player'
 import type { MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
+// As large as fits in the box, up to its own size, with the checkerboard behind the meme alone; size-full fills a box of its ratio.
+const fitted = 'max-h-full max-w-full bg-checker object-contain'
+
 function AutoVideo({ src, className, controls, label }: { src: string; className?: string; controls: boolean; label: string }) {
   const ref = useRef<HTMLVideoElement>(null)
   useEffect(() => {
@@ -25,7 +28,7 @@ function AutoVideo({ src, className, controls, label }: { src: string; className
     <video
       ref={ref}
       src={src}
-      className={cn('size-full object-contain', className)}
+      className={cn(fitted, className)}
       muted
       loop
       playsInline
@@ -55,6 +58,6 @@ export function MemeMedia({
     return <LottiePlayer url={meme.url} mime={meme.mime_type} label={alt} className={className} />
   }
   return (
-    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn('size-full object-contain', className)} />
+    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn(fitted, className)} />
   )
 }

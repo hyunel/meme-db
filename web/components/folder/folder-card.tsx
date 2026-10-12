@@ -21,7 +21,7 @@ export function FolderMosaic({ previews, className }: { previews: MemeThumb[]; c
   return (
     <div className={cn('grid grid-cols-2 grid-rows-2 gap-1.5 overflow-hidden rounded-lg', className)}>
       {Array.from({ length: 4 }, (_, i) => (
-        <div key={i} className={cn('overflow-hidden rounded-md p-1.5', previews[i] ? 'bg-checker' : 'bg-muted')}>
+        <div key={i} className="flex items-center justify-center overflow-hidden rounded-md bg-muted">
           {previews[i] && <MemeMedia meme={previews[i]} />}
         </div>
       ))}

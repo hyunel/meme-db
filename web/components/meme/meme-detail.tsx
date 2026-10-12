@@ -77,7 +77,7 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
               className="group flex items-center gap-3 p-2.5 transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
             >
               {cover ? (
-                <span className="size-10 shrink-0 overflow-hidden rounded-lg border bg-checker p-0.5" aria-hidden>
+                <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50" aria-hidden>
                   <MemeMedia meme={cover} />
                 </span>
               ) : (
@@ -144,6 +144,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
 
   // Opened only by a private link: the viewer may look and save it, but not favorite or tag it.
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0
+  const ratio = meme.width && meme.height ? meme.width / meme.height : 1
   const systemTags = meme.tags.filter((t) => !t.mine)
   const myTags = meme.tags.filter((t) => t.mine)
 
@@ -203,8 +204,11 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
         </Button>
 
         <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
-          <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border bg-checker p-6 md:aspect-auto md:min-h-[28rem] md:p-10">
-            <MemeMedia meme={meme} controls className="max-h-[70vh]" />
+          <div className="flex items-center justify-center rounded-2xl bg-muted/50 p-4 md:min-h-[28rem] md:self-start md:p-8">
+            {/* As large as fits at the meme's own ratio, even above its size */}
+            <div className="overflow-hidden rounded-lg border" style={{ aspectRatio: ratio, width: `min(100%, calc(70vh * ${ratio}))` }}>
+              <MemeMedia meme={meme} controls className="size-full" />
+            </div>
           </div>
 
           <div className="flex flex-col gap-6">

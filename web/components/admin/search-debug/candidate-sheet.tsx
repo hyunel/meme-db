@@ -48,7 +48,7 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
 
       <div className="flex flex-1 flex-col gap-6 overflow-y-auto overscroll-contain p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <div className="flex flex-col gap-4 sm:flex-row">
-          <div className="aspect-square w-full shrink-0 overflow-hidden rounded-xl border bg-checker sm:w-48">
+          <div className="flex aspect-square w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/50 sm:w-48">
             <MemeMedia meme={meme} controls />
           </div>
           <dl className="grid flex-1 grid-cols-2 content-start gap-3 text-sm sm:grid-cols-1">

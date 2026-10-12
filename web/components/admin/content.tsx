@@ -74,8 +74,8 @@ export function AdminContent() {
       mobile: 'title',
       cell: (m) => (
         <div className="flex min-w-0 items-center gap-3">
-          <Link href={`/m/${m.id}`} className="size-12 shrink-0 overflow-hidden rounded-lg border bg-checker" aria-label={`查看 ${m.id}`}>
-            <MemeMedia meme={m} className="size-full object-cover" />
+          <Link href={`/m/${m.id}`} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50" aria-label={`查看 ${m.id}`}>
+            <MemeMedia meme={m} />
           </Link>
           <CopyId value={m.id} className="min-w-0" />
         </div>
