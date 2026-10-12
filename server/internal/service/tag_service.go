@@ -33,26 +33,31 @@ func NewTagService(cfg TagServiceConfig, repo *repository.Provider, memes *MemeS
 	return &TagService{cfg: cfg, repo: repo, memes: memes, inferClient: inferClient}
 }
 
-// Resolve maps spellings to their labels, creating the missing ones under the tags they mean.
-func (s *TagService) Resolve(ctx context.Context, names []string) ([]string, error) {
+// Resolve maps spellings to their labels, creating the missing ones under the tags they mean; user is whether they are a user's own tags.
+func (s *TagService) Resolve(ctx context.Context, names []string, user bool) ([]string, error) {
 	ids := make([]string, len(names))
 	for i, name := range names {
 		var err error
-		if ids[i], err = s.resolve(ctx, name); err != nil {
+		if ids[i], err = s.resolve(ctx, name, user); err != nil {
 			return nil, err
 		}
 	}
 	return ids, nil
 }
 
-// A new spelling joins the tag of one with the same key, else the most similar tag if close enough, else a new tag.
-func (s *TagService) resolve(ctx context.Context, name string) (string, error) {
+// A new spelling joins the tag of one with the same key. Otherwise a system one joins the most similar tag if close enough,
+// else starts a tag; a user's starts a tag without an embedding, which no similarity reaches, so user tags are never merged.
+func (s *TagService) resolve(ctx context.Context, name string, user bool) (string, error) {
 	labelID, tagID, err := s.repo.Tag.TagOf(ctx, name)
 	if err != nil || labelID != "" {
 		return labelID, err
 	}
 
-	if tagID == "" {
+	if tagID == "" && user {
+		if tagID, err = s.repo.Tag.Create(ctx, name, nil); err != nil {
+			return "", err
+		}
+	} else if tagID == "" {
 		emb, err := s.inferClient.TextEmbedding(ctx, name, s.cfg.Prompt)
 		if err != nil {
 			return "", fmt.Errorf("failed to embed tag: %w", err)
@@ -63,7 +68,7 @@ func (s *TagService) resolve(ctx context.Context, name string) (string, error) {
 			return "", err
 		}
 		if tagID == "" || similarity < s.cfg.MergeSimilarity {
-			if tagID, err = s.repo.Tag.Create(ctx, name, vec); err != nil {
+			if tagID, err = s.repo.Tag.Create(ctx, name, &vec); err != nil {
 				return "", err
 			}
 		}
@@ -75,7 +80,7 @@ func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeI
 	if _, err := s.memes.Get(ctx, viewer, memeID, ""); err != nil {
 		return nil, err
 	}
-	labelID, err := s.resolve(ctx, name)
+	labelID, err := s.resolve(ctx, name, true)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +250,13 @@ func (s *TagService) Merge(ctx context.Context, sourceIDs []string, targetID str
 		return apperror.BadRequest("目标标签不能是被合并的标签")
 	}
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		names, err := r.Tag.UserTags(ctx, append(slices.Clone(sourceIDs), targetID))
+		if err != nil {
+			return err
+		}
+		if len(names) > 0 {
+			return apperror.BadRequest(fmt.Sprintf("「%s」是用户添加的标签，不参与合并", names[0]))
+		}
 		return r.Tag.Merge(ctx, sourceIDs, targetID)
 	})
 }

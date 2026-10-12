@@ -148,7 +148,7 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 		return err
 	}
 
-	labels, err := s.tags.Resolve(ctx, systemTags(vlmOut))
+	labels, err := s.tags.Resolve(ctx, systemTags(vlmOut), false)
 	if err != nil {
 		return err
 	}

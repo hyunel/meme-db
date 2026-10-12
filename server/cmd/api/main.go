@@ -98,7 +98,7 @@ func main() {
 		RetrievalPrompt: cfg.Prompt.Retrieval,
 	}, repo, inferClient.WithPriority(inference.PriorityBackground), tagService)
 
-	libraryService := service.NewLibraryService(repo, memeService, assetService)
+	libraryService := service.NewLibraryService(repo, memeService, assetService, tagService)
 	favService := service.NewFavoriteService(repo, memeService, libraryService)
 	shareService := service.NewShareService(repo, memeService, libraryService)
 	userService := service.NewUserService(repo, memeService)

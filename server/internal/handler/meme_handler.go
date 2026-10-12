@@ -186,6 +186,15 @@ func (h *MemeHandler) Retry(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// tagName takes a tag as typed, with or without a leading "#".
+func tagName(name string) (string, error) {
+	name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(name), "#"))
+	if name == "" || len([]rune(name)) > 50 {
+		return "", apperror.BadRequest("标签需为 1–50 个字符")
+	}
+	return name, nil
+}
+
 type AddTagRequest struct {
 	MemeID string `param:"id" validate:"required,uuid"`
 	Name   string `json:"name" validate:"required"`
@@ -196,9 +205,9 @@ func (h *MemeHandler) AddTag(c echo.Context) error {
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(req.Name), "#"))
-	if name == "" || len([]rune(name)) > 50 {
-		return apperror.BadRequest("标签需为 1–50 个字符")
+	name, err := tagName(req.Name)
+	if err != nil {
+		return err
 	}
 
 	tag, err := h.tagService.AddToMeme(c.Request().Context(), rbac.GetIdentity(c), req.MemeID, name)

@@ -77,6 +77,7 @@ func (h *LibraryHandler) CreateFolder(c echo.Context) error {
 type UploadRequest struct {
 	ParentID string                `form:"parent_id" validate:"omitempty,uuid"`
 	Path     string                `form:"path"` // Folders under the parent to put the file in, such as "a/b"
+	Tags     []string              `form:"tag"`  // The uploader's own tags, the field repeated for each
 	File     *multipart.FileHeader `form:"file" validate:"required"`
 }
 
@@ -93,8 +94,15 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 		}
 		path[i] = name
 	}
+	for i, tag := range req.Tags {
+		name, err := tagName(tag)
+		if err != nil {
+			return err
+		}
+		req.Tags[i] = name
+	}
 
-	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), path, req.File)
+	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), path, req.Tags, req.File)
 	if err != nil {
 		return err
 	}

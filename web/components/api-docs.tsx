@@ -39,7 +39,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
     endpoints: [
       ['GET', '/library', 'read', '库根目录，或以 folder_id 指定的文件夹'],
       ['GET', '/library/folders', 'read', '库中全部文件夹（id、parent_id、name），用于选择位置'],
-      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id，path 为放入其下的文件夹路径，如 猫/橘猫，缺少的逐级新建'],
+      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id，path 为放入其下的文件夹路径，如 猫/橘猫，缺少的逐级新建；tag 为我的标签，可重复传多个'],
       ['POST', '/library/entries', 'write', '把已有表情包加入库：{ meme_id, parent_id, share }，share 为打开它的私密链接令牌'],
       ['POST', '/library/folders', 'write', '新建文件夹：{ name, parent_id }'],
       ['POST', '/library/folders/{id}/save', 'write', '把他人的合集连同内容复制到库中：{ parent_id, share }，share 为打开它的私密链接令牌'],
@@ -196,7 +196,7 @@ export function ApiDocs() {
 
       <Section id="ingest" title="自动入库">
         <p className="text-sm leading-relaxed text-muted-foreground">
-          用读写令牌调用 <Code>POST /api/library/upload</Code>，以 <Code>multipart/form-data</Code> 提交 <Code>file</Code>，以及可选的 <Code>parent_id</Code>（目标文件夹，留空即库根目录）与 <Code>path</Code>（放入其下的文件夹路径，如 <Code>猫/橘猫</Code>）。
+          用读写令牌调用 <Code>POST /api/library/upload</Code>，以 <Code>multipart/form-data</Code> 提交 <Code>file</Code>，以及可选的 <Code>parent_id</Code>（目标文件夹，留空即库根目录）、<Code>path</Code>（放入其下的文件夹路径，如 <Code>猫/橘猫</Code>）与 <Code>tag</Code>（我的标签，可重复传多个）。
         </p>
         <Notes>
           <li>path 中缺少的文件夹会逐级新建，已有的同名文件夹直接沿用；文件夹已有相同文件时返回已有条目（200），不会重复添加，脚本可以放心重跑；新建时返回 201。</li>

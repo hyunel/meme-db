@@ -41,8 +41,8 @@ func (r *TagRepository) Nearest(ctx context.Context, embedding pgvector.Vector) 
 	return
 }
 
-// Create returns the tag with this name, which a concurrent resolve may have created first.
-func (r *TagRepository) Create(ctx context.Context, name string, embedding pgvector.Vector) (string, error) {
+// Create returns the tag with this name, which a concurrent resolve may have created first; embedding is nil for a tag a user starts.
+func (r *TagRepository) Create(ctx context.Context, name string, embedding *pgvector.Vector) (string, error) {
 	query := `
 		INSERT INTO library.tags (name, embedding) VALUES ($1, $2)
 		ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
@@ -117,6 +117,7 @@ func (r *TagRepository) Hot(ctx context.Context, viewerID string, admin bool, mi
 
 func (r *TagRepository) List(ctx context.Context, query, sort string, page Page, commonShare float64) ([]*model.TagUsage, int, error) {
 	var w filter
+	w.where("t.embedding IS NOT NULL") // Tags users started are left to them
 	if query != "" {
 		w.where("EXISTS (SELECT 1 FROM library.labels l WHERE l.tag_id = t.id AND l.name ILIKE " + w.arg("%"+query+"%") + ")")
 	}
@@ -202,6 +203,11 @@ func (r *TagRepository) SetHidden(ctx context.Context, id string, hidden bool) e
 }
 
 // Merge moves the sources' spellings, and with them their links, to the target.
+// UserTags returns the names of the tags among ids that users started, which have no embedding.
+func (r *TagRepository) UserTags(ctx context.Context, ids []string) ([]string, error) {
+	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE id = ANY($1::uuid[]) AND embedding IS NULL`, ids))
+}
+
 func (r *TagRepository) Merge(ctx context.Context, sourceIDs []string, targetID string) error {
 	if _, err := r.db.Exec(ctx, `UPDATE library.labels SET tag_id = $2::uuid WHERE tag_id = ANY($1::uuid[])`, sourceIDs, targetID); err != nil {
 		return err

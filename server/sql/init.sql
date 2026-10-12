@@ -189,7 +189,7 @@ RETURN btrim(regexp_replace(lower(normalize(name, NFKC)), '[\s_/"''“”‘’�
 CREATE TABLE IF NOT EXISTS library.tags (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name VARCHAR(100) UNIQUE NOT NULL,
-    embedding vector(1024),                 -- Of the founding spelling; new spellings are matched against it
+    embedding vector(1024),                 -- Of the founding spelling, which new spellings are matched against; NULL for a tag a user started, never merged
     hidden BOOLEAN NOT NULL DEFAULT FALSE,  -- Still matched, so its spellings don't come back as new tags, but never shown
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );

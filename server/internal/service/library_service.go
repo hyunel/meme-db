@@ -18,10 +18,11 @@ type LibraryService struct {
 	repo   *repository.Provider
 	memes  *MemeService
 	assets *AssetService
+	tags   *TagService
 }
 
-func NewLibraryService(repo *repository.Provider, memes *MemeService, assets *AssetService) *LibraryService {
-	return &LibraryService{repo: repo, memes: memes, assets: assets}
+func NewLibraryService(repo *repository.Provider, memes *MemeService, assets *AssetService, tags *TagService) *LibraryService {
+	return &LibraryService{repo: repo, memes: memes, assets: assets, tags: tags}
 }
 
 func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Folder, error) {
@@ -259,9 +260,13 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 	return folders[0], nil
 }
 
-// Upload adds a file to the folder at path under the parent, making the folders missing on the way.
+// Upload adds a file to the folder at path under the parent, making the folders missing on the way, and gives its meme the uploader's tags.
 // A folder of the same name is used as it is, so uploading a folder again merges into it.
-func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path []string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
+func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path, tags []string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
+	labels, err := s.tags.Resolve(ctx, tags, true)
+	if err != nil {
+		return nil, false, err
+	}
 	for _, name := range path {
 		err := s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
 			folder, err := r.Node.EnsureFolder(ctx, viewer.UserID, parentID, name)
@@ -283,6 +288,11 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
 	if err != nil {
 		return nil, false, err
+	}
+	for _, label := range labels {
+		if _, err := s.repo.Tag.AddUserLabel(ctx, asset.ID, label, viewer.UserID); err != nil {
+			return nil, false, err
+		}
 	}
 	return s.addFile(ctx, viewer, parentID, asset.ID, filepath.Base(file.Filename))
 }
