@@ -117,8 +117,10 @@ export function MemeGrid({ memes, share, similarity, allowAdd }: { memes: Meme[]
     for (const item of memes) {
       if (seen.has(item.id)) continue // Pages of a feed may repeat one
       seen.add(item.id)
-      // Into the shortest column (the leftmost on a tie), so appended pages keep the columns even and earlier cards in place.
-      const c = heights.indexOf(Math.min(...heights))
+      // Into the leftmost column about as short as the shortest, so cards of a size fill rows left to right,
+      // while appended pages keep the columns even and earlier cards in place.
+      const lowest = Math.min(...heights)
+      const c = heights.findIndex((h) => h <= lowest + 0.2)
       cols[c].push(item)
       heights[c] += ratioOf('meme' in item ? item.meme : item) + 0.25 // The tag row and gap take about a quarter width
     }
