@@ -364,8 +364,8 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
 
             const body = (
               <>
-                <div className="relative aspect-square overflow-hidden rounded-lg bg-muted/60">
-                  <div data-thumb className={cn('flex size-full items-center justify-center', item.type === 'folder' && 'p-2')}>
+                <div className="relative aspect-square overflow-hidden rounded-lg">
+                  <div data-thumb className={cn('flex size-full items-center justify-center bg-muted/60', item.type === 'folder' && 'p-2')}>
                     {item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />}
                   </div>
                   {item.type === 'folder' && (

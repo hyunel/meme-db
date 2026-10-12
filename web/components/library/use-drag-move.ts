@@ -65,7 +65,7 @@ function setDragPreview(dt: DataTransfer, ids: string[]) {
     const thumb = document.querySelector<HTMLElement>(`[data-node-id="${id}"] [data-thumb]`)
     if (!thumb) return
     const card = document.createElement('div')
-    card.className = 'absolute size-16 overflow-hidden rounded-lg border-2 border-background bg-muted shadow-md'
+    card.className = 'absolute overflow-hidden rounded-lg border-2 border-background bg-background shadow-md'
     card.style.translate = `${i * 6}px ${i * 6}px`
     card.style.zIndex = String(3 - i)
     card.append(cloneThumb(thumb))
@@ -82,9 +82,12 @@ function setDragPreview(dt: DataTransfer, ids: string[]) {
   setTimeout(() => preview.remove()) // The browser has captured the image by then
 }
 
+// A miniature of the thumbnail: laid out at its size, then zoomed down to the card, so its padding and gaps shrink alike.
 // Videos become their current frame, as a cloned video shows nothing yet.
 function cloneThumb(thumb: HTMLElement) {
   const clone = thumb.cloneNode(true) as HTMLElement
+  const { width, height } = thumb.getBoundingClientRect()
+  Object.assign(clone.style, { width: `${width}px`, height: `${height}px`, zoom: String(60 / width) })
   const videos = thumb.querySelectorAll('video')
   clone.querySelectorAll('video').forEach((v, i) => {
     const src = videos[i]
