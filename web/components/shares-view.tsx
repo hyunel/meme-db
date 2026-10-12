@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { Check, Copy, Eye, Folder as FolderIcon, FolderDown, ImageOff, Link2, Share2, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AlertDialog,
@@ -74,7 +75,29 @@ export function SharesView() {
         <p className="text-sm text-muted-foreground">未公开的表情包和文件夹可以用私密链接分享，拿到链接的人能查看并保存。</p>
       </header>
 
-      <Loadable result={shares}>
+      <Loadable
+        result={shares}
+        loading={
+          <div className="flex flex-col gap-6" aria-busy="true" aria-label="加载中">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-[76px] rounded-xl sm:h-[88px]" />
+              ))}
+            </div>
+            <ul className="flex flex-col divide-y rounded-xl border bg-card">
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="flex items-center gap-3 p-3">
+                  <Skeleton className="size-14 rounded-lg" />
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-64 max-w-full" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        }
+      >
         {(list) =>
           list.length === 0 ? (
             <EmptyState icon={Link2} title="还没有私密链接" description="在未公开的表情包或文件夹上点击「分享」即可创建。" />

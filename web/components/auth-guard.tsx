@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
-import { ForbiddenState, PageLoading } from '@/components/states'
+import { ForbiddenState } from '@/components/states'
 
 export function RequireAuth({ children, admin = false }: { children: React.ReactNode; admin?: boolean }) {
   const { user, ready, expired } = useSession()
@@ -15,7 +15,7 @@ export function RequireAuth({ children, admin = false }: { children: React.React
     router.replace(`/login?redirect=${encodeURIComponent(back)}${expired ? '&expired=1' : ''}`)
   }, [ready, user, expired, router])
 
-  if (!ready || !user) return <PageLoading />
+  if (!ready || !user) return null // Briefly, as the page draws its own skeleton next
   if (admin && user.role !== 'admin') return <ForbiddenState />
   return <>{children}</>
 }

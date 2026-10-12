@@ -6,8 +6,8 @@ import { FolderHeart, HeartOff, ImageOff, Loader2, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { MemeFeed } from '@/components/meme/meme-feed'
-import { FolderGrid } from '@/components/folder/folder-card'
-import { EmptyState, MemeGridSkeleton } from '@/components/states'
+import { FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
+import { EmptyState } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { useFeed } from '@/hooks/use-feed'
 import { FormField, validatePassword } from '@/components/form-field'
@@ -62,7 +62,7 @@ export function FavoritesView() {
             empty={<EmptyState icon={ImageOff} title="还没有收藏表情包" description="在任意表情包上点击爱心即可收藏。" />}
           />
         ) : (
-          <Loadable result={favorites} loading={<MemeGridSkeleton />}>
+          <Loadable result={favorites} loading={<FolderGridSkeleton />}>
             {({ folders }) =>
               folders.length ? <FolderGrid folders={folders} /> : <EmptyState icon={FolderHeart} title="还没有收藏合集" description="在发现页浏览公开合集。" />
             }

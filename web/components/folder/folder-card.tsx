@@ -7,6 +7,7 @@ import { qs } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { FavoriteButton } from '@/components/meme/meme-actions'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 /** Up to four memes of a folder, or a folder icon while it has none. */
@@ -59,6 +60,20 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
         </div>
       )}
     </div>
+  )
+}
+
+export function FolderGridSkeleton() {
+  return (
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-busy="true" aria-label="加载中">
+      {Array.from({ length: 4 }, (_, i) => (
+        <li key={i} className="flex flex-col gap-3 rounded-xl border bg-card p-3">
+          <Skeleton className="aspect-[4/3] rounded-lg" />
+          <Skeleton className="mx-1 h-5 w-2/3" />
+          <Skeleton className="mx-1 h-4 w-1/3 self-end" />
+        </li>
+      ))}
+    </ul>
   )
 }
 

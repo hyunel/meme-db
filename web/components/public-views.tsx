@@ -7,8 +7,9 @@ import useSWR from 'swr'
 import { Check, ChevronRight, FolderOpen, FolderPlus, Hash, ImageOff, Link2, Share2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { MemeFeed } from '@/components/meme/meme-feed'
-import { FolderCard, FolderGrid } from '@/components/folder/folder-card'
+import { FolderCard, FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { PrivateLinkDialog, shareFolder } from '@/components/meme/share-dialog'
 import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
@@ -80,7 +81,7 @@ export function DiscoverView() {
         {tab === 'memes' ? (
           <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无表情包" />} />
         ) : (
-          <Loadable result={folders} loading={<MemeGridSkeleton count={4} />}>
+          <Loadable result={folders} loading={<FolderGridSkeleton />}>
             {(list) => (list.length ? <FolderGrid folders={list} /> : <EmptyState icon={FolderOpen} title="暂无公开合集" />)}
           </Loadable>
         )}
@@ -94,7 +95,23 @@ export function UserProfileView({ username }: { username: string }) {
   const profile = useSWR<Profile>(path)
   const memes = useFeed(['profile-memes', username], (cursor) => api<Feed<Meme>>(`${path}/memes${qs({ cursor })}`), { live: true })
   return (
-    <Loadable result={profile} notFound={{ title: '用户不存在', description: '该用户不存在或已被停用。' }}>
+    <Loadable
+      result={profile}
+      notFound={{ title: '用户不存在', description: '该用户不存在或已被停用。' }}
+      loading={
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+          <div className="flex items-center gap-4">
+            <Skeleton className="size-16 rounded-full" />
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-7 w-40" />
+              <Skeleton className="h-4 w-56" />
+            </div>
+          </div>
+          <FolderGridSkeleton />
+          <MemeGridSkeleton />
+        </div>
+      }
+    >
       {({ user, folders, meme_count }) => (
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
           <header className="flex items-center gap-4">
@@ -183,6 +200,16 @@ export function PublicFolderView({ id, share }: { id: string; share?: string }) 
         share
           ? { title: '链接已失效', description: '分享者可能停用了这个链接，或删除了这个文件夹。' }
           : { title: '合集不存在', description: '它可能已被删除，或已设为私有。' }
+      }
+      loading={
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+          <Skeleton className="h-5 w-40" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-8 w-56" />
+            <Skeleton className="h-4 w-44" />
+          </div>
+          <MemeGridSkeleton />
+        </div>
       }
     >
       {({ folder, ancestors, folders }) => {

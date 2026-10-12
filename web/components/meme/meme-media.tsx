@@ -7,7 +7,13 @@ import type { MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // As large as fits in the box, up to its own size, with the checkerboard behind the meme alone; size-full fills a box of its ratio.
-const fitted = 'max-h-full max-w-full bg-checker object-contain'
+// Hidden until reveal marks it loaded (or failed, to show the broken image), then faded in.
+const fitted = 'max-h-full max-w-full bg-checker object-contain opacity-0 transition-opacity duration-200 data-loaded:opacity-100 motion-reduce:transition-none'
+
+// Marks the element itself, which React leaves alone, so revealing costs no render.
+const reveal = (e: React.SyntheticEvent<HTMLElement>) => {
+  e.currentTarget.dataset.loaded = ''
+}
 
 function AutoVideo({ src, className, controls, label }: { src: string; className?: string; controls: boolean; label: string }) {
   const ref = useRef<HTMLVideoElement>(null)
@@ -29,6 +35,8 @@ function AutoVideo({ src, className, controls, label }: { src: string; className
       ref={ref}
       src={src}
       className={cn(fitted, className)}
+      onLoadedMetadata={reveal}
+      onError={reveal}
       muted
       loop
       playsInline
@@ -58,6 +66,6 @@ export function MemeMedia({
     return <LottiePlayer url={meme.url} mime={meme.mime_type} label={alt} className={className} />
   }
   return (
-    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn(fitted, className)} />
+    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn(fitted, className)} onLoad={reveal} onError={reveal} />
   )
 }

@@ -77,11 +77,22 @@ export function ForbiddenState() {
   )
 }
 
-export function MemeGridSkeleton({ count = 10 }: { count?: number }) {
+// Heights over widths of the placeholder cards, uneven like memes'.
+const SKELETON_RATIOS = [1, 1.3, 0.75, 1.1, 0.9, 1.25]
+
+/** Columns of placeholder cards as MemeGrid lays them out, as many as it shows at each width. */
+export function MemeGridSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" aria-busy="true" aria-label="加载中">
-      {Array.from({ length: count }, (_, i) => (
-        <Skeleton key={i} className="aspect-square rounded-xl" />
+    <div className="flex items-start gap-3" aria-busy="true" aria-label="加载中">
+      {['flex', 'flex', 'hidden sm:flex', 'hidden md:flex', 'hidden lg:flex'].map((display, c) => (
+        <div key={c} className={cn('min-w-0 flex-1 flex-col gap-4', display)}>
+          {[0, 1, 2].map((r) => (
+            <div key={r} className="flex flex-col gap-1.5">
+              <Skeleton className="rounded-xl" style={{ aspectRatio: 1 / SKELETON_RATIOS[(c + r * 2) % SKELETON_RATIOS.length] }} />
+              <Skeleton className="my-1.5 h-5 w-1/2 rounded-full" />
+            </div>
+          ))}
+        </div>
       ))}
     </div>
   )

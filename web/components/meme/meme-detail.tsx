@@ -8,6 +8,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Library, Lo
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { MemeMedia } from './meme-media'
 import { MemeFeed } from './meme-feed'
 import { FavoriteButton, LibraryButton } from './meme-actions'
@@ -15,7 +16,7 @@ import { DownloadDialog } from './download-dialog'
 import { ShareButton } from './share-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { useFeed } from '@/hooks/use-feed'
-import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
+import { ErrorState, NotFoundState } from '@/components/states'
 import { ApiError, api, qs } from '@/lib/api'
 import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { formatBytes, formatDateTime } from '@/lib/format'
@@ -31,7 +32,7 @@ const LIBRARY_ROOT: Place = { key: 'library', href: '/library', name: '我的库
 /** Where the meme lives: the place it was opened from (by the private link share, if any), then the viewer's folders and the public collections holding it. */
 function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDetail; mine: boolean; share?: string }) {
   const { user } = useSession()
-  const { data: folders = [] } = useSWR<Folder[]>(`/memes/${meme.id}/folders`)
+  const { data: folders } = useSWR<Folder[]>(`/memes/${meme.id}/folders`)
   const [expanded, setExpanded] = useState(false)
 
   const folderPlace = (f: Folder): Place => {
@@ -49,7 +50,7 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
   // The folder the entry sits in; without one the viewer may see, the library root or the owner's page.
   const folder = entry?.ancestors.at(-1)
   const openedPlace = ({ owner }: EntryDetail): Place => {
-    const found = folder && folders.find((f) => f.id === folder.id)
+    const found = folder && folders?.find((f) => f.id === folder.id)
     if (found) return folderPlace(found)
     if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}${qs({ share })}`, name: folder.name, meta: mine ? '我的库' : `@${owner.username}`, icon: FolderOpen }
     return mine ? LIBRARY_ROOT : { key: 'owner', href: `/u/${owner.username}`, name: `@${owner.username}`, meta: '公开的表情包', icon: UserRound }
@@ -59,9 +60,9 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
   const places = [
     ...(entry ? [{ ...openedPlace(entry), current: true }] : []),
     ...(meme.entries.some((e) => !e.folder_id) ? [LIBRARY_ROOT] : []),
-    ...folders.map(folderPlace),
+    ...(folders ?? []).map(folderPlace),
   ].filter((p, i, all) => all.findIndex((q) => q.key === p.key) === i)
-  if (!places.length) return null
+  if (!places.length && folders) return null
   const shown = expanded ? places : places.slice(0, PLACES_SHOWN)
 
   return (
@@ -94,6 +95,15 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
             </Link>
           </li>
         ))}
+        {!folders && (
+          <li className="flex items-center gap-3 p-2.5" aria-busy="true" aria-label="加载中">
+            <Skeleton className="size-10 rounded-lg" />
+            <span className="flex flex-1 flex-col gap-1.5">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-3 w-36" />
+            </span>
+          </li>
+        )}
       </ul>
       {places.length > PLACES_SHOWN && (
         <Button variant="ghost" size="sm" className="-ml-2 self-start text-muted-foreground" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
@@ -127,6 +137,13 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
   }, [id, share, meme])
   const [tagPending, setTagPending] = useState(false)
 
+  const back = (
+    <Button variant="ghost" className="-ml-2 self-start" onClick={() => (window.history.length > 1 ? router.back() : router.push('/'))}>
+      <ArrowLeft data-icon="inline-start" />
+      返回
+    </Button>
+  )
+
   if (error) {
     return error instanceof ApiError && error.status === 404 ? (
       share ? (
@@ -140,7 +157,31 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
       </div>
     )
   }
-  if (!meme || openingEntry) return <PageLoading />
+  if (!meme || openingEntry) {
+    return (
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+        {back}
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
+          <Skeleton className="aspect-square rounded-2xl md:aspect-auto md:h-[28rem]" />
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-8 w-3/4" />
+              <Skeleton className="h-4" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-11 md:h-9" />
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} className="h-11 md:h-9" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Opened only by a private link: the viewer may look and save it, but not favorite or tag it.
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0
@@ -198,10 +239,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-4 sm:px-6 sm:py-8">
       <div className="flex flex-col gap-4">
-        <Button variant="ghost" className="-ml-2 self-start" onClick={() => (window.history.length > 1 ? router.back() : router.push('/'))}>
-          <ArrowLeft data-icon="inline-start" />
-          返回
-        </Button>
+        {back}
 
         <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
           <div className="flex items-center justify-center rounded-2xl bg-muted/50 p-4 md:min-h-[28rem] md:self-start md:p-8">

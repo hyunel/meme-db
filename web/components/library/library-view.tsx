@@ -45,7 +45,8 @@ import { MemeMedia } from '@/components/meme/meme-media'
 import { FolderMosaic } from '@/components/folder/folder-card'
 import { PrivateLinkDialog, shareFolder, shareMeme, type ShareTarget } from '@/components/meme/share-dialog'
 import { ProcessBadge, VisibilityBadge } from '@/components/status-badges'
-import { EmptyState, PageLoading } from '@/components/states'
+import { EmptyState } from '@/components/states'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Loadable } from '@/components/loadable'
 import { FolderPickerDialog, type PickerMode } from './folder-picker-dialog'
 import { UploadDialog } from './upload-dialog'
@@ -66,16 +67,40 @@ export function LibraryView() {
   const params = useSearchParams()
   const folderId = params.get('folder')
   const library = useSWR<Library>(`/library${qs({ folder_id: folderId })}`, {
+    keepPreviousData: true, // A folder being opened leaves the last one in view, rather than a skeleton
     refreshInterval: (lib) => (lib?.entries.some((e) => isProcessing(e.meme)) ? 3000 : 0),
   })
   return (
-    <Loadable result={library} loading={<PageLoading />} notFound={{ title: '文件夹不存在', description: '它可能已被删除或移动。' }}>
-      {(lib) => <LibraryContent key={lib.folder?.id ?? 'root'} lib={lib} />}
+    <Loadable
+      result={library}
+      notFound={{ title: '文件夹不存在', description: '它可能已被删除或移动。' }}
+      loading={
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+          <Skeleton className="h-5 w-20" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-9 w-36" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-9 w-28" />
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {Array.from({ length: 10 }, (_, i) => (
+              <li key={i} className="flex flex-col gap-2 rounded-xl border bg-card p-2">
+                <Skeleton className="aspect-square rounded-lg" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-5 w-12 rounded-full" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      }
+    >
+      {(lib) => <LibraryContent key={lib.folder?.id ?? 'root'} lib={lib} opening={library.isLoading} />}
     </Loadable>
   )
 }
 
-function LibraryContent({ lib }: { lib: Library }) {
+/** opening tells that another folder is on its way, which this one dims for if it takes a moment. */
+function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const router = useRouter()
   const params = useSearchParams()
   const folder = lib.folder
@@ -219,7 +244,10 @@ function LibraryContent({ lib }: { lib: Library }) {
   const crumbs = [...lib.ancestors, ...(folder ? [folder] : [])]
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
+    <div
+      aria-busy={opening}
+      className={cn('mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8', opening && 'pointer-events-none opacity-60 transition-opacity delay-150')}
+    >
       <nav aria-label="文件夹路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
         <ol className="flex w-max items-center gap-0.5 text-sm text-muted-foreground">
           <li>
