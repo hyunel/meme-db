@@ -129,15 +129,15 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
         )}
 
         <nav aria-label="跳转" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Button variant="outline" className="h-10" render={<Link href={`/m/${memeId}`} />}>
+          <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/m/${memeId}`} />}>
             <Eye />
             表情详情
           </Button>
-          <Button variant="outline" className="h-10" render={<Link href={`/admin/content?q=${encodeURIComponent(memeId)}`} />}>
+          <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/content?q=${encodeURIComponent(memeId)}`} />}>
             <Images />
             内容管理
           </Button>
-          <Button variant="outline" className="h-10" render={<Link href={`/admin/tasks?view=history&meme=${encodeURIComponent(memeId)}`} />}>
+          <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/tasks?view=history&meme=${encodeURIComponent(memeId)}`} />}>
             <ListChecks />
             相关任务
           </Button>
