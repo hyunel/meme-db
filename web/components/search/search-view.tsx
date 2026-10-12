@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -84,8 +84,9 @@ export function SearchView() {
   }, [hasQuery])
 
   const folder = folderView?.folder
-  const memes = results?.map((r) => r.meme)
-  const similarity = image && results ? new Map(results.map((r) => [r.meme.id, r.similarity])) : undefined
+  // Kept across renders, as typing a new query rerenders the page under the results.
+  const memes = useMemo(() => results?.map((r) => r.meme), [results])
+  const similarity = useMemo(() => (image && results ? new Map(results.map((r) => [r.meme.id, r.similarity])) : undefined), [image, results])
 
   const navigate = (next: { q?: string; scope?: Scope; folder?: string | null; img?: string | null }) => {
     const p = new URLSearchParams()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useSyncExternalStore } from 'react'
+import { memo, useMemo, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { mutate } from 'swr'
 import { qs } from '@/lib/api'
@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils'
 // Height over width, bounded so panoramas and long screenshots keep a usable card.
 const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)
 
-/** share is the private link the meme was reached by, which it passes on. */
-export function MemeCard({
+/** share is the private link the meme was reached by, which it passes on. Memoized, as grids hold many and rerender with their page. */
+export const MemeCard = memo(function MemeCard({
   meme,
   entryId,
   share,
@@ -86,7 +86,7 @@ export function MemeCard({
       </div>
     </div>
   )
-}
+})
 
 // The Tailwind lg / md / sm breakpoints, widest first.
 const columnQueries: [string, number][] = [

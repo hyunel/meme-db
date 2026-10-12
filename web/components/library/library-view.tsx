@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
+  Check,
   CheckSquare,
   ChevronRight,
   Copy,
@@ -25,7 +26,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -100,6 +100,32 @@ export function LibraryView() {
 }
 
 /** opening tells that another folder is on its way, which this one dims for if it takes a moment. */
+// What an item shows, kept apart from the controls around it, as selecting and dragging rerender every item.
+const TileBody = memo(function TileBody({ item }: { item: Item }) {
+  const node = nodeOf(item)
+  const meme = item.type === 'entry' ? item.entry.meme : null
+  return (
+    <>
+      <div className="relative aspect-square overflow-hidden rounded-lg">
+        <div data-thumb className={cn('flex size-full items-center justify-center bg-muted/60', item.type === 'folder' && 'p-2')}>
+          {item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />}
+        </div>
+        {item.type === 'folder' && (
+          <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
+            <FolderIcon className="size-3" aria-hidden />
+            {item.folder.item_count} 项
+          </span>
+        )}
+        {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5" />}
+      </div>
+      <div className="flex min-w-0 flex-col gap-1 px-0.5">
+        <span className="truncate text-sm font-medium">{node.name}</span>
+        <VisibilityBadge visibility={node.visibility} className="self-start" />
+      </div>
+    </>
+  )
+})
+
 function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -362,26 +388,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
             const isPublicSelf = node.visibility === 'public'
             const dropTarget = drag.isOver(node.id) && 'border-foreground bg-brand/30 ring-2 ring-foreground/20'
 
-            const body = (
-              <>
-                <div className="relative aspect-square overflow-hidden rounded-lg">
-                  <div data-thumb className={cn('flex size-full items-center justify-center bg-muted/60', item.type === 'folder' && 'p-2')}>
-                    {item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />}
-                  </div>
-                  {item.type === 'folder' && (
-                    <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
-                      <FolderIcon className="size-3" aria-hidden />
-                      {item.folder.item_count} 项
-                    </span>
-                  )}
-                  {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5" />}
-                </div>
-                <div className="flex min-w-0 flex-col gap-1 px-0.5">
-                  <span className="truncate text-sm font-medium">{node.name}</span>
-                  <VisibilityBadge visibility={node.visibility} className="self-start" />
-                </div>
-              </>
-            )
+            const body = <TileBody item={item} />
 
             return (
               <li
@@ -403,7 +410,16 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                     )}
                   >
                     {body}
-                    <Checkbox checked={checked} tabIndex={-1} aria-hidden className="pointer-events-none absolute top-3 left-3 size-5 bg-background" />
+                    {/* Drawn like a checkbox, without the cost of one on every item */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'absolute top-3 left-3 flex size-5 items-center justify-center rounded-[4px] border border-input bg-background',
+                        checked && 'border-primary bg-primary text-primary-foreground',
+                      )}
+                    >
+                      {checked && <Check className="size-3.5" />}
+                    </span>
                     <span className="sr-only">
                       {checked ? '取消选择' : '选择'} {node.name}
                     </span>
