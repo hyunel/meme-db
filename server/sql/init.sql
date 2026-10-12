@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS library.nodes (
     is_public BOOLEAN NOT NULL DEFAULT false,
     asset_id UUID REFERENCES core.assets(id) ON DELETE CASCADE, -- NULL for folders
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE NULLS NOT DISTINCT (owner_id, parent_id, name) -- Within a folder, and at the root of a library
 );
 
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON library.nodes USING GIST (path);

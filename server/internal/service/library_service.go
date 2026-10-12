@@ -244,14 +244,11 @@ func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id s
 }
 
 func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity, parentID *string, name string) (*model.Folder, error) {
-	taken, err := s.takenNames(ctx, viewer.UserID, parentID)
-	if err != nil {
-		return nil, err
-	}
-	if taken[name] {
-		return nil, apperror.Conflict("同一位置已存在同名项目")
-	}
-	node, err := s.create(ctx, &model.Node{OwnerID: viewer.UserID, ParentID: parentID, Name: name, Type: model.NodeTypeFolder})
+	var node *model.Node
+	err := s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) (err error) {
+		node, err = create(ctx, r, &model.Node{OwnerID: viewer.UserID, ParentID: parentID, Name: name, Type: model.NodeTypeFolder})
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +259,27 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 	return folders[0], nil
 }
 
-func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
+// Upload adds a file to the folder at path under the parent, making the folders missing on the way.
+// A folder of the same name is used as it is, so uploading a folder again merges into it.
+func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path []string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
+	for _, name := range path {
+		err := s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
+			folder, err := r.Node.EnsureFolder(ctx, viewer.UserID, parentID, name)
+			switch {
+			case err != nil:
+				return err
+			case folder == nil:
+				return apperror.NotFound("目标文件夹不存在")
+			case folder.Type != model.NodeTypeFolder:
+				return apperror.Conflict("同一位置已存在同名文件").OnField("path")
+			}
+			parentID = &folder.ID
+			return nil
+		})
+		if err != nil {
+			return nil, false, err
+		}
+	}
 	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
 	if err != nil {
 		return nil, false, err
@@ -293,31 +310,33 @@ func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, mem
 
 // addFile reports whether it created the entry; a file already in the folder is returned instead, so adding can be retried.
 func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, parentID *string, assetID, name string) (*EntryDetail, bool, error) {
-	children, err := s.repo.Node.Children(ctx, viewer.UserID, parentID)
-	if err != nil {
-		return nil, false, err
-	}
-	taken := make(map[string]bool, len(children))
-	for _, n := range children {
-		if n.AssetID != nil && *n.AssetID == assetID {
-			entry, err := s.Entry(ctx, viewer, n.ID, "")
-			return entry, false, err
+	var id string
+	var created bool
+	err := s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
+		children, err := r.Node.Children(ctx, viewer.UserID, parentID)
+		if err != nil {
+			return err
 		}
-		taken[n.Name] = true
-	}
-
-	node, err := s.create(ctx, &model.Node{
-		OwnerID:  viewer.UserID,
-		ParentID: parentID,
-		Name:     uniqueName(taken, name),
-		Type:     model.NodeTypeFile,
-		AssetID:  &assetID,
+		taken := make(map[string]bool, len(children))
+		for _, n := range children {
+			if n.AssetID != nil && *n.AssetID == assetID {
+				id = n.ID
+				return nil
+			}
+			taken[n.Name] = true
+		}
+		node, err := create(ctx, r, &model.Node{OwnerID: viewer.UserID, ParentID: parentID, Name: uniqueName(taken, name), Type: model.NodeTypeFile, AssetID: &assetID})
+		if err != nil {
+			return err
+		}
+		id, created = node.ID, true
+		return nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	entry, err := s.Entry(ctx, viewer, node.ID, "")
-	return entry, true, err
+	entry, err := s.Entry(ctx, viewer, id, "")
+	return entry, created, err
 }
 
 func (s *LibraryService) Rename(ctx context.Context, viewer *rbac.Identity, id, name string) error {
@@ -325,17 +344,9 @@ func (s *LibraryService) Rename(ctx context.Context, viewer *rbac.Identity, id, 
 	if err != nil {
 		return err
 	}
-	if nodes[0].Name == name {
-		return nil
-	}
-	taken, err := s.takenNames(ctx, viewer.UserID, nodes[0].ParentID)
-	if err != nil {
-		return err
-	}
-	if taken[name] {
-		return apperror.Conflict("同一位置已存在同名项目")
-	}
-	return s.repo.Node.Rename(ctx, id, name)
+	return s.inFolder(ctx, viewer.UserID, nodes[0].ParentID, func(r *repository.Repos) error {
+		return nameConflict(r.Node.Rename(ctx, id, name))
+	})
 }
 
 func (s *LibraryService) SetPublic(ctx context.Context, viewer *rbac.Identity, ids []string, isPublic bool) error {
@@ -347,11 +358,15 @@ func (s *LibraryService) Delete(ctx context.Context, viewer *rbac.Identity, ids 
 }
 
 func (s *LibraryService) Move(ctx context.Context, viewer *rbac.Identity, ids []string, targetID *string) error {
-	nodes, target, taken, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
+	nodes, target, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
 	if err != nil {
 		return err
 	}
-	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+	return s.inFolder(ctx, viewer.UserID, targetID, func(r *repository.Repos) error {
+		taken, err := takenNames(ctx, r, viewer.UserID, targetID)
+		if err != nil {
+			return err
+		}
 		for _, n := range nodes {
 			path := childPath(target, n.ID)
 			if path == n.Path {
@@ -368,11 +383,15 @@ func (s *LibraryService) Move(ctx context.Context, viewer *rbac.Identity, ids []
 }
 
 func (s *LibraryService) Copy(ctx context.Context, viewer *rbac.Identity, ids []string, targetID *string) error {
-	nodes, _, taken, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
+	nodes, _, err := s.prepareTransfer(ctx, viewer.UserID, ids, targetID)
 	if err != nil {
 		return err
 	}
-	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+	return s.inFolder(ctx, viewer.UserID, targetID, func(r *repository.Repos) error {
+		taken, err := takenNames(ctx, r, viewer.UserID, targetID)
+		if err != nil {
+			return err
+		}
 		for _, n := range nodes {
 			name := uniqueName(taken, n.Name)
 			taken[name] = true
@@ -393,12 +412,12 @@ func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, 
 	if folder.OwnerID == viewer.UserID {
 		return nil, apperror.BadRequest("文件夹已在我的库中") // Its owner copies it with Copy, which keeps it out of itself
 	}
-	taken, err := s.takenNames(ctx, viewer.UserID, parentID)
-	if err != nil {
-		return nil, err
-	}
 	var copyID string
-	err = s.repo.Tx(ctx, func(r *repository.Repos) error {
+	err = s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
+		taken, err := takenNames(ctx, r, viewer.UserID, parentID)
+		if err != nil {
+			return err
+		}
 		copyID, err = copyTree(ctx, r, viewer.UserID, folder.Node, parentID, uniqueName(taken, folder.Name))
 		return err
 	})
@@ -417,40 +436,30 @@ func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, 
 	return folders[0], nil
 }
 
-func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, ids []string, targetID *string) ([]*model.Node, *model.Node, map[string]bool, error) {
+func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, ids []string, targetID *string) ([]*model.Node, *model.Node, error) {
 	nodes, err := s.ownedNodes(ctx, ownerID, ids)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	var target *model.Node
 	if targetID != nil {
 		if target, err = s.ownedFolder(ctx, ownerID, *targetID); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		for _, n := range nodes {
 			if target.Path == n.Path || strings.HasPrefix(target.Path, n.Path+".") {
-				return nil, nil, nil, apperror.BadRequest("不能把文件夹移动或复制到它自身或子文件夹中")
+				return nil, nil, apperror.BadRequest("不能把文件夹移动或复制到它自身或子文件夹中")
 			}
 		}
 	}
-	taken, err := s.takenNames(ctx, ownerID, targetID)
-	return nodes, target, taken, err
+	return nodes, target, nil
 }
 
 // copyTree copies a node, with all it holds if it is a folder, into the owner's folder (or root) as name, returning the id of the copy.
 func copyTree(ctx context.Context, r *repository.Repos, ownerID string, src *model.Node, parentID *string, name string) (string, error) {
-	node, err := r.Node.Create(ctx, &model.Node{
-		OwnerID:  ownerID,
-		ParentID: parentID,
-		Name:     name,
-		Type:     src.Type,
-		AssetID:  src.AssetID,
-	})
+	node, err := create(ctx, r, &model.Node{OwnerID: ownerID, ParentID: parentID, Name: name, Type: src.Type, AssetID: src.AssetID})
 	if err != nil {
 		return "", err
-	}
-	if node == nil {
-		return "", apperror.NotFound("目标文件夹不存在")
 	}
 	if src.Type != model.NodeTypeFolder {
 		return node.ID, nil
@@ -467,12 +476,32 @@ func copyTree(ctx context.Context, r *repository.Repos, ownerID string, src *mod
 	return node.ID, nil
 }
 
-func (s *LibraryService) create(ctx context.Context, node *model.Node) (*model.Node, error) {
-	created, err := s.repo.Node.Create(ctx, node)
+// inFolder runs fn in a transaction holding the lock on the owner's folder (nil: their library root), which every change
+// of the names in it takes first, so a name fn finds free there stays free until it commits.
+func (s *LibraryService) inFolder(ctx context.Context, ownerID string, folderID *string, fn func(r *repository.Repos) error) error {
+	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		if err := r.Node.Lock(ctx, ownerID, folderID); err != nil {
+			return err
+		}
+		return fn(r)
+	})
+}
+
+// create adds a node to its parent, which must be one of the owner's folders.
+func create(ctx context.Context, r *repository.Repos, node *model.Node) (*model.Node, error) {
+	created, err := r.Node.Create(ctx, node)
 	if err == nil && created == nil {
 		err = apperror.NotFound("目标文件夹不存在")
 	}
-	return created, err
+	return created, nameConflict(err)
+}
+
+// nameConflict reports a name its siblings already have, which the database refuses, as a conflict.
+func nameConflict(err error) error {
+	if repository.IsUniqueViolation(err) {
+		return apperror.Conflict("同一位置已存在同名项目")
+	}
+	return err
 }
 
 func (s *LibraryService) ownedNodes(ctx context.Context, ownerID string, ids []string) ([]*model.Node, error) {
@@ -497,11 +526,11 @@ func (s *LibraryService) ownedFolder(ctx context.Context, ownerID, id string) (*
 	return node, nil
 }
 
-func (s *LibraryService) takenNames(ctx context.Context, ownerID string, parentID *string) (map[string]bool, error) {
-	names, err := s.repo.Node.ChildNames(ctx, ownerID, parentID)
-	taken := make(map[string]bool, len(names))
-	for _, n := range names {
-		taken[n] = true
+func takenNames(ctx context.Context, r *repository.Repos, ownerID string, parentID *string) (map[string]bool, error) {
+	children, err := r.Node.Children(ctx, ownerID, parentID)
+	taken := make(map[string]bool, len(children))
+	for _, n := range children {
+		taken[n.Name] = true
 	}
 	return taken, err
 }

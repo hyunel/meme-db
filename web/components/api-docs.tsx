@@ -39,7 +39,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
     endpoints: [
       ['GET', '/library', 'read', '库根目录，或以 folder_id 指定的文件夹'],
       ['GET', '/library/folders', 'read', '库中全部文件夹（id、parent_id、name），用于选择位置'],
-      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id'],
+      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id，path 为放入其下的文件夹路径，如 猫/橘猫，缺少的逐级新建'],
       ['POST', '/library/entries', 'write', '把已有表情包加入库：{ meme_id, parent_id, share }，share 为打开它的私密链接令牌'],
       ['POST', '/library/folders', 'write', '新建文件夹：{ name, parent_id }'],
       ['POST', '/library/folders/{id}/save', 'write', '把他人的合集连同内容复制到库中：{ parent_id, share }，share 为打开它的私密链接令牌'],
@@ -196,10 +196,10 @@ export function ApiDocs() {
 
       <Section id="ingest" title="自动入库">
         <p className="text-sm leading-relaxed text-muted-foreground">
-          用读写令牌调用 <Code>POST /api/library/upload</Code>，以 <Code>multipart/form-data</Code> 提交 <Code>file</Code> 与可选的 <Code>parent_id</Code>（目标文件夹，留空即库根目录）。
+          用读写令牌调用 <Code>POST /api/library/upload</Code>，以 <Code>multipart/form-data</Code> 提交 <Code>file</Code>，以及可选的 <Code>parent_id</Code>（目标文件夹，留空即库根目录）与 <Code>path</Code>（放入其下的文件夹路径，如 <Code>猫/橘猫</Code>）。
         </p>
         <Notes>
-          <li>文件夹已有相同文件时返回已有条目（200），不会重复添加，脚本可以放心重跑；新建时返回 201。</li>
+          <li>path 中缺少的文件夹会逐级新建，已有的同名文件夹直接沿用；文件夹已有相同文件时返回已有条目（200），不会重复添加，脚本可以放心重跑；新建时返回 201。</li>
           <li>
             上传后表情包进入识别队列，<Code>meme.status</Code> 依次为 pending、processing、success（或 failed），完成后即可被搜到；可轮询 <Code>GET /api/memes/{'{id}'}</Code> 查看进度。
           </li>
@@ -208,11 +208,10 @@ export function ApiDocs() {
         <CodeBlock
           title="Shell"
           code={`export MEMEDB_TOKEN=mdb_…   # 读写权限的令牌
-FOLDER=""                   # 目标文件夹 ID，留空即库根目录
 
 for f in ./memes/*; do
   curl -sS -H "Authorization: Bearer $MEMEDB_TOKEN" \\
-    -F "file=@$f" -F "parent_id=$FOLDER" \\
+    -F "file=@$f" -F "path=自动入库" \\
     ${api}/library/upload
   echo
 done`}
@@ -225,20 +224,12 @@ API = "${api}"
 s = requests.Session()
 s.headers["Authorization"] = f"Bearer {os.environ['MEMEDB_TOKEN']}"
 
-def folder(name, parent=None):
-    """返回文件夹 ID，不存在时创建。"""
-    view = s.get(f"{API}/library", params={"folder_id": parent}).json()
-    for f in view["folders"]:
-        if f["name"] == name:
-            return f["id"]
-    r = s.post(f"{API}/library/folders", json={"name": name, "parent_id": parent})
-    r.raise_for_status()
-    return r.json()["id"]
-
-target = folder("自动入库")
-for path in sorted(pathlib.Path("memes").iterdir()):
+# 连同子文件夹放入库中的「自动入库」
+root = pathlib.Path("memes")
+for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    folder = "/".join(("自动入库", *path.parent.relative_to(root).parts))
     with path.open("rb") as fp:
-        r = s.post(f"{API}/library/upload", files={"file": fp}, data={"parent_id": target})
+        r = s.post(f"{API}/library/upload", files={"file": fp}, data={"path": folder})
     r.raise_for_status()
     entry = r.json()
     print("新增" if r.status_code == 201 else "已存在", entry["name"], entry["meme"]["status"])`}

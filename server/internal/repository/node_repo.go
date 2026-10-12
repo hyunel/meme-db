@@ -21,18 +21,32 @@ type NodeRepository struct {
 	db db.DBTX
 }
 
+// Lock holds, until the transaction ends, the lock on the owner's folder, or on their library root if folderID is nil.
+func (r *NodeRepository) Lock(ctx context.Context, ownerID string, folderID *string) error {
+	_, err := r.db.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended(COALESCE($2::uuid, $1::uuid)::text, 0))`, ownerID, folderID)
+	return err
+}
+
+// Inserts a node into the parent ($2), which must be one of the owner's ($1) folders, or at the root if it is null.
+const insertNode = `
+	INSERT INTO library.nodes (id, owner_id, parent_id, path, name, type, is_public, asset_id)
+	SELECT n.id, $1::uuid, p.id, COALESCE(p.path, ''::ltree) || replace(n.id::text, '-', '')::ltree, $3, $4, $5, $6::uuid
+	FROM (SELECT uuidv7() AS id) n
+	LEFT JOIN library.nodes p ON p.id = $2::uuid AND p.owner_id = $1::uuid AND p.type = 'FOLDER'
+	WHERE $2::uuid IS NULL OR p.id IS NOT NULL
+`
+
 // Create returns nil if the parent is not one of the owner's folders.
 func (r *NodeRepository) Create(ctx context.Context, node *model.Node) (*model.Node, error) {
-	query := fmt.Sprintf(`
-		INSERT INTO library.nodes (id, owner_id, parent_id, path, name, type, is_public, asset_id)
-		SELECT n.id, $1::uuid, p.id, COALESCE(p.path, ''::ltree) || replace(n.id::text, '-', '')::ltree, $3, $4, $5, $6::uuid
-		FROM (SELECT uuidv7() AS id) n
-		LEFT JOIN library.nodes p ON p.id = $2::uuid AND p.owner_id = $1::uuid AND p.type = 'FOLDER'
-		WHERE $2::uuid IS NULL OR p.id IS NOT NULL
-		RETURNING %s
-	`, nodeSelectColumns)
-	return collectOne[model.Node](r.db.Query(ctx, query,
+	return collectOne[model.Node](r.db.Query(ctx, insertNode+"RETURNING "+nodeSelectColumns,
 		node.OwnerID, node.ParentID, node.Name, node.Type, node.IsPublic, node.AssetID))
+}
+
+// EnsureFolder returns the owner's node named name in the parent, a new folder if there was none, or nil if the parent is not one of their folders.
+// The no-op update makes a conflict return the node already there.
+func (r *NodeRepository) EnsureFolder(ctx context.Context, ownerID string, parentID *string, name string) (*model.Node, error) {
+	query := insertNode + "ON CONFLICT (owner_id, parent_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING " + nodeSelectColumns
+	return collectOne[model.Node](r.db.Query(ctx, query, ownerID, parentID, name, model.NodeTypeFolder, false, nil))
 }
 
 func (r *NodeRepository) Get(ctx context.Context, id string) (*model.Node, error) {
@@ -95,15 +109,6 @@ func (r *NodeRepository) Files(ctx context.Context, q FileQuery, after string, l
 func (r *NodeRepository) CountFiles(ctx context.Context, q FileQuery) (int, error) {
 	w := q.filter()
 	return count(ctx, r.db, "SELECT count(*) FROM library.nodes c JOIN core.meme_info m ON m.asset_id = c.asset_id "+w.clause(), w.args...)
-}
-
-func (r *NodeRepository) ChildNames(ctx context.Context, ownerID string, parentID *string) ([]string, error) {
-	nodes, err := r.Children(ctx, ownerID, parentID)
-	names := make([]string, len(nodes))
-	for i, n := range nodes {
-		names[i] = n.Name
-	}
-	return names, err
 }
 
 func (r *NodeRepository) Ancestors(ctx context.Context, path string) ([]*model.Node, error) {

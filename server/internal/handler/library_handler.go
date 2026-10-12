@@ -76,6 +76,7 @@ func (h *LibraryHandler) CreateFolder(c echo.Context) error {
 
 type UploadRequest struct {
 	ParentID string                `form:"parent_id" validate:"omitempty,uuid"`
+	Path     string                `form:"path"` // Folders under the parent to put the file in, such as "a/b"
 	File     *multipart.FileHeader `form:"file" validate:"required"`
 }
 
@@ -84,8 +85,16 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
+	path := strings.FieldsFunc(req.Path, func(r rune) bool { return r == '/' })
+	for i, segment := range path {
+		name, err := nodeName(segment)
+		if err != nil {
+			return apperror.BadRequest("路径中的文件夹名称需为 1–255 个字符").OnField("path")
+		}
+		path[i] = name
+	}
 
-	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), req.File)
+	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), path, req.File)
 	if err != nil {
 		return err
 	}
