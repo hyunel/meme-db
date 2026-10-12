@@ -233,10 +233,10 @@ type SearchResult struct {
 }
 
 type SearchCandidate struct {
-	AssetID    string          `db:"asset_id"`
-	VLMJSON    json.RawMessage `db:"vlm_json"`
-	Similarity float32         `db:"similarity"`
-	RecallType string          `db:"recall_type"`
+	AssetID    string  `db:"asset_id"`
+	Similarity float32 `db:"similarity"`
+	RecallType string  `db:"recall_type"`
+	Rank       int     `db:"rank"` // In its channel, from 1
 }
 
 type Overview struct {
@@ -289,4 +289,10 @@ type LogEntry struct {
 type Page[T any] struct {
 	Items []T `json:"items"`
 	Total int `json:"total"`
+}
+
+// Feed is a page of an endless list; Next is the cursor of the page after it, nil on the last.
+type Feed[T any] struct {
+	Items []T     `json:"items"`
+	Next  *string `json:"next"`
 }

@@ -254,6 +254,25 @@ func (h *LibraryHandler) PublicFolder(c echo.Context) error {
 	return c.JSON(http.StatusOK, view)
 }
 
+type FolderEntriesRequest struct {
+	ID     string `param:"id" validate:"required,uuid"`
+	Cursor string `query:"cursor" validate:"omitempty,uuid"`
+	Limit  int    `query:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+func (h *LibraryHandler) FolderEntries(c echo.Context) error {
+	var req FolderEntriesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	feed, err := h.libraryService.FolderEntries(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Cursor, limitOr(req.Limit, 40))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, feed)
+}
+
 func (h *LibraryHandler) Entry(c echo.Context) error {
 	var req NodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
@@ -282,4 +301,23 @@ func (h *LibraryHandler) Profile(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, profile)
+}
+
+type ProfileMemesRequest struct {
+	Username string `param:"username" validate:"required,max=50"`
+	Cursor   string `query:"cursor" validate:"omitempty,uuid"`
+	Limit    int    `query:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+func (h *LibraryHandler) ProfileMemes(c echo.Context) error {
+	var req ProfileMemesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	feed, err := h.libraryService.ProfileMemes(c.Request().Context(), rbac.GetIdentity(c), req.Username, req.Cursor, limitOr(req.Limit, 40))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, feed)
 }

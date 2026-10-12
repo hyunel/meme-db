@@ -34,6 +34,11 @@ func memeListed(w *filter, viewerID string, admin bool) string {
 	return "(" + memeAnalyzed + " AND (" + memeInPublic + " OR " + memeOwnedBy(w.arg(viewerID)) + "))"
 }
 
+// memeVisible is whether the viewer may open a meme: any for an admin, else a public one or one in their library at any status.
+func memeVisible(viewer, admin string) string {
+	return "(" + admin + " OR " + memePublic + " OR " + memeOwnedBy(viewer) + ")"
+}
+
 type MemeRepository struct {
 	db db.DBTX
 }
@@ -124,6 +129,11 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 		return []*model.Meme{}, nil
 	}
 	query := fmt.Sprintf(`
+		WITH usage AS MATERIALIZED ( -- Counted once per tag rather than once per meme bearing it
+			SELECT l.tag_id, count(DISTINCT u.asset_id) AS n FROM library.asset_tags u JOIN library.labels l ON l.id = u.label_id
+			WHERE l.tag_id IN (SELECT tl.tag_id FROM library.asset_tags t JOIN library.labels tl ON tl.id = t.label_id WHERE t.asset_id = ANY($1::uuid[]))
+			GROUP BY l.tag_id
+		)
 		SELECT a.id, a.mime_type, a.file_size, a.created_at,
 			COALESCE(m.width, 0) AS width, COALESCE(m.height, 0) AS height,
 			m.processing_status AS status, m.fail_reason, COALESCE(m.ocr_text, '') AS ocr_text,
@@ -138,9 +148,7 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', x.usage < $4)
 					ORDER BY x.mine, x.usage DESC, t.name)
 				FROM (
-					SELECT l.tag_id, at.user_id IS NOT NULL AS mine,
-						(SELECT count(DISTINCT u.asset_id) FROM library.asset_tags u JOIN library.labels ul ON ul.id = u.label_id
-						 WHERE ul.tag_id = l.tag_id) AS usage
+					SELECT l.tag_id, at.user_id IS NOT NULL AS mine, (SELECT n FROM usage WHERE usage.tag_id = l.tag_id) AS usage
 					FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
 					WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
 					GROUP BY l.tag_id, mine
@@ -149,8 +157,8 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			), '[]') AS tags
 		FROM core.assets a
 		JOIN core.meme_info m ON m.asset_id = a.id
-		WHERE a.id = ANY($1::uuid[]) AND ($3 OR %[2]s OR %[3]s)
-	`, memeInPublic, memePublic, memeOwnedBy("$2"))
+		WHERE a.id = ANY($1::uuid[]) AND %[2]s
+	`, memeInPublic, memeVisible("$2", "$3"))
 
 	rows, err := collectAll[memeRow](r.db.Query(ctx, query, ids, nullable(viewerID), admin, minUsage))
 	if err != nil {
@@ -163,7 +171,18 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 	return memes, nil
 }
 
-func (r *MemeRepository) PopularIDs(ctx context.Context, viewerID string, admin bool, tag string, limit int) ([]string, int, error) {
+func (r *MemeRepository) CountAnalyzed(ctx context.Context) (int, error) {
+	return count(ctx, r.db, "SELECT count(*) FROM core.meme_info m WHERE "+memeAnalyzed)
+}
+
+// Popularity places a meme in the popular list.
+type Popularity struct {
+	Score   int    `db:"popularity"`
+	AssetID string `db:"asset_id"`
+}
+
+// Popular lists memes by popularity, from the one after the given one if any.
+func (r *MemeRepository) Popular(ctx context.Context, viewerID string, admin bool, tag string, after *Popularity, limit int) ([]*Popularity, error) {
 	var w filter
 	w.where(memeListed(&w, viewerID, admin))
 	if tag != "" {
@@ -174,13 +193,14 @@ func (r *MemeRepository) PopularIDs(ctx context.Context, viewerID string, admin 
 				AND l.tag_id IN (SELECT tag_id FROM library.labels WHERE library.label_key(name) = library.label_key(%s)))`,
 			w.arg(nullable(viewerID)), w.arg(tag)))
 	}
+	if after != nil {
+		w.where(fmt.Sprintf("(s.popularity, s.asset_id) < (%s, %s::uuid)", w.arg(after.Score), w.arg(after.AssetID)))
+	}
 	query := fmt.Sprintf(`
-		SELECT m.asset_id::text, count(*) OVER () FROM core.meme_info m %s
-		ORDER BY (SELECT count(*) FROM library.favorites f WHERE f.asset_id = m.asset_id) * 3
-			+ (SELECT count(*) FROM library.nodes n WHERE n.asset_id = m.asset_id) DESC, m.asset_id DESC
-		LIMIT %d
+		SELECT s.popularity, s.asset_id::text AS asset_id FROM core.meme_stats s JOIN core.meme_info m ON m.asset_id = s.asset_id
+		%s ORDER BY s.popularity DESC, s.asset_id DESC LIMIT %d
 	`, w.clause(), limit)
-	return collectIDsWithTotal(r.db.Query(ctx, query, w.args...))
+	return collectAll[Popularity](r.db.Query(ctx, query, w.args...))
 }
 
 type MemeFilter struct {
@@ -235,7 +255,7 @@ type Recall struct {
 	Type   string // Reported as recall_type
 	Column string // Vector column of core.meme_info, or "ocr_text" for trigram matching
 	Value  any    // pgvector.Vector, or the query text for ocr_text
-	Limit  int
+	Limit  int    // Hits per page
 }
 
 type RecallScope struct {
@@ -273,8 +293,9 @@ func (rc Recall) expr(v string) (similarity, cond, order string) {
 	return "1 - (m." + rc.Column + " <=> " + v + ")", "m." + rc.Column + " IS NOT NULL", "m." + rc.Column + " <=> " + v
 }
 
-// Recall returns the hits of every channel; a meme found by several channels is listed once per channel.
-func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope) ([]*model.SearchCandidate, error) {
+// Recall returns the hits of every channel, pages deep and ranked within the channel; a meme found by
+// several channels is listed once per channel.
+func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope RecallScope, pages int) ([]*model.SearchCandidate, error) {
 	if len(recalls) == 0 {
 		return nil, nil
 	}
@@ -284,9 +305,11 @@ func (r *MemeRepository) Recall(ctx context.Context, recalls []Recall, scope Rec
 	subqueries := make([]string, len(recalls))
 	for i, rc := range recalls {
 		similarity, cond, order := rc.expr(w.arg(rc.Value))
-		subqueries[i] = fmt.Sprintf(`(SELECT m.asset_id, m.vlm_json, %s AS similarity, '%s' AS recall_type
-			FROM core.meme_info m WHERE %s AND %s ORDER BY %s LIMIT %d)`,
-			similarity, rc.Type, cond, scopeCond, order, rc.Limit)
+		// Ranked outside the LIMIT, which the index serves only in approximate order.
+		subqueries[i] = fmt.Sprintf(`(SELECT t.*, row_number() OVER (ORDER BY t.similarity DESC, t.asset_id) AS rank FROM (
+			SELECT m.asset_id, %s AS similarity, '%s' AS recall_type
+			FROM core.meme_info m WHERE %s AND %s ORDER BY %s LIMIT %d) t)`,
+			similarity, rc.Type, cond, scopeCond, order, rc.Limit*pages)
 	}
 
 	return collectAll[model.SearchCandidate](r.db.Query(ctx, strings.Join(subqueries, " UNION ALL "), w.args...))

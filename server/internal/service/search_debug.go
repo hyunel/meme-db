@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
@@ -77,19 +78,28 @@ type DebugRank struct {
 	Rank       *int    `json:"rank"` // Nil when the channel does not match the meme at all
 }
 
-// Debug runs a search like Search does and reports every step of it.
+// Debug runs the first page of a search like Search does and reports every step of it.
 func (s *MemeService) Debug(ctx context.Context, p SearchDebugParams) (*SearchDebug, error) {
 	scope := repository.RecallScope{ViewerID: p.Viewer.UserID, Admin: p.Viewer.IsAdmin()}
 	if p.Public {
 		scope = repository.RecallScope{}
 	}
 
-	limits := maps.Clone(recallLimits)
+	start := time.Now()
+	limits := maps.Clone(s.cfg.RecallLimits)
 	maps.Copy(limits, p.Limits)
-	run, err := s.search(ctx, p.Query, p.Image, scope, limits)
+	run, err := s.search(ctx, p.Query, p.Image, scope, limits, 1)
 	if err != nil {
 		return nil, err
 	}
+	candidates := slices.Concat(run.pages...) // One page deep, there is only the first
+	step := time.Now()
+	scores, err := s.rerank(ctx, p.Query, candidates)
+	if err != nil {
+		return nil, err
+	}
+	run.timings.Rerank = time.Since(step).Milliseconds()
+	run.timings.Total = time.Since(start).Milliseconds()
 
 	out := &SearchDebug{Prompt: s.cfg.RetrievalPrompt, Timings: run.timings, Channels: []DebugChannel{}, Candidates: []DebugCandidate{}, Captions: map[string]*DebugCaption{}}
 
@@ -104,11 +114,11 @@ func (s *MemeService) Debug(ctx context.Context, p SearchDebugParams) (*SearchDe
 		out.Channels = append(out.Channels, ch)
 	}
 
-	ids := make([]string, 0, len(run.candidates)+1)
-	for i, c := range run.candidates {
-		dc := DebugCandidate{ID: c.AssetID, Score: run.scores[i], BestChannel: c.RecallType}
+	ids := make([]string, 0, len(candidates)+1)
+	for i, c := range candidates {
+		dc := DebugCandidate{ID: c.AssetID, Score: scores[i], BestChannel: c.RecallType}
 		if p.Query != "" {
-			dc.RerankScore = &run.scores[i]
+			dc.RerankScore = &scores[i]
 		}
 		out.Candidates = append(out.Candidates, dc)
 		ids = append(ids, c.AssetID)

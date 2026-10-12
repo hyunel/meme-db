@@ -4,7 +4,8 @@ import type { Meme } from './types'
 export type TextChannel = 'metaphor' | 'semantic' | 'clip_text' | 'ocr'
 export type Channel = TextChannel | 'clip_image'
 export type DebugScope = 'all' | 'public'
-export type TopK = Record<Channel, number>
+/** Overrides of the recall limits the server is configured with */
+export type TopK = Partial<Record<Channel, number>>
 
 export const textChannels: TextChannel[] = ['metaphor', 'semantic', 'clip_text', 'ocr']
 export const channelLabel: Record<Channel, string> = {
@@ -21,8 +22,6 @@ export const channelHint: Record<Channel, string> = {
   ocr: 'OCR 文字模糊匹配',
   clip_image: '查询图像 → 图像向量',
 }
-// The server's defaults
-export const DEFAULT_TOP_K: TopK = { metaphor: 15, semantic: 10, clip_text: 15, ocr: 10, clip_image: 50 }
 // The rerank score of a candidate whose caption cannot be parsed
 export const RERANK_PARSE_FAILED = -1
 

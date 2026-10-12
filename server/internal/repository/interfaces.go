@@ -119,20 +119,6 @@ func collectScalars[T any](rows pgx.Rows, err error) ([]T, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[T])
 }
 
-func collectIDsWithTotal(rows pgx.Rows, err error) ([]string, int, error) {
-	if err != nil {
-		return nil, 0, err
-	}
-	var id string
-	var ids []string
-	total := 0
-	_, err = pgx.ForEachRow(rows, []any{&id, &total}, func() error {
-		ids = append(ids, id)
-		return nil
-	})
-	return ids, total, err
-}
-
 func count(ctx context.Context, q db.DBTX, query string, args ...any) (int, error) {
 	var n int
 	err := q.QueryRow(ctx, query, args...).Scan(&n)

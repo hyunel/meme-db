@@ -72,9 +72,16 @@ func main() {
 		AllowedTypes: cfg.Upload.AllowedTypes,
 	}, repo, taskWorker)
 
+	limits := cfg.Search.RecallLimits
 	memeService := service.NewMemeService(service.MemeServiceConfig{
 		RetrievalPrompt: cfg.Prompt.Retrieval,
 		TagMinUsage:     cfg.Tags.MinUsage,
+		SearchPages:     cfg.Search.MaxPages,
+		SearchSessions:  cfg.Search.MaxSessions,
+		SessionTTL:      cfg.Search.SessionTTL,
+		RecallLimits:    map[string]int{"metaphor": limits.Metaphor, "semantic": limits.Semantic, "clip_text": limits.ClipText, "ocr": limits.OCR, "clip_image": limits.ClipImage},
+		SimilarPages:    cfg.Similar.MaxPages,
+		SimilarLimit:    cfg.Similar.RecallLimit,
 	}, repo, assetService, inferClient.WithPriority(inference.PriorityInteractive), taskWorker)
 
 	tagService := service.NewTagService(service.TagServiceConfig{
@@ -193,12 +200,14 @@ func setupRoutes(e *echo.Echo, h handlers) {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	api.GET("/config", h.asset.GetConfig)
+	api.GET("/stats", h.meme.Stats)
 	api.GET("/assets/:id", h.asset.GetAssetContent)
 
 	api.POST("/auth/register", h.auth.Register)
 	api.POST("/auth/login", h.auth.Login)
 
 	api.POST("/search", h.meme.Search)
+	api.GET("/search", h.meme.SearchPage)
 	api.GET("/memes", h.meme.List)
 	api.GET("/memes/:id", h.meme.Get)
 	api.GET("/memes/:id/similar", h.meme.Similar)
@@ -207,8 +216,10 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
+	api.GET("/folders/:id/entries", h.library.FolderEntries)
 	api.GET("/entries/:id", h.library.Entry)
 	api.GET("/users/:username", h.library.Profile)
+	api.GET("/users/:username/memes", h.library.ProfileMemes)
 
 	// Signed-in users; read-scoped API tokens may only read
 	priv := api.Group("", rbac.RequireAuth())
@@ -231,6 +242,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	priv.DELETE("/memes/:id/tags/:tagId", h.meme.RemoveTag)
 
 	priv.GET("/favorites", h.favorite.List)
+	priv.GET("/favorites/memes", h.favorite.Memes)
 	priv.DELETE("/favorites/stale", h.favorite.ClearStale)
 	priv.PUT("/favorites/:kind/:id", h.favorite.Add)
 	priv.DELETE("/favorites/:kind/:id", h.favorite.Remove)

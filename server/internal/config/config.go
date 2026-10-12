@@ -23,6 +23,29 @@ type Config struct {
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
 	Tags      TagsConfig      `yaml:"tags" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
+	Search    SearchConfig    `yaml:"search" validate:"required"`
+	Similar   SimilarConfig   `yaml:"similar" validate:"required"`
+}
+
+type SearchConfig struct {
+	MaxPages     int           `yaml:"max_pages" validate:"gt=0"`
+	SessionTTL   time.Duration `yaml:"session_ttl" validate:"gt=0"`
+	MaxSessions  int           `yaml:"max_sessions" validate:"gt=0"`
+	RecallLimits RecallLimits  `yaml:"recall_limits"`
+}
+
+// RecallLimits are hits per page of each search channel; a struct, as config.yaml would replace a map whole.
+type RecallLimits struct {
+	Metaphor  int `yaml:"metaphor" validate:"gt=0"`
+	Semantic  int `yaml:"semantic" validate:"gt=0"`
+	ClipText  int `yaml:"clip_text" validate:"gt=0"`
+	OCR       int `yaml:"ocr" validate:"gt=0"`
+	ClipImage int `yaml:"clip_image" validate:"gt=0"`
+}
+
+type SimilarConfig struct {
+	MaxPages    int `yaml:"max_pages" validate:"gt=0"`
+	RecallLimit int `yaml:"recall_limit" validate:"gt=0"`
 }
 
 type UploadConfig struct {

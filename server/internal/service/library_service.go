@@ -60,8 +60,52 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 	return s.view(ctx, viewer, folder)
 }
 
-// PublicFolder lists a folder opened by its link, which may be another user's public one.
-func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*LibraryView, error) {
+type PublicFolderView struct {
+	Folder    *model.Folder   `json:"folder"`
+	Ancestors []model.Crumb   `json:"ancestors"` // The viewer-visible folders above Folder, root first
+	Folders   []*model.Folder `json:"folders"`   // Its files are paged by FolderEntries
+}
+
+// PublicFolder shows a folder opened by its link, which may be another user's public one.
+func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*PublicFolderView, error) {
+	folder, err := s.publicFolder(ctx, viewer, id)
+	if err != nil {
+		return nil, err
+	}
+	folders, err := s.Folders(ctx, viewer, []string{folder.ID})
+	if err != nil {
+		return nil, err
+	}
+	children, err := s.repo.Node.Children(ctx, folder.OwnerID, &folder.ID)
+	if err != nil {
+		return nil, err
+	}
+	folderIDs, _ := splitChildren(children)
+	view := &PublicFolderView{Folder: folders[0], Ancestors: folder.Ancestors}
+	view.Folders, err = s.Folders(ctx, viewer, folderIDs)
+	return view, err
+}
+
+// FolderEntries pages through the files of a folder opened by its link; the cursor is the id of the last file before.
+func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identity, id, cursor string, limit int) (*model.Feed[*model.Entry], error) {
+	folder, err := s.publicFolder(ctx, viewer, id)
+	if err != nil {
+		return nil, err
+	}
+	q := repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), OwnerID: folder.OwnerID, ParentID: &folder.ID}
+	files, err := s.repo.Node.Files(ctx, q, cursor, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	files, next := nextPage(files, limit, func(n *model.Node) string { return n.ID })
+	entries, err := s.entries(ctx, viewer, files, folder.IsPublic || folder.InPublic)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Feed[*model.Entry]{Items: entries, Next: next}, nil
+}
+
+func (s *LibraryService) publicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*located, error) {
 	folder, err := s.locate(ctx, viewer, id, model.NodeTypeFolder)
 	if err != nil {
 		return nil, err
@@ -69,7 +113,7 @@ func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity
 	if folder == nil {
 		return nil, apperror.NotFound("合集不存在或未公开")
 	}
-	return s.view(ctx, viewer, folder)
+	return folder, nil
 }
 
 // view lists a folder, or the root of the viewer's library if it is nil.
@@ -472,12 +516,56 @@ func (s *LibraryService) MemeFolders(ctx context.Context, viewer *rbac.Identity,
 }
 
 type Profile struct {
-	User    model.PublicUser `json:"user"`
-	Folders []*model.Folder  `json:"folders"` // Topmost public folders
-	Memes   []*model.Meme    `json:"memes"`   // Public files at the root of the library
+	User      model.PublicUser `json:"user"`
+	Folders   []*model.Folder  `json:"folders"`    // Topmost public folders
+	MemeCount int              `json:"meme_count"` // Public files at the root of the library, paged by ProfileMemes
 }
 
 func (s *LibraryService) Profile(ctx context.Context, viewer *rbac.Identity, username string) (*Profile, error) {
+	user, err := s.activeUser(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	folderIDs, err := s.repo.Node.PublicRootFolders(ctx, user.ID, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	profile := &Profile{User: model.PublicUser{UserRef: model.UserRef{ID: user.ID, Username: user.Username}, CreatedAt: user.CreatedAt}}
+	if profile.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
+		return nil, err
+	}
+	profile.MemeCount, err = s.repo.Node.CountFiles(ctx, rootPublicFiles(viewer, user.ID))
+	return profile, err
+}
+
+// ProfileMemes pages through the public files at the root of a user's library; the cursor is the id of the last file before.
+func (s *LibraryService) ProfileMemes(ctx context.Context, viewer *rbac.Identity, username, cursor string, limit int) (*model.Feed[*model.Meme], error) {
+	user, err := s.activeUser(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	files, err := s.repo.Node.Files(ctx, rootPublicFiles(viewer, user.ID), cursor, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	files, next := nextPage(files, limit, func(n *model.Node) string { return n.ID })
+	ids := make([]string, len(files))
+	for i, n := range files {
+		ids[i] = *n.AssetID
+	}
+	memes, err := s.memes.Memes(ctx, viewer, ids)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Feed[*model.Meme]{Items: memes, Next: next}, nil
+}
+
+func rootPublicFiles(viewer *rbac.Identity, ownerID string) repository.FileQuery {
+	return repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), OwnerID: ownerID, PublicOnly: true}
+}
+
+func (s *LibraryService) activeUser(ctx context.Context, username string) (*model.User, error) {
 	user, err := s.repo.User.GetByUsername(ctx, username)
 	if err != nil {
 		return nil, err
@@ -485,28 +573,5 @@ func (s *LibraryService) Profile(ctx context.Context, viewer *rbac.Identity, use
 	if user == nil || user.Status != model.UserStatusActive {
 		return nil, apperror.NotFound("用户不存在")
 	}
-
-	folderIDs, err := s.repo.Node.PublicRootFolders(ctx, user.ID, 100)
-	if err != nil {
-		return nil, err
-	}
-	roots, err := s.repo.Node.Children(ctx, user.ID, nil)
-	if err != nil {
-		return nil, err
-	}
-	var assetIDs []string
-	for _, n := range roots {
-		if n.Type == model.NodeTypeFile && n.IsPublic {
-			assetIDs = append(assetIDs, *n.AssetID)
-		}
-	}
-
-	profile := &Profile{User: model.PublicUser{UserRef: model.UserRef{ID: user.ID, Username: user.Username}, CreatedAt: user.CreatedAt}}
-	if profile.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
-		return nil, err
-	}
-	if profile.Memes, err = s.memes.Memes(ctx, viewer, assetIDs); err != nil {
-		return nil, err
-	}
-	return profile, nil
+	return user, nil
 }

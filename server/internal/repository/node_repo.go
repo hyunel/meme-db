@@ -57,6 +57,46 @@ func (r *NodeRepository) Children(ctx context.Context, ownerID string, parentID 
 	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
 }
 
+// FileQuery picks the files of a folder, or of the root of a library, whose memes the viewer may see.
+type FileQuery struct {
+	ViewerID   string
+	Admin      bool
+	OwnerID    string
+	ParentID   *string // Nil for the root
+	PublicOnly bool
+}
+
+func (q FileQuery) filter() filter {
+	var w filter
+	w.where("c.owner_id = " + w.arg(q.OwnerID) + "::uuid AND c.type = 'FILE'")
+	if q.ParentID == nil {
+		w.where("c.parent_id IS NULL")
+	} else {
+		w.where("c.parent_id = " + w.arg(*q.ParentID) + "::uuid")
+	}
+	if q.PublicOnly {
+		w.where("c.is_public")
+	}
+	w.where(memeVisible(w.arg(nullable(q.ViewerID)), w.arg(q.Admin)))
+	return w
+}
+
+// Files lists the files oldest first, from the one after the given id if any.
+func (r *NodeRepository) Files(ctx context.Context, q FileQuery, after string, limit int) ([]*model.Node, error) {
+	w := q.filter()
+	if after != "" {
+		w.where("c.id > " + w.arg(after) + "::uuid")
+	}
+	query := fmt.Sprintf(`SELECT %s FROM library.nodes c JOIN core.meme_info m ON m.asset_id = c.asset_id %s ORDER BY c.id LIMIT %d`,
+		prefixed("c", nodeSelectColumns), w.clause(), limit)
+	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
+}
+
+func (r *NodeRepository) CountFiles(ctx context.Context, q FileQuery) (int, error) {
+	w := q.filter()
+	return count(ctx, r.db, "SELECT count(*) FROM library.nodes c JOIN core.meme_info m ON m.asset_id = c.asset_id "+w.clause(), w.args...)
+}
+
 func (r *NodeRepository) ChildNames(ctx context.Context, ownerID string, parentID *string) ([]string, error) {
 	nodes, err := r.Children(ctx, ownerID, parentID)
 	names := make([]string, len(nodes))

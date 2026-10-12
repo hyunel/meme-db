@@ -153,19 +153,23 @@ export interface LibraryView {
   entries: Entry[]
 }
 
-/** A folder opened by its link, which may be another user's public one */
-export interface FolderPage extends LibraryView {
+/** A folder opened by its link, which may be another user's public one; its entries are a feed of their own */
+export interface FolderPage {
   folder: Folder
+  ancestors: Crumb[]
+  folders: Folder[]
 }
 
 export interface Profile {
   user: UserRef & { created_at: string }
   folders: Folder[]
-  memes: Meme[]
+  /** Public memes at the root of the library, a feed of their own */
+  meme_count: number
 }
 
 export interface Favorites {
-  memes: Meme[]
+  /** Favorite memes the viewer can still see, a feed of their own */
+  meme_count: number
   folders: Folder[]
   stale_memes: string[]
   stale_folders: string[]
@@ -178,9 +182,21 @@ export interface SearchResult {
   similarity: number
 }
 
+export interface SiteStats {
+  /** Analyzed memes, public or not */
+  memes: number
+}
+
 export interface Page<T> {
   items: T[]
   total: number
+}
+
+/** A page of an endless list */
+export interface Feed<T> {
+  items: T[]
+  /** The cursor of the page after it, null on the last */
+  next: string | null
 }
 
 export interface UploadConfig {

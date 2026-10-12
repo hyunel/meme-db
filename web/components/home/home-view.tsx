@@ -9,7 +9,7 @@ import { FolderCard } from '@/components/folder/folder-card'
 import { MemeGridSkeleton } from '@/components/states'
 import { Button } from '@/components/ui/button'
 import { clearRecentSearches, useRecentSearches } from '@/lib/recent-searches'
-import type { Folder, Meme, Page } from '@/lib/types'
+import type { Feed, Folder, Meme, SiteStats } from '@/lib/types'
 
 function Chip({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -22,7 +22,8 @@ function Chip({ href, children }: { href: string; children: React.ReactNode }) {
 export function HomeView() {
   const recent = useRecentSearches()
   const { data: hot } = useSWR<string[]>('/tags/hot?limit=8')
-  const { data: popular } = useSWR<Page<Meme>>('/memes?limit=10')
+  const { data: stats } = useSWR<SiteStats>('/stats')
+  const { data: popular } = useSWR<Feed<Meme>>('/memes?limit=10')
   const { data: folders } = useSWR<Folder[]>('/folders?limit=4')
 
   return (
@@ -31,7 +32,7 @@ export function HomeView() {
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 px-4 pt-20 pb-16 text-center md:pt-28 md:pb-20">
           <p className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
             {'已收录 '}
-            <span className="font-medium text-foreground tabular-nums">{popular?.total ?? '…'}</span>
+            <span className="font-medium text-foreground tabular-nums">{stats?.memes ?? '…'}</span>
             {' 张表情包，支持以图搜图'}
           </p>
           <h1 className="text-4xl font-semibold tracking-tight text-balance md:text-6xl">
@@ -87,7 +88,7 @@ export function HomeView() {
             </h2>
             <p className="text-sm text-muted-foreground">大家最近都在收藏这些</p>
           </div>
-          <Button variant="ghost" nativeButton={false} render={<Link href="/search" />}>
+          <Button variant="ghost" nativeButton={false} render={<Link href="/discover" />}>
             浏览全部
             <ArrowRight data-icon="inline-end" />
           </Button>

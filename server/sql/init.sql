@@ -89,6 +89,24 @@ CREATE INDEX IF NOT EXISTS idx_meme_meta ON core.meme_info USING hnsw (metaphor_
 CREATE INDEX IF NOT EXISTS idx_meme_clip ON core.meme_info USING hnsw (clip_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_ocr ON core.meme_info USING GIN (ocr_text gin_trgm_ops);
 
+-- Popularity of each asset (favorites × 3 + library entries), kept by triggers so the popular list pages by an index.
+-- Not a column of core.meme_info, where updating an indexed column would rewrite its vector indexes on every favorite.
+CREATE TABLE IF NOT EXISTS core.meme_stats (
+    asset_id UUID PRIMARY KEY REFERENCES core.assets(id) ON DELETE CASCADE,
+    popularity INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_meme_stats_popularity ON core.meme_stats(popularity DESC, asset_id DESC);
+
+CREATE OR REPLACE FUNCTION core.add_meme_stats() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO core.meme_stats (asset_id) VALUES (NEW.id);
+    RETURN NULL;
+END $$;
+
+CREATE OR REPLACE TRIGGER trg_assets_stats AFTER INSERT ON core.assets
+    FOR EACH ROW EXECUTE FUNCTION core.add_meme_stats();
+
 -- ============================================================================
 -- TABLES: Library
 -- ============================================================================
@@ -109,7 +127,7 @@ CREATE TABLE IF NOT EXISTS library.nodes (
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON library.nodes USING GIST (path);
 CREATE INDEX IF NOT EXISTS idx_nodes_public_path ON library.nodes USING GIST (path) WHERE is_public;
 CREATE INDEX IF NOT EXISTS idx_nodes_asset_owner ON library.nodes(asset_id, owner_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_owner_parent ON library.nodes(owner_id, parent_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_owner_parent ON library.nodes(owner_id, parent_id, id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent ON library.nodes(parent_id);
 
 CREATE TABLE IF NOT EXISTS library.favorites (
@@ -128,6 +146,24 @@ CREATE TABLE IF NOT EXISTS library.favorites (
 
 CREATE INDEX IF NOT EXISTS idx_favorites_asset ON library.favorites(asset_id) WHERE asset_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_favorites_node ON library.favorites(node_id) WHERE node_id IS NOT NULL;
+
+-- Folders have no asset, so their nodes and favorites match no stats row.
+CREATE OR REPLACE FUNCTION library.count_popularity() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    weight INT := CASE TG_TABLE_NAME WHEN 'favorites' THEN 3 ELSE 1 END;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE core.meme_stats SET popularity = popularity + weight WHERE asset_id = NEW.asset_id;
+    ELSE
+        UPDATE core.meme_stats SET popularity = popularity - weight WHERE asset_id = OLD.asset_id;
+    END IF;
+    RETURN NULL;
+END $$;
+
+CREATE OR REPLACE TRIGGER trg_nodes_popularity AFTER INSERT OR DELETE ON library.nodes
+    FOR EACH ROW EXECUTE FUNCTION library.count_popularity();
+CREATE OR REPLACE TRIGGER trg_favorites_popularity AFTER INSERT OR DELETE ON library.favorites
+    FOR EACH ROW EXECUTE FUNCTION library.count_popularity();
 
 -- Private links: whoever holds one may open the meme while its creator keeps it in their library.
 CREATE TABLE IF NOT EXISTS library.share_links (

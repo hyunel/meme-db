@@ -11,7 +11,7 @@ import { QueryPanel } from './query-panel'
 import { CandidateSheet } from './candidate-sheet'
 import { ChannelColumns, FinalRanking, Overview, TrackBanner } from './results'
 import { putImageQuery, type ImageQuery } from '@/lib/image-query'
-import { DEFAULT_TOP_K, explainTrack, runSearchDebug, type DebugScope, type TopK } from '@/lib/search-debug'
+import { explainTrack, runSearchDebug, type DebugScope, type TopK } from '@/lib/search-debug'
 
 export function AdminSearchDebug() {
   const router = useRouter()
@@ -22,7 +22,7 @@ export function AdminSearchDebug() {
   const track = params.get('track')
 
   const [image, setImage] = useState<ImageQuery | null>(null)
-  const [topK, setTopK] = useState<TopK>(DEFAULT_TOP_K)
+  const [topK, setTopK] = useState<TopK>({})
   const [tab, setTab] = useState<'final' | 'channels'>('final')
   const [selected, setSelected] = useState<string | null>(null)
 

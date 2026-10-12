@@ -9,17 +9,18 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MemeMedia } from './meme-media'
-import { MemeGrid } from './meme-card'
+import { MemeFeed } from './meme-feed'
 import { FavoriteButton, LibraryButton } from './meme-actions'
 import { DownloadDialog } from './download-dialog'
 import { ShareButton } from './share-dialog'
 import { ProcessBadge } from '@/components/status-badges'
+import { useFeed } from '@/hooks/use-feed'
 import { ErrorState, NotFoundState, PageLoading } from '@/components/states'
 import { ApiError, api, qs } from '@/lib/api'
 import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
-import type { EntryDetail, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
+import type { EntryDetail, Feed, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Place = { key: string; href: string; name: string; meta: string; icon: LucideIcon; cover?: MemeThumb; current?: boolean }
@@ -111,7 +112,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
   const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}${qs({ share })}`, {
     refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
-  const { data: related } = useSWR<Meme[]>(meme?.status === 'success' ? `/memes/${id}/similar${qs({ share, limit: 10 })}` : null)
+  const similar = useFeed(meme?.status === 'success' ? ['similar', id, share] : null, (cursor) => api<Feed<Meme>>(`/memes/${id}/similar${qs({ share, cursor })}`))
   const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}` : null)
   const entry = opened?.meme.id === id ? opened : undefined // A hand-edited link may pair an entry with another meme
   const mine = Boolean(entry && entry.owner.id === user?.id)
@@ -312,12 +313,12 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
         </div>
       </div>
 
-      {related && related.length > 0 && (
+      {similar.items && similar.items.length > 0 && (
         <section className="flex flex-col gap-4" aria-labelledby="related-heading">
           <h2 id="related-heading" className="text-lg font-semibold">
             相似表情包
           </h2>
-          <MemeGrid memes={related} allowAdd />
+          <MemeFeed memes={similar.items} feed={similar} allowAdd />
         </section>
       )}
 

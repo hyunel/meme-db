@@ -31,6 +31,15 @@ func missing[T any](ids []string, items []T, id func(T) string) []string {
 	return out
 }
 
+// nextPage trims rows fetched one past the limit, giving the cursor of the page after them when that row came.
+func nextPage[T any](rows []T, limit int, cursor func(T) string) ([]T, *string) {
+	if len(rows) <= limit {
+		return rows, nil
+	}
+	next := cursor(rows[limit-1])
+	return rows[:limit], &next
+}
+
 type (
 	Page       = repository.Page
 	TimeRange  = repository.TimeRange

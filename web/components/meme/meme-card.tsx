@@ -90,7 +90,16 @@ export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[] | Entr
   const count = useColumnCount()
   const columns = useMemo(() => {
     const cols: (Meme | Entry)[][] = Array.from({ length: count }, () => [])
-    memes.forEach((m, i) => cols[i % count].push(m)) // Ranks run left to right, row by row
+    const heights = Array<number>(count).fill(0) // In column widths
+    const seen = new Set<string>()
+    for (const item of memes) {
+      if (seen.has(item.id)) continue // Pages of a feed may repeat one
+      seen.add(item.id)
+      // Into the shortest column (the leftmost on a tie), so appended pages keep the columns even and earlier cards in place.
+      const c = heights.indexOf(Math.min(...heights))
+      cols[c].push(item)
+      heights[c] += ratioOf('meme' in item ? item.meme : item) + 0.25 // The tag row and gap take about a quarter width
+    }
     return cols
   }, [memes, count])
 

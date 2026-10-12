@@ -5,21 +5,23 @@ import useSWR from 'swr'
 import { FolderHeart, HeartOff, ImageOff, Loader2, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { MemeGrid } from '@/components/meme/meme-card'
+import { MemeFeed } from '@/components/meme/meme-feed'
 import { FolderGrid } from '@/components/folder/folder-card'
 import { EmptyState, MemeGridSkeleton } from '@/components/states'
 import { Loadable } from '@/components/loadable'
+import { useFeed } from '@/hooks/use-feed'
 import { FormField, validatePassword } from '@/components/form-field'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, qs } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { logout, useSession } from '@/lib/session'
-import type { Favorites, UserStats } from '@/lib/types'
+import type { Favorites, Feed, Meme, UserStats } from '@/lib/types'
 import { TabSwitch } from '@/components/tab-switch'
 import { ApiTokens } from '@/components/api-tokens'
 
 export function FavoritesView() {
   const [tab, setTab] = useState<'meme' | 'folder'>('meme')
   const favorites = useSWR<Favorites>('/favorites')
+  const memes = useFeed(['favorite-memes'], (cursor) => api<Feed<Meme>>(`/favorites/memes${qs({ cursor })}`), { live: true })
   const data = favorites.data
   const stale = data ? (tab === 'meme' ? data.stale_memes : data.stale_folders).length : 0
 
@@ -39,7 +41,7 @@ export function FavoritesView() {
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的收藏</h1>
         <p className="text-sm text-muted-foreground">收藏的内容不会进入你的库，可随时加入。</p>
       </header>
-      <TabSwitch label="收藏类型" value={tab} onChange={setTab} tabs={[['meme', '表情包', data?.memes.length], ['folder', '合集', data?.folders.length]] as const} />
+      <TabSwitch label="收藏类型" value={tab} onChange={setTab} tabs={[['meme', '表情包', data?.meme_count], ['folder', '合集', data?.folders.length]] as const} />
 
       {stale > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-4 py-3 text-sm">
@@ -52,21 +54,20 @@ export function FavoritesView() {
       )}
 
       <div role="tabpanel">
-        <Loadable result={favorites} loading={<MemeGridSkeleton />}>
-          {({ memes, folders }) =>
-            tab === 'meme' ? (
-              memes.length ? (
-                <MemeGrid memes={memes} allowAdd />
-              ) : (
-                <EmptyState icon={ImageOff} title="还没有收藏表情包" description="在任意表情包上点击爱心即可收藏。" />
-              )
-            ) : folders.length ? (
-              <FolderGrid folders={folders} />
-            ) : (
-              <EmptyState icon={FolderHeart} title="还没有收藏合集" description="在发现页浏览公开合集。" />
-            )
-          }
-        </Loadable>
+        {tab === 'meme' ? (
+          <MemeFeed
+            memes={memes.items}
+            feed={memes}
+            allowAdd
+            empty={<EmptyState icon={ImageOff} title="还没有收藏表情包" description="在任意表情包上点击爱心即可收藏。" />}
+          />
+        ) : (
+          <Loadable result={favorites} loading={<MemeGridSkeleton />}>
+            {({ folders }) =>
+              folders.length ? <FolderGrid folders={folders} /> : <EmptyState icon={FolderHeart} title="还没有收藏合集" description="在发现页浏览公开合集。" />
+            }
+          </Loadable>
+        )}
       </div>
     </div>
   )

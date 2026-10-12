@@ -24,6 +24,23 @@ tags:
 log:
   retention: 720h     # Stored logs older than this are deleted
 
+# A search recalls every page at once and reranks a page when it is fetched; its pages are kept in memory meanwhile.
+search:
+  max_pages: 10       # Keep max_pages × the largest recall limit well under hnsw.max_scan_tuples (20000)
+  session_ttl: 15m    # An expired search is run again from the page asked for
+  max_sessions: 2000  # Up to some 50 KB each
+  recall_limits:      # Hits per page of each channel
+    metaphor: 15
+    semantic: 10
+    clip_text: 15
+    ocr: 10
+    clip_image: 50
+
+# Similar memes keep no state: page p recalls p + 2 pages deep, to tell whether another page follows.
+similar:
+  max_pages: 10
+  recall_limit: 10    # Hits per page of each vector channel
+
 prompt:
   language: "Simplified Chinese"   # Fills {language} in caption: titles, summaries and tags users see; the search fields stay English
   retrieval: "Given user query keywords, retrieve the most relevant paragraphs"

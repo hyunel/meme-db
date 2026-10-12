@@ -24,6 +24,24 @@ func (h *FavoriteHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, favs)
 }
 
+type FavoriteMemesRequest struct {
+	Cursor string `query:"cursor" validate:"omitempty,uuid"`
+	Limit  int    `query:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+func (h *FavoriteHandler) Memes(c echo.Context) error {
+	var req FavoriteMemesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	feed, err := h.favService.Memes(c.Request().Context(), rbac.GetIdentity(c), req.Cursor, limitOr(req.Limit, 40))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, feed)
+}
+
 type FavoriteRequest struct {
 	Kind string `param:"kind" validate:"required,oneof=meme folder"`
 	ID   string `param:"id" validate:"required,uuid"`

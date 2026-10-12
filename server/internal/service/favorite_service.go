@@ -25,19 +25,19 @@ func NewFavoriteService(repo *repository.Provider, memes *MemeService, library *
 }
 
 type Favorites struct {
-	Memes   []*model.Meme   `json:"memes"`
-	Folders []*model.Folder `json:"folders"`
+	MemeCount int             `json:"meme_count"` // Favorite memes the viewer can still see, paged by Memes
+	Folders   []*model.Folder `json:"folders"`
 	// Favorites the viewer can no longer see, e.g. because they were made private
 	StaleMemes   []string `json:"stale_memes"`
 	StaleFolders []string `json:"stale_folders"`
 }
 
 func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Favorites, error) {
-	assetIDs, nodeIDs, err := s.repo.Favorite.List(ctx, viewer.UserID)
+	staleMemes, memeCount, err := s.repo.Favorite.StaleMemes(ctx, viewer.UserID, viewer.IsAdmin())
 	if err != nil {
 		return nil, err
 	}
-	memes, err := s.memes.Memes(ctx, viewer, assetIDs)
+	nodeIDs, err := s.repo.Favorite.Folders(ctx, viewer.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +46,29 @@ func (s *FavoriteService) List(ctx context.Context, viewer *rbac.Identity) (*Fav
 		return nil, err
 	}
 	return &Favorites{
-		Memes:        memes,
+		MemeCount:    memeCount,
 		Folders:      folders,
-		StaleMemes:   missing(assetIDs, memes, func(m *model.Meme) string { return m.ID }),
+		StaleMemes:   staleMemes,
 		StaleFolders: missing(nodeIDs, folders, func(f *model.Folder) string { return f.ID }),
 	}, nil
+}
+
+// Memes pages through the favorite memes the viewer can still see, newest first; the cursor is the id of the last favorite before.
+func (s *FavoriteService) Memes(ctx context.Context, viewer *rbac.Identity, cursor string, limit int) (*model.Feed[*model.Meme], error) {
+	favs, err := s.repo.Favorite.Memes(ctx, viewer.UserID, viewer.IsAdmin(), cursor, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	favs, next := nextPage(favs, limit, func(f *repository.FavoriteMeme) string { return f.ID })
+	ids := make([]string, len(favs))
+	for i, f := range favs {
+		ids[i] = f.AssetID
+	}
+	memes, err := s.memes.Memes(ctx, viewer, ids)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Feed[*model.Meme]{Items: memes, Next: next}, nil
 }
 
 func (s *FavoriteService) Add(ctx context.Context, viewer *rbac.Identity, kind, id string) error {

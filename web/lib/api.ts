@@ -77,7 +77,7 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
 
 export const fetcher = <T>(path: string) => api<T>(path)
 
-/** Revalidates cached GET data after a change; searches are left alone as they are costly. */
+/** Revalidates cached GET data after a change; feeds are left alone, as fetching every page they loaded again is costly. */
 export function refresh() {
   return mutate((key) => typeof key === 'string')
 }

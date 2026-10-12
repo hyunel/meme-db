@@ -15,18 +15,22 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
   {
     title: '表情包与搜索',
     endpoints: [
-      ['POST', '/search', 'public', '按文字或图片搜索；表单字段 q、image、scope（all 或 mine）、folder_id、limit'],
-      ['GET', '/memes', 'public', '热门表情包，可按 tag 筛选'],
+      ['POST', '/search', 'public', '按文字或图片搜索，返回第一页；表单字段 q、image、scope（all 或 mine）、folder_id'],
+      ['GET', '/search', 'public', '搜索的下一页：cursor 为上一页的 next，过期后返回 404，可带原参数与 page 重新 POST'],
+      ['GET', '/memes', 'public', '热门表情包，可按 tag 筛选；分页，带 cursor 取下一页'],
       ['GET', '/memes/{id}', 'public', '表情包详情与识别状态；share 为私密链接的令牌'],
-      ['GET', '/memes/{id}/similar', 'public', '相似表情包；可带 share'],
+      ['GET', '/memes/{id}/similar', 'public', '相似表情包，分页同搜索：cursor 为上一页的 next；可带 share'],
       ['GET', '/memes/{id}/folders', 'public', '收录该表情包的文件夹：自己的与公开合集'],
       ['POST', '/memes/{id}/share/views', 'public', '记录一次通过私密链接打开：{ share }'],
       ['GET', '/tags/hot', 'public', '热门标签'],
       ['GET', '/folders', 'public', '公开合集'],
-      ['GET', '/folders/{id}', 'public', '合集中的子文件夹与条目'],
+      ['GET', '/folders/{id}', 'public', '合集信息与其中的子文件夹'],
+      ['GET', '/folders/{id}/entries', 'public', '合集中的条目；分页，带 cursor 取下一页'],
       ['GET', '/entries/{id}', 'public', '条目：库中的一个文件，含名称、表情包与所在位置'],
-      ['GET', '/users/{username}', 'public', '用户主页'],
+      ['GET', '/users/{username}', 'public', '用户主页：公开合集与公开表情包数'],
+      ['GET', '/users/{username}/memes', 'public', '用户库根目录下的公开表情包；分页，带 cursor 取下一页'],
       ['GET', '/config', 'public', '上传的大小与格式限制'],
+      ['GET', '/stats', 'public', '全站已收录的表情包数'],
     ],
   },
   {
@@ -47,7 +51,8 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
   {
     title: '收藏与标签',
     endpoints: [
-      ['GET', '/favorites', 'read', '收藏的表情包与合集'],
+      ['GET', '/favorites', 'read', '收藏的合集、表情包数与失效收藏'],
+      ['GET', '/favorites/memes', 'read', '收藏的表情包，新收藏在前；分页，带 cursor 取下一页'],
       ['PUT', '/favorites/{meme|folder}/{id}', 'write', '收藏'],
       ['DELETE', '/favorites/{meme|folder}/{id}', 'write', '取消收藏'],
       ['DELETE', '/favorites/stale', 'write', '清理已删除或转为私有的收藏'],
@@ -282,6 +287,9 @@ for path in sorted(pathlib.Path("memes").iterdir()):
           <li>请求体为 JSON；上传与搜索使用 multipart/form-data。ID 均为 UUID，时间为 ISO 8601 字符串。</li>
           <li>表情包的 url 是带签名的相对地址，拼接站点地址即可直接下载，无需令牌。</li>
           <li>列表接口的 limit 最大为 100。</li>
+          <li>
+            表情包列表（搜索、相似、热门、合集条目、主页与收藏）按页返回 <Code>{'{ "items": [...], "next": "游标" }'}</Code>，把 next 作为 cursor 取下一页，next 为 null 即没有下一页。搜索与相似表情包页内按相关度排序，越往后越不相关。
+          </li>
           <li>
             出错时返回 <Code>{'{ "error": "说明", "field": "相关字段" }'}</Code>，field 仅在错误与某个参数有关时出现：
           </li>

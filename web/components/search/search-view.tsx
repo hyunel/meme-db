@@ -8,25 +8,34 @@ import { Clock, Folder as FolderIcon, Globe, ImageIcon, Info, Library, Loader2, 
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
-import { MemeGrid } from '@/components/meme/meme-card'
+import { MemeFeed } from '@/components/meme/meme-feed'
+import { useFeed } from '@/hooks/use-feed'
 import { useImageInput } from '@/hooks/use-image-input'
 import { ErrorState, EmptyState, MemeGridSkeleton } from '@/components/states'
-import { api } from '@/lib/api'
+import { ApiError, api, qs } from '@/lib/api'
 import { getImageQuery, putImageQuery, type ImageQuery } from '@/lib/image-query'
 import { clearRecentSearches, pushRecentSearch, removeRecentSearch, useRecentSearches } from '@/lib/recent-searches'
 import { useSession } from '@/lib/session'
-import type { LibraryView, SearchResult } from '@/lib/types'
+import type { Feed, LibraryView, SearchResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Scope = 'all' | 'mine'
 
-function search(q: string, scope: Scope, folderId: string | null, image: ImageQuery | null) {
+async function search(q: string, scope: Scope, folderId: string | null, image: ImageQuery | null, cursor: string | null, page: number) {
+  if (cursor) {
+    try {
+      return await api<Feed<SearchResult>>(`/search${qs({ cursor })}`)
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) throw err // The search expired: run it again from this page
+    }
+  }
   const form = new FormData()
   form.set('q', q)
   form.set('scope', scope)
   if (folderId) form.set('folder_id', folderId)
   if (image) form.set('image', image.file)
-  return api<SearchResult[]>('/search', { method: 'POST', form })
+  if (page) form.set('page', String(page))
+  return api<Feed<SearchResult>>('/search', { method: 'POST', form })
 }
 
 export function SearchView() {
@@ -45,15 +54,13 @@ export function SearchView() {
   const hasQuery = Boolean(q || image)
   const blocked = scope === 'mine' && !user
 
-  // Searches are keyed by their parameters (and the viewer), so revisiting one is instant.
-  const {
-    data: results,
-    error,
-    isLoading,
-    mutate,
-  } = useSWR(ready && hasQuery && !blocked ? ['search', q, scope, folderId, imageRef, user?.id] : null, () => search(q, scope, folderId, image), {
-    revalidateIfStale: false,
-  })
+  const [run, setRun] = useState(0) // Bumped to run the same search again
+  // Searches are keyed by their parameters, so revisiting one is instant.
+  const feed = useFeed(ready && hasQuery && !blocked ? ['search', q, scope, folderId, imageRef, run] : null, (cursor, page) =>
+    search(q, scope, folderId, image, cursor, page),
+  )
+  const { items: results, isLoading } = feed
+  const error = results ? undefined : feed.error // A later page's error shows at the end of the feed
   const { data: folderView } = useSWR<LibraryView>(folderId && user ? `/library?folder_id=${folderId}` : null)
   const { data: hot } = useSWR<string[]>('/tags/hot?limit=10')
   const recent = useRecentSearches()
@@ -92,7 +99,7 @@ export function SearchView() {
       return
     }
     if (v) pushRecentSearch(v)
-    if (v === q) void mutate()
+    if (v === q) setRun((r) => r + 1)
     else navigate({ q: v })
   }
 
@@ -292,7 +299,7 @@ export function SearchView() {
             }
           />
         ) : error ? (
-          <ErrorState title="搜索暂时不可用" description={(error as Error).message} onRetry={() => mutate()} />
+          <ErrorState title="搜索暂时不可用" description={error.message} onRetry={feed.retry} />
         ) : !memes ? (
           <div className="flex flex-col gap-4">
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -303,16 +310,14 @@ export function SearchView() {
           </div>
         ) : memes.length > 0 ? (
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              找到 <span className="font-medium text-foreground tabular-nums">{memes.length}</span> 个结果，按相关度排序
-            </p>
+            <p className="text-sm text-muted-foreground">按相关度排序</p>
             {scope === 'mine' && (
               <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 新上传的表情包需处理完成后才能被搜到。
               </p>
             )}
-            <MemeGrid memes={memes} similarity={similarity} allowAdd />
+            <MemeFeed memes={memes} feed={feed} similarity={similarity} allowAdd />
           </div>
         ) : (
           <EmptyState

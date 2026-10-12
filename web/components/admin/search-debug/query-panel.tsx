@@ -9,7 +9,7 @@ import { FilterSelect, Toolbar } from '../admin-ui'
 import { useImageInput } from '@/hooks/use-image-input'
 import type { ImageQuery } from '@/lib/image-query'
 import { formatBytes } from '@/lib/format'
-import { DEFAULT_TOP_K, channelLabel, textChannels, type Channel, type DebugScope, type TopK } from '@/lib/search-debug'
+import { channelLabel, textChannels, type Channel, type DebugScope, type TopK } from '@/lib/search-debug'
 import { cn } from '@/lib/utils'
 
 const scopeOptions = [
@@ -46,7 +46,7 @@ export function QueryPanel({
   const [showK, setShowK] = useState(false)
   const img = useImageInput(onImage)
   const channels: Channel[] = [...textChannels, 'clip_image']
-  const customized = channels.some((c) => topK[c] !== DEFAULT_TOP_K[c])
+  const customized = Object.keys(topK).length > 0
 
   return (
     <section aria-label="查询" className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
@@ -131,10 +131,14 @@ export function QueryPanel({
                   inputMode="numeric"
                   min={1}
                   max={200}
-                  value={topK[c]}
+                  value={topK[c] ?? ''}
+                  placeholder="默认"
                   onChange={(e) => {
+                    const next = { ...topK }
                     const n = Math.round(Number(e.target.value))
-                    if (Number.isFinite(n)) onTopKChange({ ...topK, [c]: Math.min(200, Math.max(1, n)) })
+                    delete next[c]
+                    if (e.target.value && Number.isFinite(n)) next[c] = Math.min(200, Math.max(1, n))
+                    onTopKChange(next)
                   }}
                   className="h-10 font-mono text-base md:h-9 md:text-sm"
                 />
@@ -142,8 +146,8 @@ export function QueryPanel({
             ))}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">仅影响本次调试，不改变线上搜索参数。</p>
-            <Button variant="ghost" size="sm" disabled={!customized} onClick={() => onTopKChange(DEFAULT_TOP_K)}>
+            <p className="text-xs text-muted-foreground">每页召回条数，留空即用服务端配置；调试复现搜索的第一页，不改变线上参数。</p>
+            <Button variant="ghost" size="sm" disabled={!customized} onClick={() => onTopKChange({})}>
               <RotateCcw />
               恢复默认
             </Button>

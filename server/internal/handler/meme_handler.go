@@ -29,7 +29,7 @@ type SearchRequest struct {
 	Query    string                `form:"q" validate:"max=200"`
 	Scope    string                `form:"scope" validate:"omitempty,oneof=all mine"`
 	FolderID string                `form:"folder_id" validate:"omitempty,uuid"`
-	Limit    int                   `form:"limit" validate:"omitempty,min=1,max=100"`
+	Page     int                   `form:"page" validate:"min=0"` // Resumes a search whose cursor expired
 	Image    *multipart.FileHeader `form:"image"`
 }
 
@@ -48,7 +48,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		Query:    req.Query,
 		Mine:     req.Scope == "mine",
 		FolderID: req.FolderID,
-		Limit:    req.Limit,
+		Page:     req.Page,
 	}
 	if req.Image != nil {
 		image, err := readSearchImage(req.Image)
@@ -58,11 +58,28 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		params.Image = image
 	}
 
-	results, err := h.memeService.Search(c.Request().Context(), params)
+	feed, err := h.memeService.Search(c.Request().Context(), params)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, results)
+	return c.JSON(http.StatusOK, feed)
+}
+
+type SearchPageRequest struct {
+	Cursor string `query:"cursor" validate:"required,max=64"`
+}
+
+func (h *MemeHandler) SearchPage(c echo.Context) error {
+	var req SearchPageRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	feed, err := h.memeService.SearchPage(c.Request().Context(), rbac.GetIdentity(c), req.Cursor)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, feed)
 }
 
 func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, error) {
@@ -86,8 +103,9 @@ func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, e
 }
 
 type ListMemesRequest struct {
-	Tag   string `query:"tag" validate:"max=100"`
-	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
+	Tag    string `query:"tag" validate:"max=100"`
+	Cursor string `query:"cursor" validate:"max=64"`
+	Limit  int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
 func (h *MemeHandler) List(c echo.Context) error {
@@ -96,11 +114,23 @@ func (h *MemeHandler) List(c echo.Context) error {
 		return err
 	}
 
-	page, err := h.memeService.Popular(c.Request().Context(), rbac.GetIdentity(c), req.Tag, limitOr(req.Limit, 40))
+	feed, err := h.memeService.Popular(c.Request().Context(), rbac.GetIdentity(c), req.Tag, req.Cursor, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, page)
+	return c.JSON(http.StatusOK, feed)
+}
+
+type StatsResponse struct {
+	Memes int `json:"memes"` // Analyzed memes, public or not
+}
+
+func (h *MemeHandler) Stats(c echo.Context) error {
+	n, err := h.memeService.Count(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, StatsResponse{Memes: n})
 }
 
 type MemeRequest struct {
@@ -128,7 +158,7 @@ func (h *MemeHandler) Get(c echo.Context) error {
 type SimilarMemesRequest struct {
 	ID    string `param:"id" validate:"required,uuid"`
 	Share string `query:"share" validate:"omitempty,uuid"`
-	Limit int    `query:"limit" validate:"omitempty,min=1,max=50"`
+	Page  int    `query:"cursor" validate:"min=0"` // The cursor of similar memes is the page number
 }
 
 func (h *MemeHandler) Similar(c echo.Context) error {
@@ -137,11 +167,11 @@ func (h *MemeHandler) Similar(c echo.Context) error {
 		return err
 	}
 
-	memes, err := h.memeService.Similar(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share, limitOr(req.Limit, 10))
+	feed, err := h.memeService.Similar(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share, req.Page)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, memes)
+	return c.JSON(http.StatusOK, feed)
 }
 
 func (h *MemeHandler) Retry(c echo.Context) error {
