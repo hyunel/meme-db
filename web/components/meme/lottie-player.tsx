@@ -64,5 +64,6 @@ export function LottiePlayer({ url, mime, label, className }: { url: string; mim
       </div>
     )
   }
-  return <div ref={ref} className={cn('size-full', className)} role="img" aria-label={label} />
+  // The checkerboard shows through transparent areas, as behind other memes.
+  return <div ref={ref} className={cn('size-full bg-checker', className)} role="img" aria-label={label} />
 }
