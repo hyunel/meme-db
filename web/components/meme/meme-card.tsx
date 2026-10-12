@@ -12,14 +12,30 @@ import { cn } from '@/lib/utils'
 // Height over width, bounded so panoramas and long screenshots keep a usable card.
 const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)
 
-export function MemeCard({ meme, entryId, similarity, allowAdd, className }: { meme: Meme; entryId?: string; similarity?: number; allowAdd?: boolean; className?: string }) {
+/** share is the private link the meme was reached by, which it passes on. */
+export function MemeCard({
+  meme,
+  entryId,
+  share,
+  similarity,
+  allowAdd,
+  className,
+}: {
+  meme: Meme
+  entryId?: string
+  share?: string
+  similarity?: number
+  allowAdd?: boolean
+  className?: string
+}) {
   const kind = kindOf(meme.mime_type)
   const shown = [...new Set(meme.tags.filter((t) => !t.rare).map((t) => t.name))].slice(0, 2)
+  const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0 // Opened only by the link, so not to be favorited, as on its page
 
   return (
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
       <Link
-        href={memeHref(meme.id, entryId)}
+        href={memeHref(meme.id, entryId, share)}
         className="relative block overflow-hidden rounded-xl border bg-checker p-2 transition hover:border-foreground/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-3"
         style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
@@ -37,17 +53,19 @@ export function MemeCard({ meme, entryId, similarity, allowAdd, className }: { m
           </span>
         )}
       </Link>
-      <div className="absolute top-1.5 right-1.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-        <FavoriteButton
-          kind="meme"
-          id={meme.id}
-          active={meme.is_favorite}
-          count={meme.favorite_count}
-          size="icon-sm"
-          variant="secondary"
-          className="bg-background/90 shadow-sm backdrop-blur"
-        />
-      </div>
+      {!viaLink && (
+        <div className="absolute top-1.5 right-1.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+          <FavoriteButton
+            kind="meme"
+            id={meme.id}
+            active={meme.is_favorite}
+            count={meme.favorite_count}
+            size="icon-sm"
+            variant="secondary"
+            className="bg-background/90 shadow-sm backdrop-blur"
+          />
+        </div>
+      )}
       <div className="flex min-h-8 items-center gap-1">
         <div className="flex min-w-0 flex-1 gap-1">
           {shown.map((t) => (
@@ -60,7 +78,7 @@ export function MemeCard({ meme, entryId, similarity, allowAdd, className }: { m
             </Link>
           ))}
         </div>
-        <MemeMoreMenu meme={meme} allowAdd={allowAdd} className="shrink-0 text-muted-foreground" />
+        <MemeMoreMenu meme={meme} share={share} allowAdd={allowAdd} className="shrink-0 text-muted-foreground" />
       </div>
     </div>
   )
@@ -86,7 +104,7 @@ function useColumnCount() {
 }
 
 /** Lays out memes, or the entries of a folder, which open under their names there. */
-export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[] | Entry[]; similarity?: Map<string, number>; allowAdd?: boolean }) {
+export function MemeGrid({ memes, share, similarity, allowAdd }: { memes: Meme[] | Entry[]; share?: string; similarity?: Map<string, number>; allowAdd?: boolean }) {
   const count = useColumnCount()
   const columns = useMemo(() => {
     const cols: (Meme | Entry)[][] = Array.from({ length: count }, () => [])
@@ -111,7 +129,7 @@ export function MemeGrid({ memes, similarity, allowAdd }: { memes: Meme[] | Entr
             const [meme, entryId] = 'meme' in item ? [item.meme, item.id] : [item]
             return (
               <li key={item.id}>
-                <MemeCard meme={meme} entryId={entryId} similarity={similarity?.get(meme.id)} allowAdd={allowAdd} />
+                <MemeCard meme={meme} entryId={entryId} share={share} similarity={similarity?.get(meme.id)} allowAdd={allowAdd} />
               </li>
             )
           })}

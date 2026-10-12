@@ -50,7 +50,7 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 	var folder *located
 	if folderID != nil {
 		var err error
-		if folder, err = s.locate(ctx, viewer, *folderID, model.NodeTypeFolder); err != nil {
+		if folder, err = s.locate(ctx, viewer, *folderID, model.NodeTypeFolder, ""); err != nil {
 			return nil, err
 		}
 		if folder == nil || folder.OwnerID != viewer.UserID {
@@ -66,9 +66,9 @@ type PublicFolderView struct {
 	Folders   []*model.Folder `json:"folders"`   // Its files are paged by FolderEntries
 }
 
-// PublicFolder shows a folder opened by its link, which may be another user's public one.
-func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*PublicFolderView, error) {
-	folder, err := s.publicFolder(ctx, viewer, id)
+// PublicFolder shows a folder opened by its link, which may be another user's public one, or one a private link (share) opens.
+func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id, share string) (*PublicFolderView, error) {
+	folder, err := s.publicFolder(ctx, viewer, id, share)
 	if err != nil {
 		return nil, err
 	}
@@ -87,26 +87,26 @@ func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity
 }
 
 // FolderEntries pages through the files of a folder opened by its link; the cursor is the id of the last file before.
-func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identity, id, cursor string, limit int) (*model.Feed[*model.Entry], error) {
-	folder, err := s.publicFolder(ctx, viewer, id)
+func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identity, id, share, cursor string, limit int) (*model.Feed[*model.Entry], error) {
+	folder, err := s.publicFolder(ctx, viewer, id, share)
 	if err != nil {
 		return nil, err
 	}
-	q := repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), OwnerID: folder.OwnerID, ParentID: &folder.ID}
+	q := repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin() || folder.ViaLink, OwnerID: folder.OwnerID, ParentID: &folder.ID}
 	files, err := s.repo.Node.Files(ctx, q, cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
 	files, next := nextPage(files, limit, func(n *model.Node) string { return n.ID })
-	entries, err := s.entries(ctx, viewer, files, folder.IsPublic || folder.InPublic)
+	entries, err := s.entries(ctx, viewer, files, folder.IsPublic || folder.InPublic, folder.ViaLink)
 	if err != nil {
 		return nil, err
 	}
 	return &model.Feed[*model.Entry]{Items: entries, Next: next}, nil
 }
 
-func (s *LibraryService) publicFolder(ctx context.Context, viewer *rbac.Identity, id string) (*located, error) {
-	folder, err := s.locate(ctx, viewer, id, model.NodeTypeFolder)
+func (s *LibraryService) publicFolder(ctx context.Context, viewer *rbac.Identity, id, share string) (*located, error) {
+	folder, err := s.locate(ctx, viewer, id, model.NodeTypeFolder, share)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func (s *LibraryService) view(ctx context.Context, viewer *rbac.Identity, folder
 	if view.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
 		return nil, err
 	}
-	view.Entries, err = s.entries(ctx, viewer, files, public)
+	view.Entries, err = s.entries(ctx, viewer, files, public, false)
 	return view, err
 }
 
@@ -147,15 +147,15 @@ type EntryDetail struct {
 	Ancestors []model.Crumb `json:"ancestors"` // The viewer-visible folders above it, root first
 }
 
-// Entry finds a file opened by its link, which may be in another user's public folder.
-func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id string) (*EntryDetail, error) {
-	file, err := s.locate(ctx, viewer, id, model.NodeTypeFile)
+// Entry finds a file opened by its link, which may be in another user's public folder, or in one a private link (share) opens.
+func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id, share string) (*EntryDetail, error) {
+	file, err := s.locate(ctx, viewer, id, model.NodeTypeFile, share)
 	if err != nil {
 		return nil, err
 	}
 	var entries []*model.Entry
 	if file != nil {
-		if entries, err = s.entries(ctx, viewer, []*model.Node{file.Node}, file.InPublic); err != nil {
+		if entries, err = s.entries(ctx, viewer, []*model.Node{file.Node}, file.InPublic, file.ViaLink); err != nil {
 			return nil, err
 		}
 	}
@@ -165,13 +165,14 @@ func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id st
 	return &EntryDetail{Entry: entries[0], Owner: model.UserRef{ID: file.Owner.ID, Username: file.Owner.Username}, Ancestors: file.Ancestors}, nil
 }
 
-// entries lists the files whose memes the viewer may see; inPublic tells whether a folder above them is public.
-func (s *LibraryService) entries(ctx context.Context, viewer *rbac.Identity, files []*model.Node, inPublic bool) ([]*model.Entry, error) {
+// entries lists the files whose memes the viewer may see, or all of them with viaLink, as a private link opens them;
+// inPublic tells whether a folder above them is public.
+func (s *LibraryService) entries(ctx context.Context, viewer *rbac.Identity, files []*model.Node, inPublic, viaLink bool) ([]*model.Entry, error) {
 	assetIDs := make([]string, len(files))
 	for i, n := range files {
 		assetIDs[i] = *n.AssetID
 	}
-	memes, err := s.memes.Memes(ctx, viewer, assetIDs)
+	memes, err := s.memes.load(ctx, viewer, assetIDs, viewer.IsAdmin() || viaLink)
 	if err != nil {
 		return nil, err
 	}
@@ -201,11 +202,12 @@ type located struct {
 	Owner     *model.User
 	Ancestors []model.Crumb // The viewer-visible folders above it, root first
 	InPublic  bool          // Whether a folder above it is public
+	ViaLink   bool          // Whether a private link to it or a folder above it opens it for the viewer
 }
 
-// locate finds a node the viewer may see: any of their own, or a public one of an active user,
-// whose path others see from the topmost public folder down.
-func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id string, nodeType model.NodeType) (*located, error) {
+// locate finds a node the viewer may see: any of their own, or one of an active user that is public
+// or that a private link (share) to a folder opens, whose path others see from the topmost public or linked folder down.
+func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id string, nodeType model.NodeType, share string) (*located, error) {
 	node, err := s.repo.Node.Get(ctx, id)
 	if err != nil || node == nil || node.Type != nodeType {
 		return nil, err
@@ -218,16 +220,24 @@ func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id s
 	if err != nil {
 		return nil, err
 	}
-
 	own := node.OwnerID == viewer.UserID
+	linked := "" // The folder the link opens, at or above the node
+	if share != "" && !own {
+		if linked, err = s.repo.Share.Folder(ctx, share, node.Path); err != nil {
+			return nil, err
+		}
+	}
+
 	loc := &located{Node: node, Owner: owner, Ancestors: []model.Crumb{}}
 	for _, a := range ancestors {
 		loc.InPublic = loc.InPublic || a.IsPublic
-		if loc.InPublic || own {
+		loc.ViaLink = loc.ViaLink || a.ID == linked
+		if loc.InPublic || loc.ViaLink || own {
 			loc.Ancestors = append(loc.Ancestors, model.Crumb{ID: a.ID, Name: a.Name})
 		}
 	}
-	if !own && (!(loc.InPublic || node.IsPublic) || owner.Status != model.UserStatusActive) {
+	loc.ViaLink = loc.ViaLink || node.ID == linked
+	if !own && (!(loc.InPublic || node.IsPublic || loc.ViaLink) || owner.Status != model.UserStatusActive) {
 		return nil, nil
 	}
 	return loc, nil
@@ -290,7 +300,7 @@ func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, par
 	taken := make(map[string]bool, len(children))
 	for _, n := range children {
 		if n.AssetID != nil && *n.AssetID == assetID {
-			entry, err := s.Entry(ctx, viewer, n.ID)
+			entry, err := s.Entry(ctx, viewer, n.ID, "")
 			return entry, false, err
 		}
 		taken[n.Name] = true
@@ -306,7 +316,7 @@ func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, par
 	if err != nil {
 		return nil, false, err
 	}
-	entry, err := s.Entry(ctx, viewer, node.ID)
+	entry, err := s.Entry(ctx, viewer, node.ID, "")
 	return entry, true, err
 }
 
@@ -366,12 +376,45 @@ func (s *LibraryService) Copy(ctx context.Context, viewer *rbac.Identity, ids []
 		for _, n := range nodes {
 			name := uniqueName(taken, n.Name)
 			taken[name] = true
-			if err := copyTree(ctx, r, n, targetID, name); err != nil {
+			if _, err := copyTree(ctx, r, viewer.UserID, n, targetID, name); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// SaveFolder copies a folder the viewer may open, or one a private link (share) opens, with all it holds into their library.
+func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, id string, parentID *string, share string) (*model.Folder, error) {
+	folder, err := s.publicFolder(ctx, viewer, id, share)
+	if err != nil {
+		return nil, err
+	}
+	if folder.OwnerID == viewer.UserID {
+		return nil, apperror.BadRequest("文件夹已在我的库中") // Its owner copies it with Copy, which keeps it out of itself
+	}
+	taken, err := s.takenNames(ctx, viewer.UserID, parentID)
+	if err != nil {
+		return nil, err
+	}
+	var copyID string
+	err = s.repo.Tx(ctx, func(r *repository.Repos) error {
+		copyID, err = copyTree(ctx, r, viewer.UserID, folder.Node, parentID, uniqueName(taken, folder.Name))
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if share != "" {
+		if err := s.repo.Share.Record(ctx, share, id, viewer.UserID, true); err != nil {
+			return nil, err
+		}
+	}
+	folders, err := s.Folders(ctx, viewer, []string{copyID})
+	if err != nil {
+		return nil, err
+	}
+	return folders[0], nil
 }
 
 func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, ids []string, targetID *string) ([]*model.Node, *model.Node, map[string]bool, error) {
@@ -394,27 +437,34 @@ func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, id
 	return nodes, target, taken, err
 }
 
-func copyTree(ctx context.Context, r *repository.Repos, src *model.Node, parentID *string, name string) error {
+// copyTree copies a node, with all it holds if it is a folder, into the owner's folder (or root) as name, returning the id of the copy.
+func copyTree(ctx context.Context, r *repository.Repos, ownerID string, src *model.Node, parentID *string, name string) (string, error) {
 	node, err := r.Node.Create(ctx, &model.Node{
-		OwnerID:  src.OwnerID,
+		OwnerID:  ownerID,
 		ParentID: parentID,
 		Name:     name,
 		Type:     src.Type,
 		AssetID:  src.AssetID,
 	})
-	if err != nil || src.Type != model.NodeTypeFolder {
-		return err
+	if err != nil {
+		return "", err
+	}
+	if node == nil {
+		return "", apperror.NotFound("目标文件夹不存在")
+	}
+	if src.Type != model.NodeTypeFolder {
+		return node.ID, nil
 	}
 	children, err := r.Node.Children(ctx, src.OwnerID, &src.ID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	for _, child := range children {
-		if err := copyTree(ctx, r, child, &node.ID, child.Name); err != nil {
-			return err
+		if _, err := copyTree(ctx, r, ownerID, child, &node.ID, child.Name); err != nil {
+			return "", err
 		}
 	}
-	return nil
+	return node.ID, nil
 }
 
 func (s *LibraryService) create(ctx context.Context, node *model.Node) (*model.Node, error) {

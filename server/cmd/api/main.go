@@ -100,6 +100,7 @@ func main() {
 
 	libraryService := service.NewLibraryService(repo, memeService, assetService)
 	favService := service.NewFavoriteService(repo, memeService, libraryService)
+	shareService := service.NewShareService(repo, memeService, libraryService)
 	userService := service.NewUserService(repo, memeService)
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
@@ -126,6 +127,7 @@ func main() {
 		asset:    handler.NewAssetHandler(assetService),
 		meme:     handler.NewMemeHandler(memeService, tagService),
 		library:  handler.NewLibraryHandler(libraryService),
+		share:    handler.NewShareHandler(shareService),
 		favorite: handler.NewFavoriteHandler(favService),
 		admin:    handler.NewAdminHandler(userService, memeService, tagService, statsService, logService),
 		task:     handler.NewTaskHandler(taskService),
@@ -187,6 +189,7 @@ type handlers struct {
 	asset    *handler.AssetHandler
 	meme     *handler.MemeHandler
 	library  *handler.LibraryHandler
+	share    *handler.ShareHandler
 	favorite *handler.FavoriteHandler
 	admin    *handler.AdminHandler
 	task     *handler.TaskHandler
@@ -212,11 +215,12 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/memes/:id", h.meme.Get)
 	api.GET("/memes/:id/similar", h.meme.Similar)
 	api.GET("/memes/:id/folders", h.library.MemeFolders)
-	api.POST("/memes/:id/share/views", h.meme.ViewShareLink)
+	api.POST("/memes/:id/share/views", h.share.View)
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
 	api.GET("/folders/:id/entries", h.library.FolderEntries)
+	api.POST("/folders/:id/share/views", h.share.View)
 	api.GET("/entries/:id", h.library.Entry)
 	api.GET("/users/:username", h.library.Profile)
 	api.GET("/users/:username/memes", h.library.ProfileMemes)
@@ -234,10 +238,13 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	session.DELETE("/tokens/:id", h.auth.DeleteToken)
 
 	priv.POST("/memes/:id/retry", h.meme.Retry)
-	priv.GET("/shares", h.meme.ShareLinks)
-	priv.GET("/memes/:id/share", h.meme.ShareLink)
-	priv.PUT("/memes/:id/share", h.meme.CreateShareLink)
-	priv.DELETE("/memes/:id/share", h.meme.DeleteShareLink)
+	priv.GET("/shares", h.share.List)
+	priv.GET("/memes/:id/share", h.share.Get)
+	priv.PUT("/memes/:id/share", h.share.CreateMemeLink)
+	priv.DELETE("/memes/:id/share", h.share.Delete)
+	priv.GET("/folders/:id/share", h.share.Get)
+	priv.PUT("/folders/:id/share", h.share.CreateFolderLink)
+	priv.DELETE("/folders/:id/share", h.share.Delete)
 	priv.POST("/memes/:id/tags", h.meme.AddTag)
 	priv.DELETE("/memes/:id/tags/:tagId", h.meme.RemoveTag)
 
@@ -251,6 +258,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	lib.GET("", h.library.Get)
 	lib.GET("/folders", h.library.FolderTree)
 	lib.POST("/folders", h.library.CreateFolder)
+	lib.POST("/folders/:id/save", h.library.SaveFolder)
 	lib.POST("/upload", h.library.Upload)
 	lib.POST("/entries", h.library.AddEntry)
 	lib.PATCH("/nodes", h.library.SetPublic)

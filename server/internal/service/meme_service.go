@@ -59,7 +59,12 @@ func NewMemeService(
 }
 
 func (s *MemeService) Memes(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Meme, error) {
-	memes, err := s.repo.Meme.Memes(ctx, viewer.UserID, viewer.IsAdmin(), ids, s.cfg.TagMinUsage)
+	return s.load(ctx, viewer, ids, viewer.IsAdmin())
+}
+
+// load lists the memes the viewer may see, or with all set every one of them, as a private link opens hidden ones.
+func (s *MemeService) load(ctx context.Context, viewer *rbac.Identity, ids []string, all bool) ([]*model.Meme, error) {
+	memes, err := s.repo.Meme.Memes(ctx, viewer.UserID, all, ids, s.cfg.TagMinUsage)
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +84,9 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id, share 
 			return nil, err
 		}
 		if opens {
-			// The link stands in for the visibility check.
-			if memes, err = s.repo.Meme.Memes(ctx, viewer.UserID, true, []string{id}, s.cfg.TagMinUsage); err != nil {
+			if memes, err = s.load(ctx, viewer, []string{id}, true); err != nil {
 				return nil, err
 			}
-			s.assets.signMemes(memes)
 		}
 	}
 	if len(memes) == 0 {
@@ -170,55 +173,6 @@ func (s *MemeService) Similar(ctx context.Context, viewer *rbac.Identity, id, sh
 		feed.Next = &next
 	}
 	return feed, nil
-}
-
-func (s *MemeService) ShareLink(ctx context.Context, viewer *rbac.Identity, id string) (*model.ShareLink, error) {
-	return s.repo.Share.Get(ctx, viewer.UserID, id)
-}
-
-// CreateShareLink returns the viewer's private link to a meme in their library, making one if there is none.
-func (s *MemeService) CreateShareLink(ctx context.Context, viewer *rbac.Identity, id string) (*model.ShareLink, error) {
-	meme, err := s.Get(ctx, viewer, id, "")
-	if err != nil {
-		return nil, err
-	}
-	if len(meme.Entries) == 0 {
-		return nil, apperror.Forbidden("只能为我的库中的表情包创建私密链接")
-	}
-	return s.repo.Share.Create(ctx, viewer.UserID, id)
-}
-
-// ShareLinks lists the viewer's private links, newest first.
-func (s *MemeService) ShareLinks(ctx context.Context, viewer *rbac.Identity) ([]*model.SharedMeme, error) {
-	links, err := s.repo.Share.List(ctx, viewer.UserID)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, len(links))
-	for i, l := range links {
-		ids[i] = l.MemeID
-	}
-	memes, err := s.Memes(ctx, viewer, ids)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]*model.Meme, len(memes))
-	for _, m := range memes {
-		byID[m.ID] = m
-	}
-	for _, l := range links {
-		l.Meme = byID[l.MemeID]
-	}
-	return links, nil
-}
-
-// ViewShareLink counts a page load of a meme opened by a private link.
-func (s *MemeService) ViewShareLink(ctx context.Context, viewer *rbac.Identity, id, share string) error {
-	return s.repo.Share.Record(ctx, share, id, viewer.UserID, false)
-}
-
-func (s *MemeService) DeleteShareLink(ctx context.Context, viewer *rbac.Identity, id string) error {
-	return s.repo.Share.Delete(ctx, viewer.UserID, id)
 }
 
 type SearchParams struct {

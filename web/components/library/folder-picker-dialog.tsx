@@ -10,13 +10,14 @@ import { api, qs } from '@/lib/api'
 import type { Folder, LibraryView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-export type PickerMode = 'move' | 'copy'
+export type PickerMode = 'move' | 'copy' | 'save' // save copies another user's folder in
 
 export function FolderPickerDialog({
   open,
   onOpenChange,
   mode,
   count,
+  name,
   initialFolder,
   sourceFolder,
   movingFolderIds = [],
@@ -26,6 +27,7 @@ export function FolderPickerDialog({
   onOpenChange: (open: boolean) => void
   mode: PickerMode
   count: number
+  name?: string // Of the one item, to show instead of the count
   initialFolder: string | null
   sourceFolder?: string | null
   movingFolderIds?: string[]
@@ -47,7 +49,7 @@ export function FolderPickerDialog({
   // Folders being moved are disabled, so their subtrees cannot be entered.
   const blocked = new Set(mode === 'move' ? movingFolderIds : [])
   const sameAsSource = mode === 'move' && sourceFolder !== undefined && cur === sourceFolder
-  const verb = mode === 'move' ? '移动' : '复制'
+  const verb = { move: '移动', copy: '复制', save: '保存' }[mode]
 
   const go = (id: string | null) => {
     setCur(id)
@@ -92,7 +94,7 @@ export function FolderPickerDialog({
       <DialogContent className="gap-4 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {verb} {count} 项到…
+            {name ? `${verb}「${name}」到…` : `${verb} ${count} 项到…`}
           </DialogTitle>
           <DialogDescription>浏览并选择目标文件夹，然后点击「{verb}到此处」。</DialogDescription>
         </DialogHeader>

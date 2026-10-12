@@ -7,11 +7,16 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { api } from '@/lib/api'
+import { api, qs } from '@/lib/api'
 import { memeTitle } from '@/lib/media'
-import type { Meme, ShareLink } from '@/lib/types'
+import type { Folder, Meme, ShareLink } from '@/lib/types'
 
-export const linkTo = (id: string, share?: string) => `${window.location.origin}/m/${id}${share ? `?share=${share}` : ''}`
+/** A meme or folder of the viewer's library that a private link may open. */
+export type ShareTarget = { kind: 'meme' | 'folder'; id: string; title: string }
+
+export const pageOf = ({ kind, id }: Pick<ShareTarget, 'kind' | 'id'>) => `/${kind === 'meme' ? 'm' : 'f'}/${id}`
+
+export const linkTo = (path: string, share?: string) => `${window.location.origin}${path}${qs({ share })}`
 
 /** Hands the link to the system share sheet where there is one, otherwise copies it. */
 export async function sendLink(title: string, url: string, note?: string) {
@@ -37,17 +42,26 @@ export async function sendLink(title: string, url: string, note?: string) {
  */
 export function shareMeme(meme: Meme, openPrivate: () => void, share?: string) {
   const title = memeTitle(meme)
-  if (meme.is_public) void sendLink(title, linkTo(meme.id))
+  const path = pageOf({ kind: 'meme', id: meme.id })
+  if (meme.is_public) void sendLink(title, linkTo(path))
   else if (meme.entries.length) openPrivate()
-  else if (share) void sendLink(title, linkTo(meme.id, share))
-  else void sendLink(title, linkTo(meme.id), '这个表情包没有公开，其他人打不开此链接。')
+  else if (share) void sendLink(title, linkTo(path, share))
+  else void sendLink(title, linkTo(path), '这个表情包没有公开，其他人打不开此链接。')
+}
+
+/** Shares a folder alike: a public one at once, a private one of the viewer's own by a private link, and others by the link they came with. */
+export function shareFolder(folder: Folder, own: boolean, openPrivate: () => void, share?: string) {
+  const path = pageOf({ kind: 'folder', id: folder.id })
+  if (folder.visibility !== 'private') void sendLink(folder.name, linkTo(path))
+  else if (own) openPrivate()
+  else void sendLink(folder.name, linkTo(path, share))
 }
 
 export function useShareMeme(meme: Meme, share?: string) {
   const [open, setOpen] = useState(false)
   return {
     start: () => shareMeme(meme, () => setOpen(true), share),
-    dialog: open && <PrivateLinkDialog meme={meme} onOpenChange={setOpen} />,
+    dialog: open && <PrivateLinkDialog target={{ kind: 'meme', id: meme.id, title: memeTitle(meme) }} onOpenChange={setOpen} />,
   }
 }
 
@@ -64,13 +78,14 @@ export function ShareButton({ meme, share, className }: { meme: Meme; share?: st
   )
 }
 
-export function PrivateLinkDialog({ meme, onOpenChange }: { meme: Meme; onOpenChange: (open: boolean) => void }) {
-  const key = `/memes/${meme.id}/share`
+export function PrivateLinkDialog({ target, onOpenChange }: { target: ShareTarget; onOpenChange: (open: boolean) => void }) {
+  const key = `/${target.kind}s/${target.id}/share`
   const { data: link, error, mutate } = useSWR<ShareLink | null>(key)
   const loading = link === undefined && !error
   const [pending, setPending] = useState(false)
   const [copied, setCopied] = useState(false)
-  const url = link ? linkTo(meme.id, link.token) : ''
+  const url = link ? linkTo(pageOf(target), link.token) : ''
+  const folder = target.kind === 'folder'
 
   const run = async (action: () => Promise<void>) => {
     setPending(true)
@@ -106,8 +121,8 @@ export function PrivateLinkDialog({ meme, onOpenChange }: { meme: Meme; onOpenCh
     <Dialog open onOpenChange={(o) => !pending && onOpenChange(o)}>
       <DialogContent className="gap-4 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>分享表情包</DialogTitle>
-          <DialogDescription>这个表情包没有公开，不会出现在搜索和发现中。</DialogDescription>
+          <DialogTitle>{folder ? '分享文件夹' : '分享表情包'}</DialogTitle>
+          <DialogDescription>{folder ? '这个文件夹没有公开，不会出现在发现和你的主页上。' : '这个表情包没有公开，不会出现在搜索和发现中。'}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-start gap-3 rounded-xl border p-3" aria-live="polite">
@@ -117,7 +132,11 @@ export function PrivateLinkDialog({ meme, onOpenChange }: { meme: Meme; onOpenCh
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <p className="text-sm font-medium">{link ? '拿到链接的人可以查看' : '仅自己可见'}</p>
             <p className="text-xs text-pretty text-muted-foreground">
-              {link ? '对方可以查看、下载并保存到自己的库。停用链接或把它移出我的库后，链接即失效。' : '创建私密链接后，拿到链接的人就能查看并保存它。'}
+              {!link
+                ? '创建私密链接后，拿到链接的人就能查看并保存它。'
+                : folder
+                  ? '对方可以浏览其中的全部内容，并保存到自己的库。停用链接或删除文件夹后，链接即失效。'
+                  : '对方可以查看、下载并保存到自己的库。停用链接或把它移出我的库后，链接即失效。'}
             </p>
             {link && (
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
@@ -144,7 +163,7 @@ export function PrivateLinkDialog({ meme, onOpenChange }: { meme: Meme; onOpenCh
                 停用链接
               </Button>
               {'share' in navigator ? (
-                <Button onClick={() => void sendLink(memeTitle(meme), url)}>
+                <Button onClick={() => void sendLink(target.title, url)}>
                   <Share2 data-icon="inline-start" />
                   分享…
                 </Button>

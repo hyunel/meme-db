@@ -119,6 +119,26 @@ func entryResponse(c echo.Context, entry *service.EntryDetail, created bool) err
 	return c.JSON(http.StatusOK, entry)
 }
 
+type SaveFolderRequest struct {
+	ID       string `param:"id" validate:"required,uuid"`
+	ParentID string `json:"parent_id" validate:"omitempty,uuid"`
+	Share    string `json:"share" validate:"omitempty,uuid"` // A private link the folder was opened by
+}
+
+// SaveFolder copies another user's folder into the viewer's library.
+func (h *LibraryHandler) SaveFolder(c echo.Context) error {
+	var req SaveFolderRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	folder, err := h.libraryService.SaveFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID, optionalID(req.ParentID), req.Share)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, folder)
+}
+
 type RenameNodeRequest struct {
 	ID   string `param:"id" validate:"required,uuid"`
 	Name string `json:"name"`
@@ -237,17 +257,18 @@ func (h *LibraryHandler) MemeFolders(c echo.Context) error {
 	return c.JSON(http.StatusOK, folders)
 }
 
-type NodeRequest struct {
-	ID string `param:"id" validate:"required,uuid"`
+type SharedNodeRequest struct {
+	ID    string `param:"id" validate:"required,uuid"`
+	Share string `query:"share" validate:"omitempty,uuid"` // A private link to a folder at or above the node
 }
 
 func (h *LibraryHandler) PublicFolder(c echo.Context) error {
-	var req NodeRequest
+	var req SharedNodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	view, err := h.libraryService.PublicFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	view, err := h.libraryService.PublicFolder(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share)
 	if err != nil {
 		return err
 	}
@@ -256,6 +277,7 @@ func (h *LibraryHandler) PublicFolder(c echo.Context) error {
 
 type FolderEntriesRequest struct {
 	ID     string `param:"id" validate:"required,uuid"`
+	Share  string `query:"share" validate:"omitempty,uuid"`
 	Cursor string `query:"cursor" validate:"omitempty,uuid"`
 	Limit  int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
@@ -266,7 +288,7 @@ func (h *LibraryHandler) FolderEntries(c echo.Context) error {
 		return err
 	}
 
-	feed, err := h.libraryService.FolderEntries(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Cursor, limitOr(req.Limit, 40))
+	feed, err := h.libraryService.FolderEntries(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share, req.Cursor, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
@@ -274,12 +296,12 @@ func (h *LibraryHandler) FolderEntries(c echo.Context) error {
 }
 
 func (h *LibraryHandler) Entry(c echo.Context) error {
-	var req NodeRequest
+	var req SharedNodeRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	entry, err := h.libraryService.Entry(c.Request().Context(), rbac.GetIdentity(c), req.ID)
+	entry, err := h.libraryService.Entry(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share)
 	if err != nil {
 		return err
 	}

@@ -90,10 +90,10 @@ function useLibraryDialog(meme: Meme, share?: string) {
   }
 }
 
-export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme; className?: string; allowAdd?: boolean }) {
+export function MemeMoreMenu({ meme, share, className, allowAdd = false }: { meme: Meme; share?: string; className?: string; allowAdd?: boolean }) {
   const [downloadOpen, setDownloadOpen] = useState(false)
-  const lib = useLibraryDialog(meme)
-  const share = useShareMeme(meme)
+  const lib = useLibraryDialog(meme, share)
+  const sharing = useShareMeme(meme, share)
   return (
     <>
       <DropdownMenu>
@@ -114,7 +114,7 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onClick={share.start}>
+          <DropdownMenuItem onClick={sharing.start}>
             <Share2 />
             分享
           </DropdownMenuItem>
@@ -135,7 +135,7 @@ export function MemeMoreMenu({ meme, className, allowAdd = false }: { meme: Meme
       </DropdownMenu>
       {downloadOpen && <DownloadDialog meme={meme} open onOpenChange={setDownloadOpen} />}
       {allowAdd && lib.dialog}
-      {share.dialog}
+      {sharing.dialog}
     </>
   )
 }

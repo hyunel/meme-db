@@ -43,7 +43,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { FolderMosaic } from '@/components/folder/folder-card'
-import { PrivateLinkDialog, sendLink, shareMeme } from '@/components/meme/share-dialog'
+import { PrivateLinkDialog, shareFolder, shareMeme, type ShareTarget } from '@/components/meme/share-dialog'
 import { ProcessBadge, VisibilityBadge } from '@/components/status-badges'
 import { EmptyState, PageLoading } from '@/components/states'
 import { Loadable } from '@/components/loadable'
@@ -52,9 +52,9 @@ import { UploadDialog } from './upload-dialog'
 import { ROOT, useDragMove } from './use-drag-move'
 import { api, qs, refresh } from '@/lib/api'
 import { toMs } from '@/lib/format'
-import { isProcessing, memeHref } from '@/lib/media'
+import { isProcessing, memeHref, memeTitle } from '@/lib/media'
 import { downloadMany } from '@/lib/meme-transfer'
-import type { Entry, Folder, LibraryView as Library, Meme } from '@/lib/types'
+import type { Entry, Folder, LibraryView as Library } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Sort = 'name' | 'newest' | 'oldest'
@@ -87,7 +87,7 @@ function LibraryContent({ lib }: { lib: Library }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [picker, setPicker] = useState<{ mode: PickerMode; items: Item[] } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Item[] | null>(null)
-  const [privateLink, setPrivateLink] = useState<Meme | null>(null)
+  const [privateLink, setPrivateLink] = useState<ShareTarget | null>(null)
   const [rename, setRename] = useState<Item | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [newFolderOpen, setNewFolderOpen] = useState(false)
@@ -153,11 +153,14 @@ function LibraryContent({ lib }: { lib: Library }) {
   const setPublic = (sel: Item[], isPublic: boolean) =>
     run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
 
-  // A folder has no private link, so only a public one can be shared.
   const share = (item: Item) => {
-    if (item.type === 'entry') return shareMeme(item.entry.meme, () => setPrivateLink(item.entry.meme))
-    if (item.folder.visibility !== 'private') return void sendLink(item.folder.name, `${window.location.origin}/f/${item.folder.id}`)
-    toast.info('这个文件夹没有公开，其他人打不开它的链接', { action: { label: '设为公开', onClick: () => void setPublic([item], true) } })
+    if (item.type === 'entry') {
+      const { meme } = item.entry
+      shareMeme(meme, () => setPrivateLink({ kind: 'meme', id: meme.id, title: memeTitle(meme) }))
+    } else {
+      const { folder } = item
+      shareFolder(folder, true, () => setPrivateLink({ kind: 'folder', id: folder.id, title: folder.name }))
+    }
   }
 
   const download = (sel: Item[]) => {
@@ -335,13 +338,7 @@ function LibraryContent({ lib }: { lib: Library }) {
               <>
                 <div className={cn('relative aspect-square overflow-hidden rounded-lg', item.type === 'entry' ? 'bg-checker' : 'bg-muted/60')}>
                   <div data-thumb className="flex size-full items-center justify-center p-2">
-                    {item.type === 'entry' ? (
-                      <MemeMedia meme={item.entry.meme} />
-                    ) : item.folder.previews.length ? (
-                      <FolderMosaic previews={item.folder.previews} className="size-full" />
-                    ) : (
-                      <FolderIcon className="size-12 fill-brand/50 text-foreground/70" strokeWidth={1.25} aria-hidden />
-                    )}
+                    {item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />}
                   </div>
                   {item.type === 'folder' && (
                     <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
@@ -479,7 +476,7 @@ function LibraryContent({ lib }: { lib: Library }) {
 
       <UploadDialog open={uploadOpen || uploadRequested} onOpenChange={setUpload} folderId={folder?.id ?? null} folderName={here} />
 
-      {privateLink && <PrivateLinkDialog meme={privateLink} onOpenChange={() => setPrivateLink(null)} />}
+      {privateLink && <PrivateLinkDialog target={privateLink} onOpenChange={() => setPrivateLink(null)} />}
 
       {picker && (
         <FolderPickerDialog

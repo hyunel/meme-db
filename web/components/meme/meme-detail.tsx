@@ -28,8 +28,8 @@ type Place = { key: string; href: string; name: string; meta: string; icon: Luci
 const PLACES_SHOWN = 3
 const LIBRARY_ROOT: Place = { key: 'library', href: '/library', name: '我的库', meta: '根目录', icon: Library }
 
-/** Where the meme lives: the place it was opened from, then the viewer's folders and the public collections holding it. */
-function MemePlaces({ meme, entry, mine }: { meme: Meme; entry?: EntryDetail; mine: boolean }) {
+/** Where the meme lives: the place it was opened from (by the private link share, if any), then the viewer's folders and the public collections holding it. */
+function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDetail; mine: boolean; share?: string }) {
   const { user } = useSession()
   const { data: folders = [] } = useSWR<Folder[]>(`/memes/${meme.id}/folders`)
   const [expanded, setExpanded] = useState(false)
@@ -51,7 +51,7 @@ function MemePlaces({ meme, entry, mine }: { meme: Meme; entry?: EntryDetail; mi
   const openedPlace = ({ owner }: EntryDetail): Place => {
     const found = folder && folders.find((f) => f.id === folder.id)
     if (found) return folderPlace(found)
-    if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}`, name: folder.name, meta: mine ? '我的库' : `@${owner.username}`, icon: FolderOpen }
+    if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}${qs({ share })}`, name: folder.name, meta: mine ? '我的库' : `@${owner.username}`, icon: FolderOpen }
     return mine ? LIBRARY_ROOT : { key: 'owner', href: `/u/${owner.username}`, name: `@${owner.username}`, meta: '公开的表情包', icon: UserRound }
   }
 
@@ -113,7 +113,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
     refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
   const similar = useFeed(meme?.status === 'success' ? ['similar', id, share] : null, (cursor) => api<Feed<Meme>>(`/memes/${id}/similar${qs({ share, cursor })}`))
-  const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}` : null)
+  const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}${qs({ share })}` : null)
   const entry = opened?.meme.id === id ? opened : undefined // A hand-edited link may pair an entry with another meme
   const mine = Boolean(entry && entry.owner.id === user?.id)
   const [downloadOpen, setDownloadOpen] = useState(false)
@@ -285,7 +285,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
               )}
             </section>
 
-            <MemePlaces meme={meme} entry={entry} mine={mine} />
+            <MemePlaces meme={meme} entry={entry} mine={mine} share={share} />
 
             {meme.ocr_text && (
               <section className="flex flex-col gap-2" aria-labelledby="ocr-heading">

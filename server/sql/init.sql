@@ -165,16 +165,20 @@ CREATE OR REPLACE TRIGGER trg_nodes_popularity AFTER INSERT OR DELETE ON library
 CREATE OR REPLACE TRIGGER trg_favorites_popularity AFTER INSERT OR DELETE ON library.favorites
     FOR EACH ROW EXECUTE FUNCTION library.count_popularity();
 
--- Private links: whoever holds one may open the meme while its creator keeps it in their library.
+-- Private links: whoever holds one may open the meme while its creator keeps it in their library,
+-- or the folder with all it holds.
 CREATE TABLE IF NOT EXISTS library.share_links (
     token UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- Random, unlike the time-ordered ids, so it cannot be guessed
     owner_id UUID NOT NULL REFERENCES iam.users(id) ON DELETE CASCADE,
-    asset_id UUID NOT NULL REFERENCES core.assets(id) ON DELETE CASCADE,
-    view_count INT NOT NULL DEFAULT 0,        -- Page loads by people other than its creator
-    save_count INT NOT NULL DEFAULT 0,        -- People who saved the meme to their library through it
+    asset_id UUID REFERENCES core.assets(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES library.nodes(id) ON DELETE CASCADE,
+    view_count INT NOT NULL DEFAULT 0,        -- Page loads of the meme or folder by people other than its creator
+    save_count INT NOT NULL DEFAULT 0,        -- Saves of the meme or folder to a library through it
     last_viewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (owner_id, asset_id)
+    CHECK ((asset_id IS NULL) <> (folder_id IS NULL)),
+    UNIQUE (owner_id, asset_id),
+    UNIQUE (folder_id)
 );
 
 -- Spellings that differ only in case, width or separators share a key.

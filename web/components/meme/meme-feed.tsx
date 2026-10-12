@@ -13,12 +13,14 @@ export function MemeFeed({
   memes,
   feed,
   empty,
+  share,
   similarity,
   allowAdd,
 }: {
   memes: Meme[] | Entry[] | undefined
   feed: FeedStatus
   empty?: React.ReactNode
+  share?: string
   similarity?: Map<string, number>
   allowAdd?: boolean
 }) {
@@ -39,7 +41,7 @@ export function MemeFeed({
 
   return (
     <div className="flex flex-col gap-4">
-      <MemeGrid memes={memes} similarity={similarity} allowAdd={allowAdd} />
+      <MemeGrid memes={memes} share={share} similarity={similarity} allowAdd={allowAdd} />
       <div ref={sentinel} className="flex min-h-9 items-center justify-center gap-2 text-sm text-muted-foreground">
         {error ? (
           <>

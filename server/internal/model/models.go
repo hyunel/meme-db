@@ -145,12 +145,14 @@ type ShareLink struct {
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 }
 
-// SharedMeme is one of the viewer's private links with the meme it opens, which is nil once the viewer may not see it.
-type SharedMeme struct {
+// SharedItem is one of the viewer's private links with the meme or folder it opens; the meme is nil once the viewer may not see it.
+type SharedItem struct {
 	ShareLink
-	MemeID string `json:"meme_id" db:"asset_id"`
-	Live   bool   `json:"live" db:"live"` // Whether the viewer still keeps the meme in their library, which the link needs
-	Meme   *Meme  `json:"meme" db:"-"`
+	MemeID   *string `json:"meme_id" db:"asset_id"`
+	FolderID *string `json:"folder_id" db:"folder_id"`
+	Live     bool    `json:"live" db:"live"` // Whether the viewer still keeps the meme in their library, which a meme link needs
+	Meme     *Meme   `json:"meme" db:"-"`
+	Folder   *Folder `json:"folder" db:"-"`
 }
 
 type MemeTag struct {
