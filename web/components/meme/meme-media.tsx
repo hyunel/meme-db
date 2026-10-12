@@ -15,6 +15,11 @@ const reveal = (e: React.SyntheticEvent<HTMLElement>) => {
   e.currentTarget.dataset.loaded = ''
 }
 
+// An image the browser already holds, as on coming back to a page, shows at once rather than fading in again.
+const revealHeld = (el: HTMLImageElement | null) => {
+  if (el?.complete) el.dataset.loaded = ''
+}
+
 function AutoVideo({ src, className, controls, label }: { src: string; className?: string; controls: boolean; label: string }) {
   const ref = useRef<HTMLVideoElement>(null)
   useEffect(() => {
@@ -28,7 +33,10 @@ function AutoVideo({ src, className, controls, label }: { src: string; className
       { threshold: 0.25 },
     )
     io.observe(el)
-    return () => io.disconnect()
+    return () => {
+      io.disconnect()
+      el.pause() // Also when hidden, as by an inactive tab
+    }
   }, [controls])
   return (
     <video
@@ -66,6 +74,6 @@ export function MemeMedia({
     return <LottiePlayer url={meme.url} mime={meme.mime_type} label={alt} className={className} />
   }
   return (
-    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn(fitted, className)} onLoad={reveal} onError={reveal} />
+    <img src={meme.url} alt={alt} loading="lazy" decoding="async" className={cn(fitted, className)} ref={revealHeld} onLoad={reveal} onError={reveal} />
   )
 }

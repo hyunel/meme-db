@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Activity, useState } from 'react'
 import useSWR from 'swr'
 import { FolderHeart, HeartOff, ImageOff, Loader2, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
@@ -53,21 +53,23 @@ export function FavoritesView() {
         </div>
       )}
 
+      {/* Both tabs stay mounted, so switching shows the cards built before rather than building them again */}
       <div role="tabpanel">
-        {tab === 'meme' ? (
+        <Activity mode={tab === 'meme' ? 'visible' : 'hidden'}>
           <MemeFeed
             memes={memes.items}
             feed={memes}
             allowAdd
             empty={<EmptyState icon={ImageOff} title="还没有收藏表情包" description="在任意表情包上点击爱心即可收藏。" />}
           />
-        ) : (
+        </Activity>
+        <Activity mode={tab === 'folder' ? 'visible' : 'hidden'}>
           <Loadable result={favorites} loading={<FolderGridSkeleton />}>
             {({ folders }) =>
               folders.length ? <FolderGrid folders={folders} /> : <EmptyState icon={FolderHeart} title="还没有收藏合集" description="在发现页浏览公开合集。" />
             }
           </Loadable>
-        )}
+        </Activity>
       </div>
     </div>
   )

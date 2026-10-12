@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Activity, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
@@ -77,14 +77,16 @@ export function DiscoverView() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title="发现" description="全站热门表情包与社区公开分享的合集" />
       <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包'], ['folders', '公开合集', folders.data?.length]] as const} />
+      {/* Both tabs stay mounted, so switching shows the cards built before rather than building them again */}
       <div role="tabpanel">
-        {tab === 'memes' ? (
+        <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
           <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无表情包" />} />
-        ) : (
+        </Activity>
+        <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
           <Loadable result={folders} loading={<FolderGridSkeleton />}>
             {(list) => (list.length ? <FolderGrid folders={list} /> : <EmptyState icon={FolderOpen} title="暂无公开合集" />)}
           </Loadable>
-        )}
+        </Activity>
       </div>
     </div>
   )
