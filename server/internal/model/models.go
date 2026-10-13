@@ -291,7 +291,7 @@ type TrendPoint struct {
 }
 
 type ServiceStatus struct {
-	Name   string `json:"name"`
+	Name   string `json:"name"` // database | storage
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
 }

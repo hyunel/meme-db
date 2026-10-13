@@ -29,7 +29,7 @@ type Store interface {
 
 var (
 	errLeaseExhausted = errors.New("lease expired too many times")
-	errCancelled      = errors.New("已被管理员取消")
+	errCancelled      = errors.New("cancelled by an admin")
 )
 
 type Worker struct {

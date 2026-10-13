@@ -88,8 +88,8 @@ export function AdminOverview() {
   const rate = failRate(failN, doneN) ?? 0
 
   const service = (name: string) => stats.data?.services.find((sv) => sv.name === name)
-  const db = service('数据库')
-  const storage = service('文件存储')
+  const db = service('database')
+  const storage = service('storage')
   const ic = inf.data?.current
   const gpuAvg = inf.data?.gpus.length && ic ? inf.data.gpus.reduce((a, _, i) => a + (gpuUtil(ic, i) ?? 0), 0) / inf.data.gpus.length : null
 
@@ -126,7 +126,7 @@ export function AdminOverview() {
 
       <section aria-label="健康摘要">
         <ul className="grid gap-2 sm:grid-cols-3 sm:gap-3">
-          <HealthCard name="数据库" status={db ? (db.ok ? 'ok' : 'down') : null} detail={db?.detail ?? '—'} />
+          <HealthCard name="数据库" status={db ? (db.ok ? 'ok' : 'down') : null} detail={db ? (db.ok ? `响应 ${db.detail}` : db.detail) : '—'} />
           <HealthCard
             name="推理服务"
             status={inf.connection}

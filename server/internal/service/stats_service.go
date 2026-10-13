@@ -49,16 +49,18 @@ func (s *StatsService) Overview(ctx context.Context, from, to time.Time, tz stri
 
 func (s *StatsService) services(ctx context.Context) []model.ServiceStatus {
 	start := time.Now()
-	db := model.ServiceStatus{Name: "数据库", OK: true}
+	db := model.ServiceStatus{Name: "database", OK: true}
 	if err := s.repo.Ping(ctx); err != nil {
 		db.OK, db.Detail = false, err.Error()
 	} else {
-		db.Detail = fmt.Sprintf("响应 %dms", time.Since(start).Milliseconds())
+		db.Detail = fmt.Sprintf("%dms", time.Since(start).Milliseconds()) // Round trip
 	}
 
-	storage := model.ServiceStatus{Name: "文件存储", OK: true, Detail: s.storagePath}
-	if info, err := os.Stat(s.storagePath); err != nil || !info.IsDir() {
-		storage.OK, storage.Detail = false, "存储目录不可用"
+	storage := model.ServiceStatus{Name: "storage", OK: true, Detail: s.storagePath}
+	if info, err := os.Stat(s.storagePath); err != nil {
+		storage.OK, storage.Detail = false, err.Error()
+	} else if !info.IsDir() {
+		storage.OK, storage.Detail = false, s.storagePath+" is not a directory"
 	}
 	return []model.ServiceStatus{db, storage}
 }
