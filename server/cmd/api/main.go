@@ -207,6 +207,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.GET("/config", h.asset.GetConfig)
 	api.GET("/stats", h.meme.Stats)
 	api.GET("/assets/:id", h.asset.GetAssetContent)
+	api.HEAD("/assets/:id", h.asset.GetAssetContent) // Its ETag, the SHA-256 of the file, tells clients what they already uploaded
 
 	api.POST("/auth/register", h.auth.Register)
 	api.POST("/auth/login", h.auth.Login)
