@@ -70,6 +70,23 @@ func (r *MemeRepository) SetStatus(ctx context.Context, assetID, status string, 
 	return err
 }
 
+func (r *MemeRepository) SetClipVector(ctx context.Context, assetID string, clip pgvector.Vector) error {
+	_, err := r.db.Exec(ctx, `UPDATE core.meme_info SET clip_vector = $2 WHERE asset_id = $1::uuid`, assetID, clip)
+	return err
+}
+
+func (r *MemeRepository) SetTextVectors(ctx context.Context, assetID string, metaphor, semantic pgvector.Vector) error {
+	query := `UPDATE core.meme_info SET metaphor_vector = $2, semantic_vector = $3 WHERE asset_id = $1::uuid`
+	_, err := r.db.Exec(ctx, query, assetID, metaphor, semantic)
+	return err
+}
+
+// Analyzed keeps the memes whose analysis succeeded.
+func (r *MemeRepository) Analyzed(ctx context.Context, assetIDs []string) ([]string, error) {
+	query := `SELECT asset_id::text FROM core.meme_info WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'success'`
+	return collectScalars[string](r.db.Query(ctx, query, assetIDs))
+}
+
 func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string, from []string) ([]string, error) {
 	query := `
 		UPDATE core.meme_info SET processing_status = 'pending', fail_reason = NULL

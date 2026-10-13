@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS jobs.tasks (
     id UUID DEFAULT uuidv7(),
     owner_id UUID REFERENCES iam.users(id) ON DELETE CASCADE,
     parent_task_id UUID,
+    batch_id UUID,                            -- Tasks an admin queued together, whose progress is the batch's
     job_type VARCHAR(50) NOT NULL,
     payload JSONB NOT NULL,
     status VARCHAR(20) DEFAULT 'pending',     -- pending -> running -> completed | failed
@@ -255,6 +256,7 @@ CREATE TABLE IF NOT EXISTS jobs.tasks_history PARTITION OF jobs.tasks FOR VALUES
 CREATE INDEX IF NOT EXISTS idx_tasks_queue ON jobs.tasks_active(priority DESC, run_at ASC);
 CREATE INDEX IF NOT EXISTS idx_tasks_history ON jobs.tasks_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_asset ON jobs.tasks ((payload->>'asset_id'));
+CREATE INDEX IF NOT EXISTS idx_tasks_batch ON jobs.tasks (batch_id) WHERE batch_id IS NOT NULL;
 
 -- ============================================================================
 -- TABLES: Ops

@@ -23,6 +23,7 @@ type Store interface {
 	Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error
 	Requeue(ctx context.Context, ids []string) ([]*model.Task, error)
 	Cancel(ctx context.Context, id, reason string) (*model.Task, error)
+	CancelBatch(ctx context.Context, batchID, reason string) ([]*model.Task, error)
 	RunNow(ctx context.Context, id string) (bool, error)
 }
 
@@ -79,12 +80,30 @@ func (w *Worker) Cancel(ctx context.Context, id string) (bool, error) {
 	if err != nil || task == nil {
 		return false, err
 	}
-	if h, ok := w.handlers[task.JobType].(FailureHandler); ok {
-		if err := h.OnFailure(ctx, task, errCancelled); err != nil {
-			return false, fmt.Errorf("failure hook: %w", err)
+	return true, w.cancelled(ctx, task)
+}
+
+// CancelBatch cancels the batch's tasks still waiting to run.
+func (w *Worker) CancelBatch(ctx context.Context, batchID string) (int, error) {
+	tasks, err := w.store.CancelBatch(ctx, batchID, errCancelled.Error())
+	if err != nil {
+		return 0, err
+	}
+	for _, task := range tasks {
+		if err := w.cancelled(ctx, task); err != nil {
+			return 0, err
 		}
 	}
-	return true, nil
+	return len(tasks), nil
+}
+
+func (w *Worker) cancelled(ctx context.Context, task *model.Task) error {
+	if h, ok := w.handlers[task.JobType].(FailureHandler); ok {
+		if err := h.OnFailure(ctx, task, errCancelled); err != nil {
+			return fmt.Errorf("failure hook for %s: %w", task.ID, err)
+		}
+	}
+	return nil
 }
 
 func (w *Worker) RunNow(ctx context.Context, id string) (bool, error) {

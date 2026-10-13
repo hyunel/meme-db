@@ -11,7 +11,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
+const taskSelectColumns = `id, owner_id, parent_task_id, batch_id, job_type, payload, status, error_message, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
 	COALESCE(context->'attempts', '[]') AS history`
 
 func withAttempt(ctx, ok, errorMessage string) string {
@@ -29,6 +29,7 @@ type TaskOpts struct {
 	Priority int
 	RunAt    *time.Time // Defaults to now
 	Cron     *string
+	BatchID  *string
 }
 
 func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads []any, opts TaskOpts) error {
@@ -49,11 +50,11 @@ func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads [
 	}
 
 	query := `
-		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron, max_attempts, timeout_secs)
-		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $7, $8
+		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron, max_attempts, timeout_secs, batch_id)
+		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $7, $8, $9::uuid
 		FROM unnest($6::jsonb[]) p
 	`
-	_, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, opts.Cron, encoded, policy.MaxAttempts, int(policy.Timeout.Seconds()))
+	_, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, opts.Cron, encoded, policy.MaxAttempts, int(policy.Timeout.Seconds()), opts.BatchID)
 	if err != nil {
 		return fmt.Errorf("failed to create tasks: %w", err)
 	}
@@ -164,6 +165,16 @@ func (r *TaskRepository) Cancel(ctx context.Context, id, reason string) (*model.
 	return collectOne[model.Task](r.db.Query(ctx, query, id, reason))
 }
 
+func (r *TaskRepository) CancelBatch(ctx context.Context, batchID, reason string) ([]*model.Task, error) {
+	query := fmt.Sprintf(`
+		UPDATE jobs.tasks
+		SET status = 'failed', error_message = $2, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE batch_id = $1::uuid AND status = 'pending'
+		RETURNING %s
+	`, taskSelectColumns)
+	return collectAll[model.Task](r.db.Query(ctx, query, batchID, reason))
+}
+
 func (r *TaskRepository) RunNow(ctx context.Context, id string) (bool, error) {
 	query := `
 		UPDATE jobs.tasks SET run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -194,6 +205,7 @@ var taskStates = map[string]string{
 type TaskFilter struct {
 	States    []string // Keys of taskStates
 	JobType   string
+	Batch     string
 	Query     string // Matches the task ID or the asset it works on
 	Created   TimeRange
 	Recurring bool
@@ -213,6 +225,9 @@ func (f TaskFilter) where() filter {
 	}
 	if f.JobType != "" {
 		w.where("job_type = " + w.arg(f.JobType))
+	}
+	if f.Batch != "" {
+		w.where("batch_id = " + w.arg(f.Batch) + "::uuid")
 	}
 	if f.Query != "" {
 		p := w.arg(f.Query)
@@ -264,4 +279,20 @@ func (r *TaskRepository) Summary(ctx context.Context, finished TimeRange) ([]*mo
 		FROM jobs.tasks GROUP BY job_type ORDER BY job_type
 	`, taskStates["pending"], taskStates["retrying"], inRange)
 	return collectAll[model.TaskTypeCounts](r.db.Query(ctx, query, w.args...))
+}
+
+// Batches lists the latest batches with their tasks counted by status.
+func (r *TaskRepository) Batches(ctx context.Context, limit int) ([]*model.TaskBatch, error) {
+	query := `
+		SELECT batch_id::text AS id, min(job_type) AS job_type, min(created_at) AS created_at,
+			CASE WHEN bool_and(status IN ('completed', 'failed')) THEN max(finished_at) END AS finished_at,
+			count(*) AS total,
+			count(*) FILTER (WHERE status = 'pending') AS pending,
+			count(*) FILTER (WHERE status = 'running') AS running,
+			count(*) FILTER (WHERE status = 'completed') AS completed,
+			count(*) FILTER (WHERE status = 'failed') AS failed
+		FROM jobs.tasks WHERE batch_id IS NOT NULL
+		GROUP BY batch_id ORDER BY min(created_at) DESC LIMIT $1
+	`
+	return collectAll[model.TaskBatch](r.db.Query(ctx, query, limit))
 }

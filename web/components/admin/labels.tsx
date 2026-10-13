@@ -14,6 +14,8 @@ export const taskState = (t: Task): TaskState => (t.status === 'pending' && t.at
 
 const jobTypeLabel: Record<string, string> = {
   analyze_meme: '分析表情包',
+  embed_clip: '重建 CLIP 向量',
+  embed_text: '重建文本向量',
 }
 
 export const jobLabel = (type: string) => jobTypeLabel[type] ?? type

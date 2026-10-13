@@ -172,7 +172,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 		if err := r.Meme.Create(ctx, &model.MemeInfo{AssetID: asset.ID, ProcessingStatus: model.ProcessingStatusPending}); err != nil {
 			return fmt.Errorf("failed to create meme info stub: %w", err)
 		}
-		payload := AnalyzeMemePayload{AssetID: asset.ID, Caption: caption}
+		payload := MemePayload{AssetID: asset.ID, Caption: caption}
 		if err := r.Task.Enqueue(ctx, model.JobAnalyzeMeme, []any{payload}, repository.TaskOpts{Priority: model.PriorityHigh}); err != nil {
 			return fmt.Errorf("failed to enqueue analysis: %w", err)
 		}

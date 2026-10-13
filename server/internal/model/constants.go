@@ -42,6 +42,8 @@ const (
 
 const (
 	JobAnalyzeMeme = "analyze_meme"
+	JobEmbedClip   = "embed_clip" // Rebuilds a meme's CLIP embedding
+	JobEmbedText   = "embed_text" // Rebuilds a meme's text embeddings from its VLM output
 )
 
 type JobPolicy struct {
@@ -52,4 +54,6 @@ type JobPolicy struct {
 // JobPolicies are stored on each task as it is enqueued.
 var JobPolicies = map[string]JobPolicy{
 	JobAnalyzeMeme: {Timeout: 5 * time.Minute, MaxAttempts: 3}, // The VLM may be a slow, flaky remote API
+	JobEmbedClip:   {Timeout: time.Minute, MaxAttempts: 3},
+	JobEmbedText:   {Timeout: time.Minute, MaxAttempts: 3},
 }

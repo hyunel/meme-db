@@ -107,6 +107,8 @@ func main() {
 	logService := service.NewLogService(repo, cfg.Log.Retention)
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
+	taskWorker.RegisterHandler(model.JobEmbedClip, worker.HandlerFunc(ingestService.EmbedClip))
+	taskWorker.RegisterHandler(model.JobEmbedText, worker.HandlerFunc(ingestService.EmbedText))
 
 	workerDone := make(chan struct{})
 	go func() {
@@ -294,6 +296,8 @@ func setupRoutes(e *echo.Echo, h handlers) {
 
 	admin.GET("/tasks", h.task.List)
 	admin.GET("/tasks/summary", h.task.Summary)
+	admin.GET("/tasks/batches", h.task.Batches)
+	admin.POST("/tasks/batches/:id/cancel", h.task.CancelBatch)
 	admin.GET("/tasks/:id", h.task.Get)
 	admin.POST("/tasks/retry", h.task.Retry)
 	admin.POST("/tasks/:id/run", h.task.RunNow)

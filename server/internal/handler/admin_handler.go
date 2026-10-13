@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
@@ -190,6 +191,12 @@ func (h *AdminHandler) ListMemes(c echo.Context) error {
 type ReprocessMemesRequest struct {
 	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
 	Filter *MemeFilterParams `json:"filter"`
+	Job    string            `json:"job" validate:"omitempty,oneof=analyze_meme embed_clip embed_text"` // Defaults to analyze_meme
+}
+
+type BatchResponse struct {
+	Count   int    `json:"count"`
+	BatchID string `json:"batch_id"`
 }
 
 func (h *AdminHandler) ReprocessMemes(c echo.Context) error {
@@ -198,23 +205,24 @@ func (h *AdminHandler) ReprocessMemes(c echo.Context) error {
 		return err
 	}
 
-	var n int
+	job := cmp.Or(req.Job, model.JobAnalyzeMeme)
+	var res BatchResponse
 	var err error
 	switch {
 	case len(req.IDs) > 0:
-		n, err = h.memeService.Reprocess(c.Request().Context(), req.IDs)
+		res.Count, res.BatchID, err = h.memeService.Rebuild(c.Request().Context(), job, req.IDs)
 	case req.Filter != nil:
 		if err := c.Validate(req.Filter); err != nil {
 			return apperror.BadRequest("请求参数无效：" + err.Error())
 		}
-		n, err = h.memeService.ReprocessMatching(c.Request().Context(), req.Filter.filter())
+		res.Count, res.BatchID, err = h.memeService.RebuildMatching(c.Request().Context(), job, req.Filter.filter())
 	default:
 		return apperror.BadRequest("请指定要重新处理的表情包")
 	}
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, CountResponse{Count: n})
+	return c.JSON(http.StatusOK, res)
 }
 
 type IDsRequest struct {

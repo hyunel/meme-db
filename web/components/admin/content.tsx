@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import { Eye, Images, ListChecks, RotateCw, ScanSearch, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,6 +38,17 @@ const kindOptions = [
   ['lottie', 'Lottie'],
 ] as const
 const kindLabel: Record<MediaKind, string> = { image: '静态图', gif: 'GIF', video: '视频', lottie: 'Lottie' }
+const jobOptions = [
+  ['analyze_meme', '重新识别'],
+  ['embed_clip', '重建 CLIP 向量'],
+  ['embed_text', '重建文本向量'],
+] as const
+type Job = (typeof jobOptions)[number][0]
+const jobHint: Record<Job, string> = {
+  analyze_meme: '调用识别服务（VLM）重新生成描述、标签与全部向量，每个表情包调用一次；处理期间显示为排队中或处理中。',
+  embed_clip: '只重算图像的 CLIP 向量，不调用 VLM，不影响搜索；跳过尚未处理完成的表情包。',
+  embed_text: '用已有识别结果重算文本向量，不调用 VLM，不影响搜索；跳过尚未处理完成的表情包。',
+}
 
 type Pending = { kind: 'retry'; ids: string[] } | { kind: 'retryFilter' } | { kind: 'retryAll' } | { kind: 'delete'; memes: Meme[] } | null
 
@@ -51,6 +62,8 @@ export function AdminContent() {
   const [range, setRange] = useState<RangeKey>('all')
   const from = useMemo(() => rangeStart(range), [range])
   const [pending, setPending] = useState<Pending>(null)
+  const [job, setJob] = useState<Job>('analyze_meme')
+  const router = useRouter()
 
   const filter = { q: dq, status: status === 'all' ? '' : status, visibility: vis === 'all' ? '' : vis, kind: kind === 'all' ? '' : kind, from }
   const paging = usePaging(JSON.stringify(filter))
@@ -61,11 +74,15 @@ export function AdminContent() {
   const selected = rows.filter((m) => sel.ids.has(m.id))
 
   const reprocess = async (body: object) => {
-    const { count } = await api<{ count: number }>('/admin/memes/reprocess', { method: 'POST', json: body })
+    const { count, batch_id } = await api<{ count: number; batch_id: string }>('/admin/memes/reprocess', { method: 'POST', json: { ...body, job } })
     await refresh()
-    toast.success(`已将 ${count} 个表情包加入处理队列`, { description: count ? undefined : '排队中或处理中的表情包会被跳过' })
+    toast.success(`已将 ${count} 个表情包加入处理队列`, {
+      description: count ? undefined : job === 'analyze_meme' ? '排队中或处理中的表情包会被跳过' : '只处理已处理完成的表情包',
+      action: count ? { label: '查看进度', onClick: () => router.push(`/admin/tasks?batch=${batch_id}`) } : undefined,
+    })
     sel.clear()
   }
+  const retryScope = pending?.kind === 'retry' ? ` ${pending.ids.length} 个` : pending?.kind === 'retryFilter' ? `当前筛选下的全部 ${total} 个` : '全站所有'
 
   const columns: Column<Meme>[] = [
     {
@@ -178,21 +195,18 @@ export function AdminContent() {
       </BulkBar>
 
       <ConfirmDialog
-        open={pending?.kind === 'retry' || pending?.kind === 'retryFilter'}
+        open={pending?.kind === 'retry' || pending?.kind === 'retryFilter' || pending?.kind === 'retryAll'}
         onOpenChange={(o) => !o && setPending(null)}
-        title="重新处理"
-        description={`将重新处理${pending?.kind === 'retry' ? ` ${pending.ids.length} 个` : `当前筛选下的全部 ${total} 个`}表情包，处理期间它们会显示为排队中或处理中。`}
-        confirmLabel="重新处理"
-        onConfirm={() => (pending?.kind === 'retry' ? reprocess({ ids: pending.ids }) : reprocess({ filter }))}
-      />
-      <ConfirmDialog
-        open={pending?.kind === 'retryAll'}
-        onOpenChange={(o) => !o && setPending(null)}
-        title="全量重新处理"
-        description="将重新处理全站所有表情包，可能耗时较长，并会为每个表情包调用一次识别服务。期间新上传的表情包会优先处理。"
-        confirmLabel="开始全量处理"
-        onConfirm={() => reprocess({ filter: {} })}
-      />
+        title={pending?.kind === 'retryAll' ? '全量重新处理' : '重新处理'}
+        description={`将处理${retryScope}表情包，作为一个批次在任务管理中显示进度；新上传的表情包会优先处理。`}
+        confirmLabel={jobOptions.find(([v]) => v === job)?.[1]}
+        onConfirm={() => (pending?.kind === 'retry' ? reprocess({ ids: pending.ids }) : reprocess({ filter: pending?.kind === 'retryAll' ? {} : filter }))}
+      >
+        <div className="flex flex-col gap-2">
+          <FilterSelect value={job} onChange={setJob} options={jobOptions} label="处理内容" className="w-full" />
+          <p className="text-sm text-pretty text-muted-foreground">{jobHint[job]}</p>
+        </div>
+      </ConfirmDialog>
       <ConfirmDialog
         open={pending?.kind === 'delete'}
         onOpenChange={(o) => !o && setPending(null)}

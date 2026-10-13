@@ -223,6 +223,8 @@ export type TaskState = 'pending' | 'retrying' | 'running' | 'completed' | 'fail
 export interface Task {
   id: string
   parent_task_id: string | null
+  /** Shared by the tasks an admin queued together. */
+  batch_id: string | null
   job_type: string
   payload: Record<string, unknown>
   status: TaskStatus
@@ -250,6 +252,21 @@ export interface TaskAttempt {
 
 export interface TaskDetail extends Task {
   runs: Task[]
+}
+
+/** How far the tasks an admin queued together have got. */
+export interface TaskBatch {
+  id: string
+  job_type: string
+  created_at: string
+  /** Once none of its tasks is left to run. */
+  finished_at: string | null
+  total: number
+  /** Waiting retries included. */
+  pending: number
+  running: number
+  completed: number
+  failed: number
 }
 
 export interface TaskTypeCounts {

@@ -21,6 +21,7 @@ type TaskFilterParams struct {
 	RangeQuery
 	States    []string `query:"state" json:"state" validate:"max=5,dive,oneof=pending retrying running completed failed"`
 	JobType   string   `query:"type" json:"type" validate:"max=50"`
+	Batch     string   `query:"batch" json:"batch" validate:"omitempty,uuid"`
 	Query     string   `query:"q" json:"q" validate:"max=100"`
 	Recurring bool     `query:"recurring" json:"recurring"`
 	Sort      string   `query:"sort" json:"sort" validate:"omitempty,oneof=due created finished"`
@@ -30,6 +31,7 @@ func (p TaskFilterParams) filter() service.TaskFilter {
 	return service.TaskFilter{
 		States:    p.States,
 		JobType:   p.JobType,
+		Batch:     p.Batch,
 		Query:     strings.TrimSpace(p.Query),
 		Created:   p.timeRange(),
 		Recurring: p.Recurring,
@@ -137,4 +139,37 @@ func (h *TaskHandler) Cancel(c echo.Context) error {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+type ListBatchesRequest struct {
+	Limit int `query:"limit" validate:"omitempty,min=1,max=50"` // Defaults to 5
+}
+
+func (h *TaskHandler) Batches(c echo.Context) error {
+	var req ListBatchesRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	if req.Limit == 0 {
+		req.Limit = 5
+	}
+
+	batches, err := h.taskService.Batches(c.Request().Context(), req.Limit)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, batches)
+}
+
+func (h *TaskHandler) CancelBatch(c echo.Context) error {
+	var req TaskRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	n, err := h.taskService.CancelBatch(c.Request().Context(), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, CountResponse{Count: n})
 }

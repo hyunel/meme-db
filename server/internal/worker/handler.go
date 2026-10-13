@@ -11,6 +11,11 @@ type TaskHandler interface {
 	Handle(ctx context.Context, task *model.Task) error
 }
 
+// HandlerFunc handles a job type with a function.
+type HandlerFunc func(ctx context.Context, task *model.Task) error
+
+func (f HandlerFunc) Handle(ctx context.Context, task *model.Task) error { return f(ctx, task) }
+
 // FailureHandler runs once a task has permanently failed; on error the task stays leased and it runs again later.
 type FailureHandler interface {
 	OnFailure(ctx context.Context, task *model.Task, cause error) error

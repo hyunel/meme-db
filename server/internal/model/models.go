@@ -80,6 +80,7 @@ type Task struct {
 	ID           string          `json:"id" db:"id"`
 	OwnerID      *string         `json:"owner_id" db:"owner_id"`
 	ParentTaskID *string         `json:"parent_task_id" db:"parent_task_id"`
+	BatchID      *string         `json:"batch_id" db:"batch_id"`
 	JobType      string          `json:"job_type" db:"job_type"`
 	Payload      json.RawMessage `json:"payload" db:"payload"`
 	Status       string          `json:"status" db:"status"`
@@ -104,6 +105,19 @@ type TaskAttempt struct {
 	At    time.Time `json:"at"`
 	OK    bool      `json:"ok"`
 	Error *string   `json:"error"`
+}
+
+// TaskBatch is how far the tasks an admin queued together have got.
+type TaskBatch struct {
+	ID         string     `json:"id" db:"id"`
+	JobType    string     `json:"job_type" db:"job_type"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	FinishedAt *time.Time `json:"finished_at" db:"finished_at"` // Once none of its tasks is left to run
+	Total      int        `json:"total" db:"total"`
+	Pending    int        `json:"pending" db:"pending"` // Waiting retries included
+	Running    int        `json:"running" db:"running"`
+	Completed  int        `json:"completed" db:"completed"`
+	Failed     int        `json:"failed" db:"failed"`
 }
 
 type TaskTypeCounts struct {
