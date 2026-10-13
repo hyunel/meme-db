@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class LocalVLM(VLMModel):
+    MAX_PIXELS = 1280 * 32 * 32  # Per image: Qwen3-VL makes a token of each 32x32 patch, so a screenshot could take thousands
+    MAX_NEW_TOKENS = 1024  # A caption runs a few hundred; transformers would otherwise stop after 20
+
     def __init__(self, config: ModelConfig):
         self.model = None
         self.processor = None
@@ -26,6 +29,7 @@ class LocalVLM(VLMModel):
             model_id,
             trust_remote_code=True
         )
+        self.processor.image_processor.size["longest_edge"] = self.MAX_PIXELS  # Qwen-VL reads its pixel cap from here
 
         model = AutoModelForImageTextToText.from_pretrained(
             model_id,
@@ -60,5 +64,6 @@ class LocalVLM(VLMModel):
                 self.model,
                 outlines.grammars.json
             ),
-            do_sample=False
+            do_sample=False,
+            max_new_tokens=self.MAX_NEW_TOKENS
         )

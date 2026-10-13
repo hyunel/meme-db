@@ -4,6 +4,7 @@ concurrency: 8
 vlm:
   # Change it according to your GPU memory capacity
   batch_size: 4
+  dtype: bfloat16  # For a local model
 
   # Change it according to your API rate limits
   concurrency: 8
