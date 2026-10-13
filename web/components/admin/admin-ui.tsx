@@ -129,7 +129,9 @@ export function ExpandableText({ text, max = 40 }: { text: string; max?: number 
   const [open, setOpen] = useState(false)
   if (text.length <= max) return <span>{text}</span>
   return (
-    <span>
+    // Table cells don't wrap, and errors hold long unbroken paths: the full text wraps anywhere, at about the width it
+    // had folded, so it neither widens its table nor gets squeezed by a table already wider than the page
+    <span className={cn(open && 'block min-w-56 whitespace-normal wrap-anywhere')}>
       {open ? text : `${text.slice(0, max)}…`}{' '}
       <button type="button" className="text-xs font-medium underline underline-offset-2" onClick={() => setOpen(!open)}>
         {open ? '收起' : '展开'}
