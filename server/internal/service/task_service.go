@@ -47,7 +47,7 @@ func (s *TaskService) Get(ctx context.Context, id string) (*TaskDetail, error) {
 		return nil, err
 	}
 	if task == nil {
-		return nil, apperror.NotFound("任务不存在")
+		return nil, apperror.NotFound("task_not_found", "task not found")
 	}
 	runs, err := s.repo.Task.Runs(ctx, id, 50)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *TaskService) RetryMatching(ctx context.Context, f repository.TaskFilter
 func (s *TaskService) RunNow(ctx context.Context, id string) error {
 	ok, err := s.queue.RunNow(ctx, id)
 	if err == nil && !ok {
-		err = apperror.BadRequest("只有排队中的任务可以立即执行")
+		err = apperror.BadRequest("task_run_not_queued", "only a queued task can be run now")
 	}
 	return err
 }
@@ -80,7 +80,7 @@ func (s *TaskService) RunNow(ctx context.Context, id string) error {
 func (s *TaskService) Cancel(ctx context.Context, id string) error {
 	ok, err := s.queue.Cancel(ctx, id)
 	if err == nil && !ok {
-		err = apperror.BadRequest("只有排队中的任务可以取消")
+		err = apperror.BadRequest("task_cancel_not_queued", "only a queued task can be cancelled")
 	}
 	return err
 }
@@ -92,7 +92,7 @@ func (s *TaskService) Batches(ctx context.Context, limit int) ([]*model.TaskBatc
 func (s *TaskService) CancelBatch(ctx context.Context, id string) (int, error) {
 	n, err := s.queue.CancelBatch(ctx, id)
 	if err == nil && n == 0 {
-		err = apperror.BadRequest("批次中没有排队中的任务")
+		err = apperror.BadRequest("batch_none_queued", "the batch has no queued task")
 	}
 	return n, err
 }

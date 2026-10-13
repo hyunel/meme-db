@@ -60,7 +60,7 @@ func (s *AssetService) UploadConfig() UploadConfig {
 
 func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string, error) {
 	if fileHeader.Size > int64(s.cfg.MaxSizeMB*1024*1024) {
-		return "", apperror.BadRequest(fmt.Sprintf("文件超过 %g MB 的大小限制", s.cfg.MaxSizeMB))
+		return "", apperror.BadRequest("file_too_large", fmt.Sprintf("the file exceeds the %g MB limit", s.cfg.MaxSizeMB)).With("max_mb", s.cfg.MaxSizeMB)
 	}
 
 	file, err := fileHeader.Open()
@@ -78,7 +78,7 @@ func (s *AssetService) ValidateUpload(fileHeader *multipart.FileHeader) (string,
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 
 	if !slices.ContainsFunc(s.cfg.AllowedTypes, func(rule string) bool { return matchesType(rule, mime, ext) }) {
-		return "", apperror.BadRequest("不支持的文件类型：" + mime)
+		return "", apperror.BadRequest("unsupported_file_type", "unsupported file type: "+mime).With("type", mime)
 	}
 	return mime, nil
 }
@@ -208,14 +208,14 @@ func (s *AssetService) sign(assetID string) string {
 
 func (s *AssetService) Content(ctx context.Context, assetID, token string) (*model.Asset, string, error) {
 	if !hmac.Equal([]byte(token), []byte(s.sign(assetID))) {
-		return nil, "", apperror.Unauthorized("无效的访问令牌")
+		return nil, "", apperror.Unauthorized("invalid_asset_token", "invalid file access token")
 	}
 	asset, err := s.repo.Asset.Get(ctx, assetID)
 	if err != nil {
 		return nil, "", err
 	}
 	if asset == nil {
-		return nil, "", apperror.NotFound("文件不存在")
+		return nil, "", apperror.NotFound("file_not_found", "file not found")
 	}
 	return asset, filepath.Join(s.cfg.StoragePath, asset.StoragePath), nil
 }

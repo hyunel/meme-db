@@ -1,4 +1,5 @@
 import { mutate } from 'swr'
+import { errorMessage } from './errors'
 
 const TOKEN_KEY = 'memedb:token'
 
@@ -22,6 +23,8 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly field?: string,
+    /** The API's stable error code. */
+    readonly code?: string,
   ) {
     super(message)
   }
@@ -70,7 +73,7 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
   if (!res.ok) {
     const data = await res.json().catch(() => null)
     if (res.status === 401 && token) onUnauthorized()
-    throw new ApiError(res.status, data?.error ?? `请求失败（${res.status}）`, data?.field)
+    throw new ApiError(res.status, errorMessage(data) ?? data?.error ?? `请求失败（${res.status}）`, data?.field, data?.code)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }

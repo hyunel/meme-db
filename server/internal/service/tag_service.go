@@ -231,7 +231,7 @@ func (s *TagService) Rename(ctx context.Context, id, name string) error {
 			return err
 		}
 		if owner != "" && owner != id {
-			return apperror.Conflict("已存在同名标签，请改用合并")
+			return apperror.Conflict("tag_name_taken", "a tag of that name exists; merge them instead")
 		}
 		if err := r.Tag.Rename(ctx, id, name); err != nil {
 			return err
@@ -247,7 +247,7 @@ func (s *TagService) SetHidden(ctx context.Context, id string, hidden bool) erro
 
 func (s *TagService) Merge(ctx context.Context, sourceIDs []string, targetID string) error {
 	if slices.Contains(sourceIDs, targetID) {
-		return apperror.BadRequest("目标标签不能是被合并的标签")
+		return apperror.BadRequest("merge_into_source", "the target tag cannot be one of those merged")
 	}
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
 		names, err := r.Tag.UserTags(ctx, append(slices.Clone(sourceIDs), targetID))
@@ -255,7 +255,7 @@ func (s *TagService) Merge(ctx context.Context, sourceIDs []string, targetID str
 			return err
 		}
 		if len(names) > 0 {
-			return apperror.BadRequest(fmt.Sprintf("「%s」是用户添加的标签，不参与合并", names[0]))
+			return apperror.BadRequest("user_tag_not_mergeable", fmt.Sprintf("%q is a tag users started, which never merges", names[0])).With("tag", names[0])
 		}
 		return r.Tag.Merge(ctx, sourceIDs, targetID)
 	})

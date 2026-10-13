@@ -90,7 +90,7 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id, share 
 		}
 	}
 	if len(memes) == 0 {
-		return nil, apperror.NotFound("表情包不存在或尚未公开")
+		return nil, apperror.NotFound("meme_not_found", "meme not found or not public")
 	}
 	return memes[0], nil
 }
@@ -102,7 +102,7 @@ func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag, c
 		score, id, _ := strings.Cut(cursor, "_")
 		n, err := strconv.Atoi(score)
 		if err != nil || uuid.Validate(id) != nil {
-			return nil, apperror.BadRequest("游标无效")
+			return nil, apperror.BadRequest("invalid_cursor", "invalid cursor")
 		}
 		after = &repository.Popularity{Score: n, AssetID: id}
 	}
@@ -195,7 +195,7 @@ type searchSession struct {
 func (s *MemeService) Search(ctx context.Context, params SearchParams) (*model.Feed[model.SearchResult], error) {
 	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Admin: params.Viewer.IsAdmin(), Mine: params.Mine}
 	if params.Mine && params.Viewer.UserID == "" {
-		return nil, apperror.Unauthorized("登录后才能搜索我的库")
+		return nil, apperror.Unauthorized("library_search_unauthenticated", "sign in to search your library")
 	}
 	if params.Mine && params.FolderID != "" {
 		folder, err := s.repo.Node.Get(ctx, params.FolderID)
@@ -203,7 +203,7 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) (*model.F
 			return nil, err
 		}
 		if folder == nil || folder.OwnerID != params.Viewer.UserID || folder.Type != model.NodeTypeFolder {
-			return nil, apperror.NotFound("文件夹不存在")
+			return nil, apperror.NotFound("folder_not_found", "folder not found")
 		}
 		scope.FolderPath = &folder.Path
 	}
@@ -224,7 +224,7 @@ func (s *MemeService) SearchPage(ctx context.Context, viewer *rbac.Identity, cur
 	page, err := strconv.Atoi(p)
 	session, ok := s.sessions.Get(id)
 	if err != nil || !ok || session.viewerID != viewer.UserID {
-		return nil, apperror.NotFound("搜索已过期，请重新搜索")
+		return nil, apperror.NotFound("search_expired", "the search expired; search again")
 	}
 	return s.searchPage(ctx, viewer, id, session, page)
 }
@@ -402,7 +402,7 @@ func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id strin
 		return err
 	}
 	if len(meme.Entries) == 0 && !viewer.IsAdmin() {
-		return apperror.Forbidden("只能重试自己库中的表情包")
+		return apperror.Forbidden("retry_not_in_library", "you can only retry memes in your library")
 	}
 	_, err = s.queue(ctx, model.JobAnalyzeMeme, []string{id}, repository.TaskOpts{Priority: model.PriorityNormal}, model.ProcessingStatusFailed)
 	return err

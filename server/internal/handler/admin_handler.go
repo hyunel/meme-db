@@ -213,11 +213,11 @@ func (h *AdminHandler) ReprocessMemes(c echo.Context) error {
 		res.Count, res.BatchID, err = h.memeService.Rebuild(c.Request().Context(), job, req.IDs)
 	case req.Filter != nil:
 		if err := c.Validate(req.Filter); err != nil {
-			return apperror.BadRequest("请求参数无效：" + err.Error())
+			return invalidRequest(err)
 		}
 		res.Count, res.BatchID, err = h.memeService.RebuildMatching(c.Request().Context(), job, req.Filter.filter())
 	default:
-		return apperror.BadRequest("请指定要重新处理的表情包")
+		return apperror.BadRequest("no_memes_given", "name the memes to reprocess")
 	}
 	if err != nil {
 		return err
@@ -263,7 +263,7 @@ func (h *AdminHandler) SearchDebug(c echo.Context) error {
 
 	req.Query = strings.TrimSpace(req.Query)
 	if req.Query == "" && req.Image == nil {
-		return apperror.BadRequest("请输入关键词或添加图片")
+		return apperror.BadRequest("empty_search", "enter a query or add an image")
 	}
 
 	params := service.SearchDebugParams{Viewer: rbac.GetIdentity(c), Query: req.Query, Public: req.Scope == "public", Track: req.Track, Limits: map[string]int{}}
@@ -330,7 +330,7 @@ func (h *AdminHandler) UpdateTag(c echo.Context) error {
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len([]rune(name)) > 50 {
-			return apperror.BadRequest("标签需为 1–50 个字符")
+			return apperror.BadRequest("invalid_tag", "a tag must be 1–50 characters")
 		}
 		if err := h.tagService.Rename(ctx, req.ID, name); err != nil {
 			return err
@@ -438,7 +438,7 @@ func (h *AdminHandler) Logs(c echo.Context) error {
 	for _, a := range req.Attrs {
 		k, v, ok := strings.Cut(a, "=")
 		if !ok || k == "" {
-			return apperror.BadRequest("信息条件需为 key=value 形式")
+			return apperror.BadRequest("invalid_attr_filter", "attribute conditions must be key=value")
 		}
 		f.Attrs[k] = v
 	}

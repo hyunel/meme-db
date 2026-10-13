@@ -20,7 +20,7 @@ func (f fakeAuth) Authenticate(_ context.Context, credential string) (*rbac.Iden
 	if id, ok := f[credential]; ok {
 		return id, nil
 	}
-	return nil, apperror.Unauthorized("API 令牌无效、已过期或已被撤销")
+	return nil, apperror.Unauthorized("invalid_token", "the API token is invalid, expired or revoked")
 }
 
 // newServer mirrors the route groups of cmd/api.

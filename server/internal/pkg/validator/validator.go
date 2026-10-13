@@ -3,6 +3,7 @@ package validator
 import (
 	"reflect"
 	"regexp"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -17,6 +18,15 @@ type CustomValidator struct {
 
 func New() *CustomValidator {
 	v := validator.New()
+	// Errors name fields as requests do
+	v.RegisterTagNameFunc(func(f reflect.StructField) string {
+		for _, tag := range []string{"json", "query", "form", "param"} {
+			if name, _, _ := strings.Cut(f.Tag.Get(tag), ","); name != "" && name != "-" {
+				return name
+			}
+		}
+		return f.Name
+	})
 	_ = v.RegisterValidation("username", func(fl validator.FieldLevel) bool {
 		return usernameRegex.MatchString(fl.Field().String())
 	})

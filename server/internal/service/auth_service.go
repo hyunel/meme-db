@@ -52,10 +52,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 		return "", nil, err
 	}
 	if user == nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
-		return "", nil, apperror.Unauthorized("邮箱或密码错误")
+		return "", nil, apperror.Unauthorized("invalid_credentials", "wrong email or password")
 	}
 	if user.Status != model.UserStatusActive {
-		return "", nil, apperror.Forbidden("该账号已被禁用，请联系管理员")
+		return "", nil, apperror.Forbidden("account_disabled", "the account is disabled; contact an admin")
 	}
 
 	token, err := s.newSession(user.ID)
@@ -68,7 +68,7 @@ func (s *AuthService) GetUser(ctx context.Context, id string) (*model.User, erro
 		return nil, err
 	}
 	if user == nil {
-		return nil, apperror.Unauthorized("用户不存在")
+		return nil, apperror.Unauthorized("user_not_found", "user not found")
 	}
 	return user, nil
 }
@@ -79,7 +79,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, current, next 
 		return err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(current)) != nil {
-		return apperror.BadRequest("当前密码不正确").OnField("current_password")
+		return apperror.BadRequest("wrong_password", "the current password is wrong").OnField("current_password")
 	}
 	return setPassword(ctx, s.repo.Repos, userID, next)
 }
@@ -117,7 +117,7 @@ func (s *AuthService) tokenIdentity(ctx context.Context, secret string) (*rbac.I
 		}
 	}
 	if user == nil {
-		return nil, apperror.Unauthorized("API 令牌无效、已过期或已被撤销")
+		return nil, apperror.Unauthorized("invalid_token", "the API token is invalid, expired or revoked")
 	}
 
 	// Recorded to the minute, sparing a write per request.
@@ -166,7 +166,7 @@ func (s *AuthService) ListTokens(ctx context.Context, viewer *rbac.Identity) ([]
 // CreateToken returns the token with its secret, which is never shown again; a zero ttl never expires.
 func (s *AuthService) CreateToken(ctx context.Context, viewer *rbac.Identity, name, scope string, ttl time.Duration) (*model.APIToken, string, error) {
 	if scope == rbac.ScopeAdmin && viewer.Role != rbac.RoleAdmin {
-		return nil, "", apperror.Forbidden("只有管理员可以创建管理权限的令牌").OnField("scope")
+		return nil, "", apperror.Forbidden("admin_scope_forbidden", "only admins can create admin-scoped tokens").OnField("scope")
 	}
 
 	secret := tokenPrefix + rand.Text()
@@ -182,7 +182,7 @@ func (s *AuthService) CreateToken(ctx context.Context, viewer *rbac.Identity, na
 func (s *AuthService) DeleteToken(ctx context.Context, viewer *rbac.Identity, id string) error {
 	ok, err := s.repo.Token.Delete(ctx, viewer.UserID, id)
 	if err == nil && !ok {
-		err = apperror.NotFound("令牌不存在")
+		err = apperror.NotFound("token_not_found", "token not found")
 	}
 	return err
 }
@@ -196,13 +196,13 @@ func createUser(ctx context.Context, repo *repository.Provider, username, email,
 	email = strings.ToLower(strings.TrimSpace(email))
 	if existing, err := repo.User.GetByUsername(ctx, username); err != nil || existing != nil {
 		if err == nil {
-			err = apperror.Conflict("该用户名已被使用").OnField("username")
+			err = apperror.Conflict("username_taken", "the username is taken").OnField("username")
 		}
 		return nil, err
 	}
 	if existing, err := repo.User.GetByEmail(ctx, email); err != nil || existing != nil {
 		if err == nil {
-			err = apperror.Conflict("该邮箱已注册").OnField("email")
+			err = apperror.Conflict("email_taken", "the email is already registered").OnField("email")
 		}
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func createUser(ctx context.Context, repo *repository.Provider, username, email,
 	}
 	user, err := repo.User.Create(ctx, username, email, string(hash), role)
 	if repository.IsUniqueViolation(err) {
-		return nil, apperror.Conflict("用户名或邮箱已被使用")
+		return nil, apperror.Conflict("account_taken", "the username or email is taken")
 	}
 	return user, err
 }

@@ -80,6 +80,7 @@ MemeDB/
 ### Error Handling
 - **Service Layer**: Services should return `apperror` types (from `server/internal/pkg/apperror`) for expected errors (e.g., `apperror.NotFound`, `apperror.BadRequest`). Unexpected internal errors should be returned as raw `error`, which will default to an Internal Server Error (500) in the handler.
 - **Handler Layer**: Handlers should simply return the error from the service layer. Avoid manual `c.JSON` or `c.String` for error responses.
+- **Language**: Backend text is English: an `apperror` carries a stable snake_case code and an English message, with params for the values it mentions (`apperror.BadRequest("file_too_large", "...").With("max_mb", n)`); logs and task errors are English too. The web words errors in Chinese by code in `web/lib/errors.ts`, so add each new code there.
 
 ### Web
 - Read `web/AGENTS.md` first: this Next.js version differs from what you may know.

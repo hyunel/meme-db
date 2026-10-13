@@ -123,7 +123,7 @@ func (h *AuthHandler) CreateToken(c echo.Context) error {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" || len([]rune(name)) > 50 {
-		return apperror.BadRequest("名称需为 1–50 个字符").OnField("name")
+		return apperror.BadRequest("invalid_name", "a name must be 1–50 characters").OnField("name").With("max", 50)
 	}
 
 	ttl := time.Duration(req.ExpiresInDays) * 24 * time.Hour

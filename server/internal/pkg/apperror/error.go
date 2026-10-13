@@ -5,11 +5,14 @@ import (
 	"net/http"
 )
 
+// AppError is an error clients see. Messages are English; clients word errors in their own language by Code.
 type AppError struct {
-	Code    int    `json:"-"`
-	Message string `json:"error"`
-	Field   string `json:"field,omitempty"` // The request field the error is about, if any
-	Err     error  `json:"-"`
+	Status  int            `json:"-"`
+	Code    string         `json:"code"` // Stable, snake_case
+	Message string         `json:"error"`
+	Field   string         `json:"field,omitempty"`  // The request field the error is about, if any
+	Params  map[string]any `json:"params,omitempty"` // Values the message mentions
+	Err     error          `json:"-"`
 }
 
 func (e *AppError) Error() string {
@@ -24,30 +27,39 @@ func (e *AppError) OnField(field string) *AppError {
 	return e
 }
 
-func New(code int, message string, err error) *AppError {
+func (e *AppError) With(key string, value any) *AppError {
+	if e.Params == nil {
+		e.Params = make(map[string]any)
+	}
+	e.Params[key] = value
+	return e
+}
+
+func New(status int, code, message string, err error) *AppError {
 	return &AppError{
+		Status:  status,
 		Code:    code,
 		Message: message,
 		Err:     err,
 	}
 }
 
-func BadRequest(message string) *AppError {
-	return New(http.StatusBadRequest, message, nil)
+func BadRequest(code, message string) *AppError {
+	return New(http.StatusBadRequest, code, message, nil)
 }
 
-func Unauthorized(message string) *AppError {
-	return New(http.StatusUnauthorized, message, nil)
+func Unauthorized(code, message string) *AppError {
+	return New(http.StatusUnauthorized, code, message, nil)
 }
 
-func Forbidden(message string) *AppError {
-	return New(http.StatusForbidden, message, nil)
+func Forbidden(code, message string) *AppError {
+	return New(http.StatusForbidden, code, message, nil)
 }
 
-func NotFound(message string) *AppError {
-	return New(http.StatusNotFound, message, nil)
+func NotFound(code, message string) *AppError {
+	return New(http.StatusNotFound, code, message, nil)
 }
 
-func Conflict(message string) *AppError {
-	return New(http.StatusConflict, message, nil)
+func Conflict(code, message string) *AppError {
+	return New(http.StatusConflict, code, message, nil)
 }

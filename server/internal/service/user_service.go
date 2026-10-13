@@ -37,7 +37,7 @@ func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 		return nil, err
 	}
 	if user == nil {
-		return nil, apperror.NotFound("用户不存在")
+		return nil, apperror.NotFound("user_not_found", "user not found")
 	}
 	stats, err := s.repo.User.Stats(ctx, id)
 	if err != nil {
@@ -101,7 +101,7 @@ func (s *UserService) Delete(ctx context.Context, actor *rbac.Identity, id strin
 
 func checkTarget(ctx context.Context, r *repository.Repos, actor *rbac.Identity, id string) (*model.User, error) {
 	if id == actor.UserID {
-		return nil, apperror.Forbidden("不能修改或删除自己的账号")
+		return nil, apperror.Forbidden("own_account", "you cannot change or delete your own account")
 	}
 	return find(ctx, r, id)
 }
@@ -112,7 +112,7 @@ func keepAnAdmin(ctx context.Context, r *repository.Repos, target *model.User) e
 	}
 	n, err := r.User.LockActiveAdmins(ctx) // Serializes concurrent demotions
 	if err == nil && n <= 1 {
-		err = apperror.Forbidden("不能移除最后一个管理员")
+		err = apperror.Forbidden("last_admin", "the last admin cannot be removed")
 	}
 	return err
 }
@@ -120,7 +120,7 @@ func keepAnAdmin(ctx context.Context, r *repository.Repos, target *model.User) e
 func find(ctx context.Context, r *repository.Repos, id string) (*model.User, error) {
 	user, err := r.User.Get(ctx, id)
 	if err == nil && user == nil {
-		err = apperror.NotFound("用户不存在")
+		err = apperror.NotFound("user_not_found", "user not found")
 	}
 	return user, err
 }

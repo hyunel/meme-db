@@ -80,7 +80,7 @@ func (s *StatsService) Inference(ctx context.Context, rng string) (json.RawMessa
 
 	data, err := s.inference.Metrics(ctx, r[0], r[1])
 	if err != nil {
-		return nil, apperror.New(http.StatusServiceUnavailable, "推理服务无响应", err)
+		return nil, apperror.New(http.StatusServiceUnavailable, "inference_unavailable", "the inference service is not responding", err)
 	}
 	return data, nil
 }

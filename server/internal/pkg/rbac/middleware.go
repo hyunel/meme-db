@@ -46,9 +46,9 @@ func RequireAuth() echo.MiddlewareFunc {
 			identity := GetIdentity(c)
 			switch method := c.Request().Method; {
 			case identity == nil || identity.UserID == "":
-				return apperror.Unauthorized("请先登录")
+				return apperror.Unauthorized("unauthenticated", "sign in first")
 			case identity.Scope == ScopeRead && method != http.MethodGet && method != http.MethodHead:
-				return apperror.Forbidden("该 API 令牌为只读权限")
+				return apperror.Forbidden("token_read_only", "this API token is read-only")
 			}
 			return next(c)
 		}
@@ -60,7 +60,7 @@ func RequireSession() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if GetIdentity(c).Scope != "" {
-				return apperror.Forbidden("API 令牌不能用于此操作，请登录网页后操作")
+				return apperror.Forbidden("session_required", "API tokens cannot do this; sign in on the web")
 			}
 			return next(c)
 		}
@@ -75,9 +75,9 @@ func RequireAdmin() echo.MiddlewareFunc {
 				return next(c)
 			}
 			if identity.Role == RoleAdmin {
-				return apperror.Forbidden("该 API 令牌没有管理权限")
+				return apperror.Forbidden("token_not_admin", "this API token lacks the admin scope")
 			}
-			return apperror.Forbidden("没有访问权限")
+			return apperror.Forbidden("forbidden", "access denied")
 		}
 	}
 }

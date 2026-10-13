@@ -40,7 +40,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 	}
 	req.Query = strings.TrimSpace(req.Query)
 	if req.Query == "" && req.Image == nil {
-		return apperror.BadRequest("请输入关键词或添加图片")
+		return apperror.BadRequest("empty_search", "enter a query or add an image")
 	}
 
 	params := service.SearchParams{
@@ -84,7 +84,7 @@ func (h *MemeHandler) SearchPage(c echo.Context) error {
 
 func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, error) {
 	if fileHeader.Size > maxSearchImageBytes {
-		return nil, apperror.BadRequest("图片不能超过 10 MB")
+		return nil, apperror.BadRequest("search_image_too_large", "the image must be at most 10 MB").With("max_mb", 10)
 	}
 	file, err := fileHeader.Open()
 	if err != nil {
@@ -97,7 +97,7 @@ func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, e
 		return nil, err
 	}
 	if !strings.HasPrefix(http.DetectContentType(data), "image/") {
-		return nil, apperror.BadRequest("仅支持按图片搜索")
+		return nil, apperror.BadRequest("search_not_image", "only images can be searched by")
 	}
 	return &inference.ImageInput{Data: data, Format: filepath.Ext(fileHeader.Filename)}, nil
 }
@@ -190,7 +190,7 @@ func (h *MemeHandler) Retry(c echo.Context) error {
 func tagName(name string) (string, error) {
 	name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(name), "#"))
 	if name == "" || len([]rune(name)) > 50 {
-		return "", apperror.BadRequest("标签需为 1–50 个字符")
+		return "", apperror.BadRequest("invalid_tag", "a tag must be 1–50 characters")
 	}
 	return name, nil
 }

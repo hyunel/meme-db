@@ -56,7 +56,7 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 			return nil, err
 		}
 		if folder == nil || folder.OwnerID != viewer.UserID {
-			return nil, apperror.NotFound("文件夹不存在")
+			return nil, apperror.NotFound("folder_not_found", "folder not found")
 		}
 	}
 	return s.view(ctx, viewer, folder)
@@ -113,7 +113,7 @@ func (s *LibraryService) publicFolder(ctx context.Context, viewer *rbac.Identity
 		return nil, err
 	}
 	if folder == nil {
-		return nil, apperror.NotFound("合集不存在或未公开")
+		return nil, apperror.NotFound("collection_not_found", "collection not found or not public")
 	}
 	return folder, nil
 }
@@ -162,7 +162,7 @@ func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id, s
 		}
 	}
 	if len(entries) == 0 {
-		return nil, apperror.NotFound("表情包不存在或未公开")
+		return nil, apperror.NotFound("meme_not_found", "meme not found or not public")
 	}
 	return &EntryDetail{Entry: entries[0], Owner: model.UserRef{ID: file.Owner.ID, Username: file.Owner.Username}, Ancestors: file.Ancestors}, nil
 }
@@ -268,10 +268,10 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path, tags []string, file *multipart.FileHeader, caption string) (*EntryDetail, bool, error) {
 	if caption != "" {
 		if !viewer.IsAdmin() {
-			return nil, false, apperror.Forbidden("仅管理员可上传识别结果").OnField("vlm_json")
+			return nil, false, apperror.Forbidden("vlm_json_admin_only", "only admins may upload VLM output").OnField("vlm_json")
 		}
 		if _, err := inference.ParseVLMOutput(caption); err != nil {
-			return nil, false, apperror.BadRequest("识别结果需为 JSON 对象").OnField("vlm_json")
+			return nil, false, apperror.BadRequest("invalid_vlm_json", "VLM output must be a JSON object").OnField("vlm_json")
 		}
 	}
 	labels, err := s.tags.Resolve(ctx, tags, true)
@@ -285,9 +285,9 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 			case err != nil:
 				return err
 			case folder == nil:
-				return apperror.NotFound("目标文件夹不存在")
+				return apperror.NotFound("target_folder_not_found", "target folder not found")
 			case folder.Type != model.NodeTypeFolder:
-				return apperror.Conflict("同一位置已存在同名文件").OnField("path")
+				return apperror.Conflict("path_blocked_by_file", "a file of that name is in the way").OnField("path")
 			}
 			parentID = &folder.ID
 			return nil
@@ -431,7 +431,7 @@ func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, 
 		return nil, err
 	}
 	if folder.OwnerID == viewer.UserID {
-		return nil, apperror.BadRequest("文件夹已在我的库中") // Its owner copies it with Copy, which keeps it out of itself
+		return nil, apperror.BadRequest("folder_already_owned", "the folder is already in your library") // Its owner copies it with Copy, which keeps it out of itself
 	}
 	var copyID string
 	err = s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
@@ -469,7 +469,7 @@ func (s *LibraryService) prepareTransfer(ctx context.Context, ownerID string, id
 		}
 		for _, n := range nodes {
 			if target.Path == n.Path || strings.HasPrefix(target.Path, n.Path+".") {
-				return nil, nil, apperror.BadRequest("不能把文件夹移动或复制到它自身或子文件夹中")
+				return nil, nil, apperror.BadRequest("folder_into_itself", "a folder cannot go into itself or its subfolders")
 			}
 		}
 	}
@@ -512,7 +512,7 @@ func (s *LibraryService) inFolder(ctx context.Context, ownerID string, folderID 
 func create(ctx context.Context, r *repository.Repos, node *model.Node) (*model.Node, error) {
 	created, err := r.Node.Create(ctx, node)
 	if err == nil && created == nil {
-		err = apperror.NotFound("目标文件夹不存在")
+		err = apperror.NotFound("target_folder_not_found", "target folder not found")
 	}
 	return created, nameConflict(err)
 }
@@ -520,7 +520,7 @@ func create(ctx context.Context, r *repository.Repos, node *model.Node) (*model.
 // nameConflict reports a name its siblings already have, which the database refuses, as a conflict.
 func nameConflict(err error) error {
 	if repository.IsUniqueViolation(err) {
-		return apperror.Conflict("同一位置已存在同名项目")
+		return apperror.Conflict("name_taken", "an item of that name is already there")
 	}
 	return err
 }
@@ -531,7 +531,7 @@ func (s *LibraryService) ownedNodes(ctx context.Context, ownerID string, ids []s
 		return nil, err
 	}
 	if len(nodes) != len(slices.Compact(slices.Sorted(slices.Values(ids)))) {
-		return nil, apperror.NotFound("部分项目不存在或已被删除")
+		return nil, apperror.NotFound("items_not_found", "some items were not found or were deleted")
 	}
 	return nodes, nil
 }
@@ -542,7 +542,7 @@ func (s *LibraryService) ownedFolder(ctx context.Context, ownerID, id string) (*
 		return nil, err
 	}
 	if node == nil || node.OwnerID != ownerID || node.Type != model.NodeTypeFolder {
-		return nil, apperror.NotFound("文件夹不存在")
+		return nil, apperror.NotFound("folder_not_found", "folder not found")
 	}
 	return node, nil
 }
@@ -671,7 +671,7 @@ func (s *LibraryService) activeUser(ctx context.Context, username string) (*mode
 		return nil, err
 	}
 	if user == nil || user.Status != model.UserStatusActive {
-		return nil, apperror.NotFound("用户不存在")
+		return nil, apperror.NotFound("user_not_found", "user not found")
 	}
 	return user, nil
 }

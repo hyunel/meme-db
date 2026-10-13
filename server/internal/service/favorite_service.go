@@ -83,7 +83,7 @@ func (s *FavoriteService) Add(ctx context.Context, viewer *rbac.Identity, kind, 
 		return err
 	}
 	if len(folders) == 0 {
-		return apperror.NotFound("合集不存在或未公开")
+		return apperror.NotFound("collection_not_found", "collection not found or not public")
 	}
 	return s.repo.Favorite.Add(ctx, viewer.UserID, nil, &id)
 }

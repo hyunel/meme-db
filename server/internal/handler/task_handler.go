@@ -105,11 +105,11 @@ func (h *TaskHandler) Retry(c echo.Context) error {
 		n, err = h.taskService.Retry(c.Request().Context(), req.IDs)
 	case req.Filter != nil:
 		if err := c.Validate(req.Filter); err != nil {
-			return apperror.BadRequest("请求参数无效：" + err.Error())
+			return invalidRequest(err)
 		}
 		n, err = h.taskService.RetryMatching(c.Request().Context(), req.Filter.filter())
 	default:
-		return apperror.BadRequest("请指定要重试的任务")
+		return apperror.BadRequest("no_tasks_given", "name the tasks to retry")
 	}
 	if err != nil {
 		return err

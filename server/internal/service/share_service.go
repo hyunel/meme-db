@@ -32,7 +32,7 @@ func (s *ShareService) CreateMemeLink(ctx context.Context, viewer *rbac.Identity
 		return nil, err
 	}
 	if len(meme.Entries) == 0 {
-		return nil, apperror.Forbidden("只能为我的库中的表情包创建私密链接")
+		return nil, apperror.Forbidden("share_not_in_library", "private links are for memes in your library")
 	}
 	return s.repo.Share.Create(ctx, viewer.UserID, id, "")
 }

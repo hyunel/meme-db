@@ -22,7 +22,7 @@ func NewLibraryHandler(libraryService *service.LibraryService) *LibraryHandler {
 func nodeName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 255 {
-		return "", apperror.BadRequest("名称需为 1–255 个字符").OnField("name")
+		return "", apperror.BadRequest("invalid_name", "a name must be 1–255 characters").OnField("name").With("max", 255)
 	}
 	return name, nil
 }
@@ -91,7 +91,7 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 	for i, segment := range path {
 		name, err := nodeName(segment)
 		if err != nil {
-			return apperror.BadRequest("路径中的文件夹名称需为 1–255 个字符").OnField("path")
+			return apperror.BadRequest("invalid_path", "folder names in the path must be 1–255 characters").OnField("path")
 		}
 		path[i] = name
 	}

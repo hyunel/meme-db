@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/service"
 	"github.com/labstack/echo/v4"
@@ -10,12 +13,22 @@ import (
 
 func BindAndValidate(c echo.Context, req any) error {
 	if err := c.Bind(req); err != nil {
-		return apperror.BadRequest("请求参数无效")
+		return apperror.BadRequest("malformed_request", "malformed request")
 	}
 	if err := c.Validate(req); err != nil {
-		return apperror.BadRequest("请求参数无效：" + err.Error())
+		return invalidRequest(err)
 	}
 	return nil
+}
+
+// invalidRequest names the first field that failed validation, by its name in the request, and the rule it broke.
+func invalidRequest(err error) error {
+	var errs validator.ValidationErrors
+	if !errors.As(err, &errs) || len(errs) == 0 {
+		return apperror.BadRequest("invalid_request", "invalid request")
+	}
+	fe := errs[0]
+	return apperror.BadRequest("invalid_request", fmt.Sprintf("%s fails the %s rule", fe.Field(), fe.Tag())).OnField(fe.Field()).With("rule", fe.Tag())
 }
 
 type PageQuery struct {
