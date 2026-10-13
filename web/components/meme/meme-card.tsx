@@ -50,7 +50,7 @@ export const MemeCard = memo(function MemeCard({
             {kind}
           </span>
         )}
-        {meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-2 left-2" />}
+        {meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-2 left-2 bg-background/80" />}
         {similarity !== undefined && (
           <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-brand px-2 py-0.5 text-xs font-medium text-brand-foreground tabular-nums">
             {Math.round(similarity * 100)}% 相似

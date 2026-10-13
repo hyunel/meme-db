@@ -2,7 +2,8 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   output: 'standalone', // Self-contained server for the Docker image
-  // The browser talks to the API through this origin; BACKEND_BASE is the API server.
+  allowedDevOrigins: ['10.*.*.*'],
+
   rewrites: async () => [
     {
       source: '/api/:path*',

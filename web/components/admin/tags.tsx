@@ -47,7 +47,7 @@ export function AdminTags() {
 
   return (
     <>
-      <AdminPageHeader title="标签管理" description="VLM 与用户给出的不同写法会自动归入含义相同的标签" />
+      <AdminPageHeader title="标签管理" description="识别生成的标签，VLM 给出的不同写法会自动归入含义相同的标签" />
       {view === 'all' ? <TagList tabs={tabs} /> : <TagDuplicates tabs={tabs} groups={duplicates.data} />}
     </>
   )

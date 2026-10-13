@@ -18,7 +18,7 @@ vlm:
   provider: "openai"
   # openai:
   #   model: "gemini-2.5-flash"
-  #   api_key: "${GEMINI_API_KEY}"  # Environment variable
+  #   api_key: "${GEMINI_API_KEY}"
   #   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
   # openai:
@@ -26,14 +26,14 @@ vlm:
   #   api_key: "${OPENAI_API_KEY}"
 
   # openai:
-  #   model: "glm-4v-flash"
-  #   api_key: "${GLM_API_KEY}"
-  #   base_url: "https://open.bigmodel.cn/api/paas/v4/"
+  #   model: "deepseek-flash"
+  #   api_key: "${DEEPSEEK_API_KEY}"
+  #   base_url: "https://api.deepseek.com/v1"
 
   openai:
-    model: "deepseek-flash"
-    api_key: "${DEEPSEEK_API_KEY}"  # Environment variable
-    base_url: "https://api.deepseek.com/v1"
+    model: "${VLM_MODEL}"
+    api_key: "${VLM_API_KEY}"
+    base_url: "${VLM_BASE_URL}"
 
 # fp32 would double the memory and run 2-3x slower. SigLIP matches it exactly in float16;
 # the Qwen models were trained in bfloat16.

@@ -116,7 +116,7 @@ const TileBody = memo(function TileBody({ item }: { item: Item }) {
             {item.folder.item_count} 项
           </span>
         )}
-        {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5" />}
+        {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5 bg-background/80" />}
       </div>
       <div className="flex min-w-0 flex-col gap-1 px-0.5">
         <span className="truncate text-sm font-medium">{node.name}</span>
