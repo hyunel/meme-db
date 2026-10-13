@@ -85,6 +85,14 @@ func (s *TaskService) Cancel(ctx context.Context, id string) error {
 	return err
 }
 
+func (s *TaskService) Batch(ctx context.Context, id string) (*model.Task, error) {
+	batch, err := s.repo.Task.Batch(ctx, id)
+	if err == nil && batch == nil {
+		err = apperror.NotFound("batch_not_found", "batch not found")
+	}
+	return batch, err
+}
+
 func (s *TaskService) CancelBatch(ctx context.Context, id string) (int, error) {
 	n, err := s.queue.CancelBatch(ctx, id)
 	if err == nil && n == 0 {

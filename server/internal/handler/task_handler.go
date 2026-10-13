@@ -143,6 +143,19 @@ func (h *TaskHandler) Cancel(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+func (h *TaskHandler) GetBatch(c echo.Context) error {
+	var req TaskRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	batch, err := h.taskService.Batch(c.Request().Context(), req.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, batch)
+}
+
 func (h *TaskHandler) CancelBatch(c echo.Context) error {
 	var req TaskRequest
 	if err := BindAndValidate(c, &req); err != nil {

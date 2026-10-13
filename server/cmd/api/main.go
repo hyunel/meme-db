@@ -297,6 +297,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 
 	admin.GET("/tasks", h.task.List)
 	admin.GET("/tasks/summary", h.task.Summary)
+	admin.GET("/tasks/batches/:id", h.task.GetBatch)
 	admin.POST("/tasks/batches/:id/cancel", h.task.CancelBatch)
 	admin.GET("/tasks/:id", h.task.Get)
 	admin.POST("/tasks/retry", h.task.Retry)

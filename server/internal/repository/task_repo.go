@@ -194,6 +194,11 @@ func (r *TaskRepository) CancelBatch(ctx context.Context, batchID, reason string
 	return collectAll[model.Task](r.db.Query(ctx, query, batchID, reason))
 }
 
+// Batch is the row standing for a batch, as a grouped list has it.
+func (r *TaskRepository) Batch(ctx context.Context, id string) (*model.Task, error) {
+	return collectOne[model.Task](r.db.Query(ctx, `SELECT * FROM (`+tasksByBatch+`) t WHERE id = $1::uuid AND batch IS NOT NULL`, id))
+}
+
 func (r *TaskRepository) RunNow(ctx context.Context, id string) (bool, error) {
 	query := `
 		UPDATE jobs.tasks SET run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP

@@ -59,6 +59,7 @@ const messages: Record<string, string | ((p: Params, field?: string) => string)>
   user_tag_not_mergeable: (p) => `「${p.tag}」是用户添加的标签，不参与合并`,
 
   task_not_found: '任务不存在',
+  batch_not_found: '批次不存在',
   task_run_not_queued: '只有排队中的任务可以立即执行',
   task_cancel_not_queued: '只有排队中的任务可以取消',
   batch_none_queued: '批次中没有排队中的任务',

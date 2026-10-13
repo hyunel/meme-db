@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, Ban, Eye, ListChecks, Play, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, Ban, Eye, ListChecks, Play, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -130,7 +130,7 @@ function useTaskActions() {
 function BatchProgress({ counts: b }: { counts: TaskBatchCounts }) {
   const done = b.completed + b.failed
   return (
-    <div className="flex w-36 flex-col gap-1">
+    <div className="flex w-28 flex-col gap-1">
       <Progress value={(done / b.total) * 100} aria-label="批次进度" />
       <span className="text-xs text-muted-foreground tabular-nums">
         {done} / {b.total}
@@ -139,21 +139,97 @@ function BatchProgress({ counts: b }: { counts: TaskBatchCounts }) {
   )
 }
 
+function StateChips({ states, selected, onToggle }: { states: TaskState[]; selected: TaskState[]; onToggle: (st: TaskState) => void }) {
+  return states.map((st) => {
+    const on = selected.includes(st)
+    return (
+      <button
+        key={st}
+        type="button"
+        aria-pressed={on}
+        onClick={() => onToggle(st)}
+        className={cn('h-9 rounded-full border px-3.5 text-sm transition-colors', on ? 'border-foreground bg-foreground text-background' : 'bg-background text-muted-foreground hover:text-foreground')}
+      >
+        {taskStateLabel[st]}
+      </button>
+    )
+  })
+}
+
+/** The columns of a task table; a batch's row shows its progress beneath its status and links to its page. */
+function taskColumns(now: number): Column<Task>[] {
+  return [
+    {
+      key: 'id',
+      header: '任务',
+      mobile: 'title',
+      cell: (t) => (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <Link href={t.batch ? `/admin/tasks/batches/${t.id}` : `/admin/tasks/${t.id}`} className="truncate font-medium hover:underline">
+            {jobLabel(t.job_type)}
+            {t.batch && ' · 批次'}
+          </Link>
+          <CopyId value={t.id} className="text-muted-foreground" />
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: '状态',
+      cell: (t) => (
+        <div className="flex flex-col items-start gap-1.5">
+          <TaskStatusBadge status={taskState(t)} />
+          {t.batch && <BatchProgress counts={t.batch} />}
+        </div>
+      ),
+    },
+    {
+      key: 'attempts',
+      header: '尝试',
+      className: 'w-20',
+      cell: (t) => (t.batch ? <span className="text-muted-foreground">—</span> : <span className="tabular-nums">{t.attempts}/{t.max_attempts} 次</span>),
+    },
+    { key: 'scheduled', header: '计划执行', cell: (t) => <span className="tabular-nums whitespace-nowrap">{formatDateTime(t.run_at)}</span> },
+    { key: 'started', header: '开始', mobile: 'hidden', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.started_at ? formatDateTime(t.started_at) : '—'}</span> },
+    { key: 'finished', header: '结束', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.finished_at ? formatDateTime(t.finished_at) : '—'}</span> },
+    { key: 'time', header: '耗时', cell: (t) => <TimeCell task={t} now={now} /> },
+    {
+      key: 'error',
+      header: '错误',
+      className: 'max-w-56',
+      cell: (t) =>
+        t.batch?.failed ? (
+          <span className="text-destructive tabular-nums">失败 {t.batch.failed} 个</span>
+        ) : t.error_message ? (
+          <span className="text-destructive">
+            <ExpandableText text={t.error_message} max={24} />
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: 'recurring',
+      header: '周期',
+      cell: (t) => (t.cron ? <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{t.cron}</span> : <span className="text-muted-foreground">—</span>),
+    },
+  ]
+}
+
 function TimeCell({ task, now }: { task: Task; now: number }) {
   const state = taskState(task)
   if (state === 'running' && task.started_at) return <span className="tabular-nums text-info">已运行 {formatDuration(Math.max(0, now - toMs(task.started_at)))}</span>
-  if (state === 'retrying') return <span className="tabular-nums">下次 {formatRelative(task.run_at)}</span>
   if (task.started_at && task.finished_at) return <span className="tabular-nums">{formatDuration(toMs(task.finished_at) - toMs(task.started_at))}</span>
   return <span className="text-muted-foreground">—</span>
 }
 
-function TaskActionItems({ task, now, actions, onViewBatch }: { task: Task; now: number; actions: ReturnType<typeof useTaskActions>; onViewBatch: (id: string) => void }) {
+function TaskActionItems({ task, now, actions }: { task: Task; now: number; actions: ReturnType<typeof useTaskActions> }) {
   if (task.batch)
     return (
       <>
-        <DropdownMenuItem onClick={() => onViewBatch(task.id)}>
-          <ListChecks />
-          查看任务
+        <DropdownMenuItem render={<Link href={`/admin/tasks/batches/${task.id}`} />}>
+          <Eye />
+          查看详情
         </DropdownMenuItem>
         {task.batch.failed > 0 && (
           <DropdownMenuItem onClick={() => actions.retryBatch(task)}>
@@ -212,7 +288,6 @@ export function AdminTasks() {
   const from = useMemo(() => rangeStart(range), [range])
   const [recurringOnly, setRecurringOnly] = useState(false)
   const [q, setQ] = useState(params.get('meme') ?? '')
-  const [batch, setBatch] = useState(params.get('batch') ?? '')
   const dq = useDebounced(q.trim())
   const [sort, setSort] = useState<SortKey>(view === 'history' ? 'finished' : 'due')
   const [autoByView, setAutoByView] = useState({ active: true, history: false })
@@ -233,14 +308,13 @@ export function AdminTasks() {
   const filter = {
     state: effectiveStates.length ? effectiveStates : viewStates,
     type: type === 'all' ? '' : type,
-    batch,
     q: dq,
     from,
     recurring: recurringOnly,
     sort,
   }
   const paging = usePaging(JSON.stringify(filter))
-  // A batch shows as one row, until it is picked out to list its tasks.
+  // Each batch shows as one row.
   const tasks = useSWR<Page<Task>>(`/admin/tasks${qs({ ...filter, group: true, ...paging.query })}`, { refreshInterval, keepPreviousData: true })
   const { data: summary = [] } = useSWR<TaskTypeCounts[]>('/admin/tasks/summary', { refreshInterval })
 
@@ -258,58 +332,7 @@ export function AdminTasks() {
 
   const toggleState = (st: TaskState) => setStates((cur) => (cur.includes(st) ? cur.filter((x) => x !== st) : [...cur, st]))
 
-  const columns: Column<Task>[] = [
-    {
-      key: 'id',
-      header: '任务',
-      mobile: 'title',
-      cell: (t) => (
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {t.batch ? (
-            <button type="button" onClick={() => setBatch(t.id)} className="truncate text-left font-medium hover:underline">
-              {jobLabel(t.job_type)} · 批次 {t.batch.total} 个
-            </button>
-          ) : (
-            <Link href={`/admin/tasks/${t.id}`} className="truncate font-medium hover:underline">
-              {jobLabel(t.job_type)}
-            </Link>
-          )}
-          <CopyId value={t.id} className="text-muted-foreground" />
-        </div>
-      ),
-    },
-    { key: 'status', header: '状态', cell: (t) => <TaskStatusBadge status={taskState(t)} /> },
-    {
-      key: 'attempts',
-      header: '尝试',
-      className: 'w-20',
-      cell: (t) => (t.batch ? <span className="text-muted-foreground">—</span> : <span className="tabular-nums">{t.attempts}/{t.max_attempts} 次</span>),
-    },
-    { key: 'scheduled', header: '计划执行', cell: (t) => <span className="tabular-nums whitespace-nowrap">{formatDateTime(t.run_at)}</span> },
-    { key: 'started', header: '开始', mobile: 'hidden', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.started_at ? formatDateTime(t.started_at) : '—'}</span> },
-    { key: 'finished', header: '结束', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.finished_at ? formatDateTime(t.finished_at) : '—'}</span> },
-    { key: 'time', header: '耗时 / 进度', cell: (t) => (t.batch ? <BatchProgress counts={t.batch} /> : <TimeCell task={t} now={now} />) },
-    {
-      key: 'error',
-      header: '错误',
-      className: 'max-w-56',
-      cell: (t) =>
-        t.batch?.failed ? (
-          <span className="text-destructive tabular-nums">失败 {t.batch.failed} 个</span>
-        ) : t.error_message ? (
-          <span className="text-destructive">
-            <ExpandableText text={t.error_message} max={24} />
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: 'recurring',
-      header: '周期',
-      cell: (t) => (t.cron ? <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{t.cron}</span> : <span className="text-muted-foreground">—</span>),
-    },
-  ]
+  const columns = taskColumns(now)
 
   return (
     <>
@@ -360,12 +383,6 @@ export function AdminTasks() {
           <FilterSelect value={type} onChange={setType} options={typeOptions} label="任务类型" />
           <FilterSelect value={range} onChange={setRange} options={rangeOptions} label="创建时间" />
           <FilterSelect value={sort} onChange={setSort} options={sortOptions} label="排序" />
-          {batch && (
-            <Button variant="outline" className="h-10 md:h-9" onClick={() => setBatch('')} aria-label="不再只看此批次">
-              批次 {batch.slice(-8)}
-              <X aria-hidden />
-            </Button>
-          )}
           <div className="flex h-10 items-center gap-2 md:h-9">
             <Switch id="recurring-only" checked={recurringOnly} onCheckedChange={setRecurringOnly} />
             <Label htmlFor="recurring-only" className="font-normal whitespace-nowrap">
@@ -375,20 +392,7 @@ export function AdminTasks() {
         </Toolbar>
 
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按状态筛选（可多选）">
-          {viewStates.map((st) => {
-            const on = effectiveStates.includes(st)
-            return (
-              <button
-                key={st}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleState(st)}
-                className={cn('h-9 rounded-full border px-3.5 text-sm transition-colors', on ? 'border-foreground bg-foreground text-background' : 'bg-background text-muted-foreground hover:text-foreground')}
-              >
-                {taskStateLabel[st]}
-              </button>
-            )
-          })}
+          <StateChips states={viewStates} selected={effectiveStates} onToggle={toggleState} />
           {canRetryAll && !!failedInFilter?.total && (
             <Button variant="outline" className="ml-auto h-9" onClick={() => actions.retryAll(failedFilter, failedInFilter.total)}>
               <RotateCw aria-hidden />
@@ -407,7 +411,7 @@ export function AdminTasks() {
         selected={sel.ids}
         onSelectedChange={sel.set}
         empty={<EmptyState icon={ListChecks} title="没有符合条件的任务" description="试试调整筛选条件或切换视图。" className="border-0" />}
-        actions={(t) => <TaskActionItems task={t} now={now} actions={actions} onViewBatch={setBatch} />}
+        actions={(t) => <TaskActionItems task={t} now={now} actions={actions} />}
       />
       <Pagination paging={paging} total={tasks.data?.total ?? 0} />
 
@@ -578,6 +582,112 @@ export function AdminTaskDetail({ id }: { id: string }) {
                   )}
                 </aside>
               </div>
+            </>
+          )
+        }}
+      </Loadable>
+      {actions.dialogs}
+    </>
+  )
+}
+
+/* --------------------------------- batch ---------------------------------- */
+
+export function AdminBatchDetail({ id }: { id: string }) {
+  const batch = useSWR<Task>(`/admin/tasks/batches/${id}`, { refreshInterval: (b) => (b?.batch && b.batch.pending + b.batch.running ? 3000 : 0) })
+  const active = Boolean(batch.data?.batch && batch.data.batch.pending + batch.data.batch.running)
+  const now = useNow(active, 1000)
+  const actions = useTaskActions()
+  const [states, setStates] = useState<TaskState[]>([])
+  const paging = usePaging(states.join())
+  const tasks = useSWR<Page<Task>>(`/admin/tasks${qs({ batch: id, state: states, sort: 'created', ...paging.query })}`, {
+    refreshInterval: active ? 3000 : 0,
+    keepPreviousData: true,
+  })
+  const toggleState = (st: TaskState) => setStates((cur) => (cur.includes(st) ? cur.filter((x) => x !== st) : [...cur, st]))
+
+  return (
+    <>
+      <Link href="/admin/tasks" className="-mb-2 flex h-10 w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="size-4" aria-hidden />
+        任务列表
+      </Link>
+      <Loadable result={batch} notFound={{ title: '批次不存在', description: '该批次的任务可能已被清理。' }}>
+        {(b) => {
+          const c = b.batch ?? { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }
+          const done = c.completed + c.failed
+          const info: [string, React.ReactNode][] = [
+            ['批次标识', <CopyId key="id" value={b.id} />],
+            ['状态', <TaskStatusBadge key="st" status={taskState(b)} />],
+            ['创建时间', formatDateTime(b.created_at)],
+            ['开始时间', b.started_at ? formatDateTime(b.started_at) : '—'],
+            ['结束时间', b.finished_at ? formatDateTime(b.finished_at) : '—'],
+            ['耗时', <TimeCell key="t" task={b} now={now} />],
+          ]
+          return (
+            <>
+              <AdminPageHeader
+                title={`${jobLabel(b.job_type)} · 批次`}
+                description={`共 ${c.total} 个任务`}
+                actions={
+                  <>
+                    {c.failed > 0 && (
+                      <Button className="h-10 md:h-9" onClick={() => actions.retryBatch(b)}>
+                        <RotateCw aria-hidden />
+                        重试失败（{c.failed}）
+                      </Button>
+                    )}
+                    {c.pending > 0 && (
+                      <Button variant="outline" className="h-10 text-destructive md:h-9" onClick={() => actions.cancelBatch(b)}>
+                        <Ban aria-hidden />
+                        取消排队（{c.pending}）
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+
+              <section aria-label="批次概况" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="已完成" value={c.completed} />
+                <StatCard label="失败" value={c.failed} tone={c.failed ? 'danger' : undefined} />
+                <StatCard label="执行中" value={c.running} />
+                <StatCard label="排队中" value={c.pending} hint="含等待重试" />
+              </section>
+
+              <section className="rounded-xl border bg-card p-4 sm:p-5">
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <h2 className="text-sm font-medium">进度</h2>
+                  <span className="text-sm tabular-nums">
+                    {done} / {c.total}
+                  </span>
+                </div>
+                <Progress value={c.total ? (done / c.total) * 100 : 0} aria-label="批次进度" />
+                <dl className="mt-5 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+                  {info.map(([k, v]) => (
+                    <div key={k} className="flex min-w-0 flex-col gap-0.5">
+                      <dt className="text-xs text-muted-foreground">{k}</dt>
+                      <dd className="min-w-0">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section aria-label="批次中的任务" className="flex flex-col gap-3">
+                <h2 className="text-sm font-medium">批次中的任务</h2>
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按状态筛选（可多选）">
+                  <StateChips states={allStates} selected={states} onToggle={toggleState} />
+                </div>
+                <DataList
+                  rows={tasks.data?.items ?? []}
+                  loading={!tasks.data}
+                  columns={taskColumns(now)}
+                  getId={(t) => t.id}
+                  rowLabel={(t) => t.id}
+                  empty={<EmptyState icon={ListChecks} title="没有符合条件的任务" description="试试调整状态筛选。" className="border-0" />}
+                  actions={(t) => <TaskActionItems task={t} now={now} actions={actions} />}
+                />
+                <Pagination paging={paging} total={tasks.data?.total ?? 0} />
+              </section>
             </>
           )
         }}

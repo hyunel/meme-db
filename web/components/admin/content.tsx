@@ -78,7 +78,7 @@ export function AdminContent() {
     await refresh()
     toast.success(`已将 ${count} 个表情包加入处理队列`, {
       description: count ? undefined : job === 'analyze_meme' ? '排队中或处理中的表情包会被跳过' : '只处理已处理完成的表情包',
-      action: count ? { label: '查看进度', onClick: () => router.push(`/admin/tasks?batch=${batch_id}`) } : undefined,
+      action: count ? { label: '查看进度', onClick: () => router.push(`/admin/tasks/batches/${batch_id}`) } : undefined,
     })
     sel.clear()
   }
