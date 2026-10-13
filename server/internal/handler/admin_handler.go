@@ -154,15 +154,17 @@ func (h *AdminHandler) DeleteUser(c echo.Context) error {
 
 type MemeFilterParams struct {
 	RangeQuery
-	Query      string `query:"q" json:"q" validate:"max=100"`
-	Status     string `query:"status" json:"status" validate:"omitempty,oneof=pending processing success failed"`
-	Visibility string `query:"visibility" json:"visibility" validate:"omitempty,oneof=public private"`
-	Kind       string `query:"kind" json:"kind" validate:"omitempty,oneof=image gif video lottie"`
+	Query      string   `query:"q" json:"q" validate:"max=100"`
+	Hashes     []string `query:"hash" json:"hash" validate:"max=100,dive,len=64,hexadecimal"` // SHA-256 of the files, the field repeated for each
+	Status     string   `query:"status" json:"status" validate:"omitempty,oneof=pending processing success failed"`
+	Visibility string   `query:"visibility" json:"visibility" validate:"omitempty,oneof=public private"`
+	Kind       string   `query:"kind" json:"kind" validate:"omitempty,oneof=image gif video lottie"`
 }
 
 func (p MemeFilterParams) filter() service.MemeFilter {
 	return service.MemeFilter{
 		Query:      strings.TrimSpace(p.Query),
+		Hashes:     p.Hashes,
 		Status:     p.Status,
 		Visibility: p.Visibility,
 		Kind:       p.Kind,

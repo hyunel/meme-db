@@ -221,7 +221,8 @@ func (r *MemeRepository) Popular(ctx context.Context, viewerID string, admin boo
 }
 
 type MemeFilter struct {
-	Query      string // Matches the meme ID
+	Query      string   // Matches the meme ID
+	Hashes     []string // Of the memes' files, SHA-256
 	Status     string
 	Visibility string // public | private
 	Kind       string // image | gif | video | lottie
@@ -239,6 +240,9 @@ func (r *MemeRepository) FilterIDs(ctx context.Context, f MemeFilter, page *Page
 	var w filter
 	if f.Query != "" {
 		w.where("a.id::text ILIKE " + w.arg("%"+f.Query+"%"))
+	}
+	if len(f.Hashes) > 0 {
+		w.where("a.file_hash = ANY(" + w.arg(f.Hashes) + "::text[])")
 	}
 	if f.Status != "" {
 		w.where("m.processing_status = " + w.arg(f.Status))
