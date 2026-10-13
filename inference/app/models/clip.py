@@ -1,9 +1,9 @@
-from typing import List, Dict, Callable
+from functools import partial
+from typing import List, Dict, Callable, Tuple
 import logging
 import torch
-from PIL import Image
 import torch.nn.functional as F
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, BatchFeature
 from .base import BaseModel
 from ..config import ModelType
 
@@ -28,25 +28,22 @@ class CLIPModel(BaseModel):
             self.get_image_features = torch.compile(self.get_image_features)
             self.get_text_features = torch.compile(self.get_text_features)
 
-    def get_image_embedding(self, images: List[Image.Image]) -> List[List[float]]:
-        inputs = self.processor(images=images, return_tensors="pt").to(self.config.clip.device)
-
+    def embed(self, get_features: Callable, inputs: BatchFeature) -> List[List[float]]:
         with torch.no_grad():
-            features = self.get_image_features(**inputs)
-            features = F.normalize(features, p=2, dim=1)
-            return features.float().cpu().numpy().tolist()
-
-    def get_text_embedding(self, texts: List[str]) -> List[List[float]]:
-        inputs = self.processor(text=texts, padding="max_length", return_tensors="pt").to(self.config.clip.device)
-
-        with torch.no_grad():
-            features = self.get_text_features(**inputs)
+            features = get_features(**inputs.to(self.config.clip.device))
             features = F.normalize(features, p=2, dim=1)
             return features.float().cpu().numpy().tolist()
 
     @property
-    def inference_methods(self) -> Dict[ModelType, Callable]:
+    def inference_methods(self) -> Dict[ModelType, Tuple[Callable, Callable]]:
         return {
-            ModelType.CLIP_IMAGE: self.get_image_embedding,
-            ModelType.CLIP_TEXT: self.get_text_embedding,
+            ModelType.CLIP_IMAGE: (
+                lambda images: self.processor(images=images, return_tensors="pt"),
+                partial(self.embed, self.get_image_features),
+            ),
+            ModelType.CLIP_TEXT: (
+                # SigLIP was trained on text padded to 64 tokens, also its position limit.
+                lambda texts: self.processor(text=texts, padding="max_length", truncation=True, max_length=64, return_tensors="pt"),
+                partial(self.embed, self.get_text_features),
+            ),
         }

@@ -1,4 +1,4 @@
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional, Tuple
 from abc import abstractmethod
 from PIL import Image
 from ..base import BaseModel
@@ -10,5 +10,5 @@ class VLMModel(BaseModel):
         pass
 
     @property
-    def inference_methods(self) -> Dict[ModelType, Callable]:
-        return {ModelType.VLM: self.generate_caption}
+    def inference_methods(self) -> Dict[ModelType, Tuple[Optional[Callable], Callable]]:
+        return {ModelType.VLM: (None, self.generate_caption)}

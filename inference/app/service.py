@@ -25,10 +25,11 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         configs = self.config.get_model_configs()
         for model_type, model in self.model_manager:
             config = configs[model_type]
-            for task_type, func in model.inference_methods.items():
+            for task_type, (prepare, func) in model.inference_methods.items():
                 if model.is_gpu:
                     self.schedulers[task_type] = BatchScheduler(
                         resource_manager=self.gpu_res,
+                        prepare_func=prepare,
                         process_func=func,
                         batch_size=config.batch_size,
                         max_latency=config.max_latency,

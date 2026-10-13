@@ -87,7 +87,7 @@ MemeDB/
 - Keep `lib/types.ts` in sync with the server's JSON, and the API reference in `components/api-docs.tsx` with the routes.
 
 ### Inference Service
-- Models subclass `BaseModel` and expose `inference_methods`. GPU models are batched by `BatchScheduler`; the others run on `SimpleScheduler` executor threads, so their code must be thread-safe.
+- Models subclass `BaseModel` and expose `inference_methods` as `(prepare, run)` pairs. GPU models are batched by `BatchScheduler`, which prepares a batch (tokenizing, preprocessing) on a CPU thread before it waits for the GPU; the others run on `SimpleScheduler` executor threads, so their code must be thread-safe.
 - The VLM in `models.yaml` may be a paid API: anything that triggers ingestion (uploads, reprocessing) costs money.
 
 ## Key Features

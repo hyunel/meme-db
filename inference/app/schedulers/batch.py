@@ -15,12 +15,14 @@ class BatchScheduler(Generic[T, R]):
     def __init__(
         self,
         resource_manager: ResourceManager,
-        process_func: Callable[[List[T]], List[R]],
+        process_func: Callable[[Any], List[R]],
         batch_size: int,
         max_latency: float,
+        prepare_func: Optional[Callable[[List[T]], Any]] = None,
     ):
         self.resource_manager = resource_manager
         self.process_func = process_func
+        self.prepare_func = prepare_func
         self.batch_size = batch_size
         self.max_latency = max_latency
 
@@ -115,12 +117,16 @@ class BatchScheduler(Generic[T, R]):
 
         error = None
         try:
+            if self.prepare_func:  # CPU work, kept out of the resource slot
+                inputs = await asyncio.get_running_loop().run_in_executor(None, self.prepare_func, inputs)
             results = await self.resource_manager.execute(self.process_func, inputs, batch_priority, on_start)
-            if len(results) != len(inputs):
-                raise RuntimeError(f"Batch processing returned {len(results)} results for {len(inputs)} inputs")
+            if len(results) != len(valid_batch):
+                raise RuntimeError(f"Batch processing returned {len(results)} results for {len(valid_batch)} inputs")
         except Exception as e:
             logger.error(f"Batch processing failed: {e}", exc_info=True)
             error = e
+            if not started:  # Failed while preparing
+                on_start()
         finally:
             if started:
                 self.metrics.finish([started - t.created_at for t in valid_batch], time.time() - started, error)

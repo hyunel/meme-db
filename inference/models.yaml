@@ -34,11 +34,16 @@ vlm:
     api_key: "${DEEPSEEK_API_KEY}"  # Environment variable
     base_url: "https://api.deepseek.com/v1"
 
+# fp32 would double the memory and run 2-3x slower. SigLIP matches it exactly in float16;
+# the Qwen models were trained in bfloat16.
 clip:
   batch_size: 64
+  dtype: float16
 
 embedding:
   batch_size: 16
+  dtype: bfloat16
 
 reranker:
   batch_size: 16
+  dtype: bfloat16

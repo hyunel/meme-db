@@ -1,16 +1,29 @@
 from typing import List, Tuple, Dict, Callable
 import logging
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BatchEncoding, DynamicCache
 from .base import BaseModel, DEFAULT_TASK
 from ..config import ModelType
 
 logger = logging.getLogger(__name__)
 
+
+class SharedPrefixCache(DynamicCache):
+    # Once frozen, puts the prefix it holds ahead of every row without storing the rows' own keys and values.
+    frozen = False
+
+    def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
+        if not self.frozen:
+            return super().update(key_states, value_states, layer_idx, cache_kwargs)
+        layer, rows = self.layers[layer_idx], key_states.shape[0]
+        return (torch.cat([layer.keys.expand(rows, -1, -1, -1), key_states], dim=-2),
+                torch.cat([layer.values.expand(rows, -1, -1, -1), value_states], dim=-2))
+
+
 class RerankerModel(BaseModel):
     PREFIX = "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n"
     SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-    MAX_LENGTH = 8192
+    MAX_LENGTH = 1024  # Documents are captions of a few hundred tokens; the cap bounds a batch's memory
 
     def _load_model(self) -> None:
         model_id = self.name = "Qwen/Qwen3-Reranker-0.6B"
@@ -31,26 +44,49 @@ class RerankerModel(BaseModel):
         self.prefix_tokens = self.tokenizer.encode(self.PREFIX, add_special_tokens=False)
         self.suffix_tokens = self.tokenizer.encode(self.SUFFIX, add_special_tokens=False)
 
-    def predict(self, items: List[Tuple[Tuple[str, str], str]]) -> List[float]:
-        prompts = [f'<Instruct>: {desc or DEFAULT_TASK}\n<Query>: {q}\n<Document>: {d}' for (q, d), desc in items]
+    def tokenize(self, items: List[Tuple[Tuple[str, str], str]]) -> List[Tuple[Tuple[int, ...], List[int], BatchEncoding]]:
+        # A search page reranks its documents against one query, so the prompt up to the document runs once for them.
+        groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = {}
+        for i, ((query, doc), desc) in enumerate(items):
+            groups.setdefault((query, desc), []).append((i, doc))
 
-        # The body is truncated to leave room for the chat template around it.
-        inputs = self.tokenizer(
-            prompts,
-            padding=False,
-            truncation='longest_first',
-            return_attention_mask=False,
-            max_length=self.MAX_LENGTH - len(self.prefix_tokens) - len(self.suffix_tokens)
-        )
-        inputs['input_ids'] = [self.prefix_tokens + ids + self.suffix_tokens for ids in inputs['input_ids']]
-        padded_inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt").to(self.config.reranker.device)
+        batches = []
+        for (query, desc), members in groups.items():
+            indices, docs = zip(*members)
+            # Split before the document's leading space, the prompt tokenizes as it would whole.
+            head = self.prefix_tokens + self.tokenizer.encode(f'<Instruct>: {desc or DEFAULT_TASK}\n<Query>: {query}\n<Document>:', add_special_tokens=False)
+            ids = self.tokenizer(
+                [' ' + doc for doc in docs],
+                add_special_tokens=False,
+                truncation=True,
+                max_length=self.MAX_LENGTH - len(head) - len(self.suffix_tokens),
+            )['input_ids']
+            batches.append((indices, head, self.tokenizer.pad({'input_ids': [x + self.suffix_tokens for x in ids]}, return_tensors='pt')))
+        return batches
 
+    def predict(self, batches: List[Tuple[Tuple[int, ...], List[int], BatchEncoding]]) -> List[float]:
+        device = self.config.reranker.device
+        scores = {}
         with torch.no_grad():
-            # Only the last position is scored; vocabulary logits for every position would take gigabytes per batch.
-            logits = self.model(**padded_inputs, logits_to_keep=1).logits[:, -1, :]
-            scores = torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1)
-            return torch.softmax(scores, dim=1)[:, 1].cpu().tolist()  # P("yes")
+            for indices, head, docs in batches:
+                cache = SharedPrefixCache()
+                self.model(torch.tensor([head], device=device), past_key_values=cache, use_cache=True, logits_to_keep=1)
+                cache.frozen = True
+
+                mask = docs['attention_mask'].to(device)
+                logits = self.model(
+                    input_ids=docs['input_ids'].to(device),
+                    attention_mask=torch.cat([mask.new_ones(len(indices), len(head)), mask], dim=1),
+                    # Left padding sits between the prefix and each document, so positions skip it.
+                    position_ids=len(head) + (mask.cumsum(1) - 1).clamp(min=0),
+                    past_key_values=cache,
+                    # Only the last position is scored; vocabulary logits for every position would take gigabytes per batch.
+                    logits_to_keep=1,
+                ).logits[:, -1, :]
+                yes = torch.softmax(torch.stack([logits[:, self.no_id], logits[:, self.yes_id]], dim=1), dim=1)[:, 1]
+                scores.update(zip(indices, yes.cpu().tolist()))  # P("yes")
+        return [scores[i] for i in range(len(scores))]
 
     @property
-    def inference_methods(self) -> Dict[ModelType, Callable]:
-        return {ModelType.RERANKER: self.predict}
+    def inference_methods(self) -> Dict[ModelType, Tuple[Callable, Callable]]:
+        return {ModelType.RERANKER: (self.tokenize, self.predict)}
