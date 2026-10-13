@@ -108,7 +108,8 @@ func matchesType(rule, mime, ext string) bool {
 	})
 }
 
-func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileHeader *multipart.FileHeader) (*model.Asset, error) {
+// CreateAsset stores a file and queues new content for analysis, which uses caption as the VLM's output when given.
+func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileHeader *multipart.FileHeader, caption string) (*model.Asset, error) {
 	mimeType, err := s.ValidateUpload(fileHeader)
 	if err != nil {
 		return nil, err
@@ -171,7 +172,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 		if err := r.Meme.Create(ctx, &model.MemeInfo{AssetID: asset.ID, ProcessingStatus: model.ProcessingStatusPending}); err != nil {
 			return fmt.Errorf("failed to create meme info stub: %w", err)
 		}
-		return enqueueAnalysis(ctx, r, model.PriorityHigh, asset.ID)
+		payload := AnalyzeMemePayload{AssetID: asset.ID, Caption: caption}
+		if err := r.Task.Enqueue(ctx, model.JobAnalyzeMeme, []any{payload}, repository.TaskOpts{Priority: model.PriorityHigh}); err != nil {
+			return fmt.Errorf("failed to enqueue analysis: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

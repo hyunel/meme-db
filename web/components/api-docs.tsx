@@ -39,7 +39,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
     endpoints: [
       ['GET', '/library', 'read', '库根目录，或以 folder_id 指定的文件夹'],
       ['GET', '/library/folders', 'read', '库中全部文件夹（id、parent_id、name），用于选择位置'],
-      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id，path 为放入其下的文件夹路径，如 猫/橘猫，缺少的逐级新建；tag 为我的标签，可重复传多个'],
+      ['POST', '/library/upload', 'write', '上传文件；表单字段 file、parent_id，path 为放入其下的文件夹路径，如 猫/橘猫，缺少的逐级新建；tag 为我的标签，可重复传多个；管理员可附 vlm_json，即离线生成的识别结果，入库时不再调用 VLM'],
       ['POST', '/library/entries', 'write', '把已有表情包加入库：{ meme_id, parent_id, share }，share 为打开它的私密链接令牌'],
       ['POST', '/library/folders', 'write', '新建文件夹：{ name, parent_id }'],
       ['POST', '/library/folders/{id}/save', 'write', '把他人的合集连同内容复制到库中：{ parent_id, share }，share 为打开它的私密链接令牌'],
@@ -204,6 +204,9 @@ export function ApiDocs() {
             上传后表情包进入识别队列，<Code>meme.status</Code> 依次为 pending、processing、success（或 failed），完成后即可被搜到；可轮询 <Code>GET /api/memes/{'{id}'}</Code> 查看进度。
           </li>
           <li>条目以上传的文件名命名，重名时自动追加序号；文件夹 ID 可在网页中打开文件夹后，从地址栏的 folder 参数获得。</li>
+          <li>
+            管理员（会话或管理权限令牌）可附 <Code>vlm_json</Code>：离线跑 VLM 得到的识别结果（JSON 对象），入库时直接使用、不再调用 VLM；文件已在库中时忽略。
+          </li>
         </Notes>
         <CodeBlock
           title="Shell"

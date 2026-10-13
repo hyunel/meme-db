@@ -79,6 +79,7 @@ type UploadRequest struct {
 	Path     string                `form:"path"` // Folders under the parent to put the file in, such as "a/b"
 	Tags     []string              `form:"tag"`  // The uploader's own tags, the field repeated for each
 	File     *multipart.FileHeader `form:"file" validate:"required"`
+	VLMJSON  string                `form:"vlm_json"` // The VLM's output for the file, made offline; admins only
 }
 
 func (h *LibraryHandler) Upload(c echo.Context) error {
@@ -102,7 +103,7 @@ func (h *LibraryHandler) Upload(c echo.Context) error {
 		req.Tags[i] = name
 	}
 
-	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), path, req.Tags, req.File)
+	entry, created, err := h.libraryService.Upload(c.Request().Context(), rbac.GetIdentity(c), optionalID(req.ParentID), path, req.Tags, req.File, req.VLMJSON)
 	if err != nil {
 		return err
 	}

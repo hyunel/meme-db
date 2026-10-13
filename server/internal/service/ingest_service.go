@@ -27,6 +27,7 @@ type Notifier interface {
 
 type AnalyzeMemePayload struct {
 	AssetID string `json:"asset_id"`
+	Caption string `json:"caption,omitempty"` // VLM output an admin uploaded with the file, used instead of captioning it
 }
 
 // enqueueAnalysis must run in the transaction that sets the memes pending, so a pending meme always has a task.
@@ -76,7 +77,7 @@ func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
 		return worker.Permanent(fmt.Errorf("asset not found: %s", payload.AssetID))
 	}
 
-	if err := s.analyze(ctx, asset); err != nil {
+	if err := s.analyze(ctx, asset, payload.Caption); err != nil {
 		// A missing file or a rejected image never recovers; anything else, even malformed VLM JSON, may.
 		if errors.Is(err, fs.ErrNotExist) || status.Code(err) == codes.InvalidArgument {
 			return worker.Permanent(err)
@@ -107,21 +108,28 @@ func (s *IngestService) setStatus(ctx context.Context, task *model.Task, status 
 	return s.repo.Meme.SetStatus(ctx, payload.AssetID, status, reason)
 }
 
-func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
+func (s *IngestService) analyze(ctx context.Context, asset *model.Asset, caption string) error {
 	fileBytes, err := os.ReadFile(filepath.Join(s.cfg.StoragePath, asset.StoragePath))
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	prompt := s.cfg.CaptionPrompt
+	if caption != "" {
+		prompt = "" // Captioned offline
+	}
 	res, err := s.inferClient.AnalyzeImage(ctx, inference.ImageInput{
 		Data:   fileBytes,
 		Format: asset.Extension,
-	}, s.cfg.CaptionPrompt)
+	}, prompt)
 	if err != nil {
-		return fmt.Errorf("failed to get image caption: %w", err)
+		return fmt.Errorf("failed to analyze image: %w", err)
+	}
+	if caption == "" {
+		caption = res.Caption
 	}
 
-	vlmOut, err := inference.ParseVLMOutput(res.Caption)
+	vlmOut, err := inference.ParseVLMOutput(caption)
 	if err != nil {
 		return fmt.Errorf("failed to parse VLM output: %w", err)
 	}
@@ -160,7 +168,7 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
 		err := r.Meme.Create(ctx, &model.MemeInfo{
 			AssetID:          asset.ID,
-			VLMJSON:          json.RawMessage(res.Caption),
+			VLMJSON:          json.RawMessage(caption),
 			OCRText:          &vlmOut.OCRText,
 			MetaphorVector:   &metaphorVec,
 			SemanticVector:   &semanticVec,

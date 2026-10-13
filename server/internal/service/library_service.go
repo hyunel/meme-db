@@ -10,6 +10,7 @@ import (
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
@@ -262,7 +263,17 @@ func (s *LibraryService) CreateFolder(ctx context.Context, viewer *rbac.Identity
 
 // Upload adds a file to the folder at path under the parent, making the folders missing on the way, and gives its meme the uploader's tags.
 // A folder of the same name is used as it is, so uploading a folder again merges into it.
-func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path, tags []string, file *multipart.FileHeader) (*EntryDetail, bool, error) {
+// Upload puts a file into the library; caption, the VLM's output for it made offline, is for admins only and
+// ignored for content already stored.
+func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, parentID *string, path, tags []string, file *multipart.FileHeader, caption string) (*EntryDetail, bool, error) {
+	if caption != "" {
+		if !viewer.IsAdmin() {
+			return nil, false, apperror.Forbidden("仅管理员可上传识别结果").OnField("vlm_json")
+		}
+		if _, err := inference.ParseVLMOutput(caption); err != nil {
+			return nil, false, apperror.BadRequest("识别结果需为 JSON 对象").OnField("vlm_json")
+		}
+	}
 	labels, err := s.tags.Resolve(ctx, tags, true)
 	if err != nil {
 		return nil, false, err
@@ -285,7 +296,7 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 			return nil, false, err
 		}
 	}
-	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file)
+	asset, err := s.assets.CreateAsset(ctx, viewer.UserID, file, caption)
 	if err != nil {
 		return nil, false, err
 	}
