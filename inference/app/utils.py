@@ -14,18 +14,17 @@ def draw_stitch(frames: List[Image.Image]) -> Image.Image:
     if len(frames) == 1:
         return frames[0]
 
+    # Labels go on the stitched copy only: the frames themselves are also what CLIP embeds.
+    stitched = Image.new('RGB', (max(img.width for img in frames), sum(img.height for img in frames)))
+    draw = ImageDraw.Draw(stitched)
+    y_offset = 0
     for idx, img in enumerate(frames):
-        draw = ImageDraw.Draw(img)
+        stitched.paste(img, (0, y_offset))
         text = f"Key Frame {idx+1}/{len(frames)}"
-        x, y = 10, 10
+        x, y = 10, y_offset + 10
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):  # Outline, so the label reads on any background
             draw.text((x + dx, y + dy), text, fill="black")
         draw.text((x, y), text, fill="white")
-
-    stitched = Image.new('RGB', (max(img.width for img in frames), sum(img.height for img in frames)))
-    y_offset = 0
-    for img in frames:
-        stitched.paste(img, (0, y_offset))
         y_offset += img.height
 
     return stitched
