@@ -238,6 +238,8 @@ CREATE TABLE IF NOT EXISTS jobs.tasks (
     priority INT DEFAULT 0,
     cron VARCHAR(50),
     attempts INT NOT NULL DEFAULT 0,          -- Incremented on each claim; doubles as fencing token
+    max_attempts INT NOT NULL,                -- Claims before the task fails for good, set by its job type
+    timeout_secs INT NOT NULL,                -- Deadline of an attempt; its claim's lease lasts twice this
     run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMPTZ,                   -- Lease start of the current attempt
     finished_at TIMESTAMPTZ,

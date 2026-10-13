@@ -11,7 +11,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, run_at, started_at, finished_at, created_at, updated_at,
+const taskSelectColumns = `id, owner_id, parent_task_id, job_type, payload, status, error_message, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
 	COALESCE(context->'attempts', '[]') AS history`
 
 func withAttempt(ctx, ok, errorMessage string) string {
@@ -35,6 +35,10 @@ func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads [
 	if len(payloads) == 0 {
 		return nil
 	}
+	policy, ok := model.JobPolicies[jobType]
+	if !ok {
+		return fmt.Errorf("no policy for job type %s", jobType)
+	}
 	encoded := make([]string, len(payloads))
 	for i, p := range payloads {
 		b, err := json.Marshal(p)
@@ -45,22 +49,24 @@ func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads [
 	}
 
 	query := `
-		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron)
-		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $5
+		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron, max_attempts, timeout_secs)
+		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $7, $8
 		FROM unnest($6::jsonb[]) p
 	`
-	if _, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, opts.Cron, encoded); err != nil {
+	_, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, opts.Cron, encoded, policy.MaxAttempts, int(policy.Timeout.Seconds()))
+	if err != nil {
 		return fmt.Errorf("failed to create tasks: %w", err)
 	}
 	return nil
 }
 
-func (r *TaskRepository) Claim(ctx context.Context, limit int, lease time.Duration) ([]*model.Task, error) {
+// Claim leases due tasks, and running ones whose lease ran out: twice their timeout, so a live attempt is never reclaimed.
+func (r *TaskRepository) Claim(ctx context.Context, limit int) ([]*model.Task, error) {
 	query := fmt.Sprintf(`
 		WITH picked AS MATERIALIZED (
 			SELECT id AS task_id, status AS task_status FROM jobs.tasks
 			WHERE (status = 'pending' AND run_at <= CURRENT_TIMESTAMP)
-			   OR (status = 'running' AND started_at < CURRENT_TIMESTAMP - make_interval(secs => $2))
+			   OR (status = 'running' AND started_at < CURRENT_TIMESTAMP - make_interval(secs => 2 * timeout_secs))
 			ORDER BY priority DESC, run_at ASC
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
@@ -72,7 +78,7 @@ func (r *TaskRepository) Claim(ctx context.Context, limit int, lease time.Durati
 		RETURNING %s
 	`, taskSelectColumns)
 
-	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, limit, lease.Seconds()))
+	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, limit))
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim tasks: %w", err)
 	}
@@ -124,10 +130,10 @@ func (r *TaskRepository) Reschedule(ctx context.Context, task *model.Task, statu
 			SET status = 'pending', run_at = $3, attempts = 0, started_at = NULL, error_message = NULL,
 				context = context - 'attempts', updated_at = CURRENT_TIMESTAMP
 			WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
-			RETURNING id, owner_id, job_type, payload, priority, cron
+			RETURNING id, owner_id, job_type, payload, priority, cron, max_attempts, timeout_secs
 		)
-		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, attempts, run_at, started_at, finished_at, error_message, context)
-		SELECT owner_id, id, job_type, payload, $4::varchar, priority, cron, $2::int, $5::timestamptz, $6::timestamptz, CURRENT_TIMESTAMP, $7::text, %s
+		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, error_message, context)
+		SELECT owner_id, id, job_type, payload, $4::varchar, priority, cron, $2::int, max_attempts, timeout_secs, $5::timestamptz, $6::timestamptz, CURRENT_TIMESTAMP, $7::text, %s
 		FROM reset
 	`, withAttempt("(SELECT context FROM run)", "$4::varchar = 'completed'", "$7::text"))
 	_, err := r.db.Exec(ctx, query, task.ID, task.Attempts, next, status, task.RunAt, task.StartedAt, errorMessage)

@@ -85,12 +85,14 @@ type Task struct {
 	Status       string          `json:"status" db:"status"`
 	ErrorMessage *string         `json:"error_message" db:"error_message"`
 
-	Priority   int        `json:"priority" db:"priority"`
-	Cron       *string    `json:"cron" db:"cron"`
-	Attempts   int        `json:"attempts" db:"attempts"`
-	RunAt      time.Time  `json:"run_at" db:"run_at"`
-	StartedAt  *time.Time `json:"started_at" db:"started_at"`
-	FinishedAt *time.Time `json:"finished_at" db:"finished_at"`
+	Priority    int        `json:"priority" db:"priority"`
+	Cron        *string    `json:"cron" db:"cron"`
+	Attempts    int        `json:"attempts" db:"attempts"`
+	MaxAttempts int        `json:"max_attempts" db:"max_attempts"`
+	TimeoutSecs int        `json:"timeout_secs" db:"timeout_secs"` // Of each attempt
+	RunAt       time.Time  `json:"run_at" db:"run_at"`
+	StartedAt   *time.Time `json:"started_at" db:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at" db:"finished_at"`
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`

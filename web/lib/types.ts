@@ -230,6 +230,9 @@ export interface Task {
   priority: number
   cron: string | null
   attempts: number
+  max_attempts: number
+  /** Deadline of each attempt. */
+  timeout_secs: number
   run_at: string
   started_at: string | null
   finished_at: string | null

@@ -16,7 +16,7 @@ import (
 
 // Store transitions out of 'running' are fenced by the attempts value from Claim, so they are no-ops once the lease is taken over.
 type Store interface {
-	Claim(ctx context.Context, limit int, lease time.Duration) ([]*model.Task, error)
+	Claim(ctx context.Context, limit int) ([]*model.Task, error)
 	Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error
 	Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error
 	Release(ctx context.Context, id string, attempts int) error
@@ -114,8 +114,7 @@ func (w *Worker) Run(ctx context.Context) {
 			return
 		}
 
-		// The lease outlives JobTimeout, so a live task is never reclaimed.
-		tasks, err := w.store.Claim(ctx, cap(slots)-len(slots)+1, 2*w.cfg.JobTimeout)
+		tasks, err := w.store.Claim(ctx, cap(slots)-len(slots)+1)
 		if err != nil && ctx.Err() == nil {
 			slog.Error("Failed to claim tasks", "error", err)
 		}
@@ -153,7 +152,7 @@ func (w *Worker) process(ctx context.Context, task *model.Task) {
 	switch {
 	case !ok:
 		err = Permanent(fmt.Errorf("no handler for job type: %s", task.JobType))
-	case task.Attempts > w.cfg.MaxAttempts: // Only when leases keep expiring (crash or hang)
+	case task.Attempts > task.MaxAttempts: // Only when leases keep expiring (crash or hang)
 		err = errLeaseExhausted
 	default:
 		err = w.handle(ctx, handler, task)
@@ -172,7 +171,7 @@ func (w *Worker) handle(ctx context.Context, handler TaskHandler, task *model.Ta
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, w.cfg.JobTimeout)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(task.TimeoutSecs)*time.Second)
 	defer cancel()
 	return handler.Handle(ctx, task)
 }
@@ -189,7 +188,7 @@ func (w *Worker) settle(ctx context.Context, handler TaskHandler, task *model.Ta
 	case ctx.Err() != nil:
 		log.Info("Task interrupted by shutdown, releasing", "error", cause)
 		return w.store.Release(dbCtx, task.ID, task.Attempts)
-	case !errors.As(cause, new(*permanentError)) && task.Attempts < w.cfg.MaxAttempts:
+	case !errors.As(cause, new(*permanentError)) && task.Attempts < task.MaxAttempts:
 		runAt := time.Now().Add(retryBackoff(task.Attempts))
 		log.Warn("Task failed, will retry", "retry_at", runAt, "error", cause)
 		return w.store.Retry(dbCtx, task.ID, task.Attempts, runAt, cause.Error())

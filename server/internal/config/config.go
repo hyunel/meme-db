@@ -87,8 +87,6 @@ type InferenceConfig struct {
 
 type WorkerConfig struct {
 	Concurrency  int           `yaml:"concurrency" validate:"required,gt=0"`
-	MaxAttempts  int           `yaml:"max_attempts" validate:"required,gt=0"`
-	JobTimeout   time.Duration `yaml:"job_timeout" validate:"required,gt=0"`
 	PollInterval time.Duration `yaml:"poll_interval" validate:"required,gt=0"`
 }
 
