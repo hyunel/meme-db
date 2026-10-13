@@ -1,8 +1,5 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# cairo renders SVG/Lottie frames for captioning
-RUN apt-get update && apt-get install -y --no-install-recommends libcairo2 && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 # No persistent uv cache: packages are hardlinked from a temporary one, so the
 # dependencies are stored once in the image.

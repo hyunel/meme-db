@@ -1,10 +1,13 @@
 import av
-import cairosvg
+import gzip
+import threading
 from io import BytesIO
-from lottie.parsers.tgs import parse_tgs
-from lottie.exporters import export_svg
+from rlottie_python import LottieAnimation
 from typing import List, BinaryIO
 from PIL import Image, ImageDraw
+
+# rlottie_python retypes the shared C functions for each call's buffer sizes, so concurrent calls can clash.
+_rlottie_lock = threading.Lock()
 
 
 def draw_stitch(frames: List[Image.Image]) -> Image.Image:
@@ -49,23 +52,17 @@ def generate_webm_frames(f: BinaryIO) -> List[Image.Image]:
 
 
 def generate_tgs_frames(f: BinaryIO) -> List[Image.Image]:
-    animation = parse_tgs(f)
-    total_frames = int(animation.out_point - animation.in_point)
-    if total_frames < 1:
-        raise ValueError("Invalid animation")
-
-    key_frames = []
-    for idx in generate_frame_indices(total_frames):
-        svg_buffer = BytesIO()
-        export_svg(animation, svg_buffer, frame=idx, pretty=False)
-        svg_buffer.seek(0)
-
-        png_buffer = BytesIO()
-        cairosvg.svg2png(file_obj=svg_buffer, write_to=png_buffer)
-        png_buffer.seek(0)
-        key_frames.append(Image.open(png_buffer).copy())
-
-    return key_frames
+    data = f.read()
+    if data[:2] == b'\x1f\x8b':  # .tgs is gzipped Lottie JSON
+        data = gzip.decompress(data)
+    with _rlottie_lock, LottieAnimation.from_data(data.decode()) as animation:
+        total_frames = animation.lottie_animation_get_totalframe()
+        if total_frames < 1:
+            raise ValueError("Invalid animation")
+        size = animation.lottie_animation_get_size()
+        # rlottie renders premultiplied alpha, which BGRa undoes.
+        return [Image.frombuffer('RGBA', size, animation.lottie_animation_render(frame_num=idx), 'raw', 'BGRa', 0, 1)
+                for idx in generate_frame_indices(total_frames)]
 
 
 def rgba_to_rgb(image: Image.Image, background_color=(255, 255, 255)) -> Image.Image:
