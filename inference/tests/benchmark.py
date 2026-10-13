@@ -80,12 +80,12 @@ def perform_request(stub, args, text, image, task_type):
             )
             stub.Rerank(req)
         elif task_type == 'caption':
-            req = inference_pb2.ImageCaptionRequest(
+            req = inference_pb2.AnalyzeImageRequest(
                 options=options,
-                prompt=args.prompt,
+                caption_prompt=args.prompt,
                 image=image
             )
-            stub.ImageCaption(req)
+            stub.AnalyzeImage(req)
         else:
             raise ValueError(f"Unknown task type: {task_type}")
 

@@ -54,10 +54,10 @@ class InferenceServiceStub(object):
                 request_serializer=app_dot_pb_dot_inference__pb2.RerankRequest.SerializeToString,
                 response_deserializer=app_dot_pb_dot_inference__pb2.RerankResponse.FromString,
                 _registered_method=True)
-        self.ImageCaption = channel.unary_unary(
-                '/inference.InferenceService/ImageCaption',
-                request_serializer=app_dot_pb_dot_inference__pb2.ImageCaptionRequest.SerializeToString,
-                response_deserializer=app_dot_pb_dot_inference__pb2.ImageCaptionResponse.FromString,
+        self.AnalyzeImage = channel.unary_unary(
+                '/inference.InferenceService/AnalyzeImage',
+                request_serializer=app_dot_pb_dot_inference__pb2.AnalyzeImageRequest.SerializeToString,
+                response_deserializer=app_dot_pb_dot_inference__pb2.AnalyzeImageResponse.FromString,
                 _registered_method=True)
         self.Metrics = channel.unary_unary(
                 '/inference.InferenceService/Metrics',
@@ -97,8 +97,8 @@ class InferenceServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ImageCaption(self, request, context):
-        """Caption image using VLM
+    def AnalyzeImage(self, request, context):
+        """Decodes an image once for its size and CLIP embedding, and a VLM caption when asked for
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -134,10 +134,10 @@ def add_InferenceServiceServicer_to_server(servicer, server):
                     request_deserializer=app_dot_pb_dot_inference__pb2.RerankRequest.FromString,
                     response_serializer=app_dot_pb_dot_inference__pb2.RerankResponse.SerializeToString,
             ),
-            'ImageCaption': grpc.unary_unary_rpc_method_handler(
-                    servicer.ImageCaption,
-                    request_deserializer=app_dot_pb_dot_inference__pb2.ImageCaptionRequest.FromString,
-                    response_serializer=app_dot_pb_dot_inference__pb2.ImageCaptionResponse.SerializeToString,
+            'AnalyzeImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.AnalyzeImage,
+                    request_deserializer=app_dot_pb_dot_inference__pb2.AnalyzeImageRequest.FromString,
+                    response_serializer=app_dot_pb_dot_inference__pb2.AnalyzeImageResponse.SerializeToString,
             ),
             'Metrics': grpc.unary_unary_rpc_method_handler(
                     servicer.Metrics,
@@ -264,7 +264,7 @@ class InferenceService(object):
             _registered_method=True)
 
     @staticmethod
-    def ImageCaption(request,
+    def AnalyzeImage(request,
             target,
             options=(),
             channel_credentials=None,
@@ -277,9 +277,9 @@ class InferenceService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/inference.InferenceService/ImageCaption',
-            app_dot_pb_dot_inference__pb2.ImageCaptionRequest.SerializeToString,
-            app_dot_pb_dot_inference__pb2.ImageCaptionResponse.FromString,
+            '/inference.InferenceService/AnalyzeImage',
+            app_dot_pb_dot_inference__pb2.AnalyzeImageRequest.SerializeToString,
+            app_dot_pb_dot_inference__pb2.AnalyzeImageResponse.FromString,
             options,
             channel_credentials,
             insecure,

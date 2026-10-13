@@ -114,35 +114,22 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         )
         return inference_pb2.RerankResponse(score=score)
 
-    async def ImageCaption(self, request: inference_pb2.ImageCaptionRequest, context: grpc.ServicerContext) -> inference_pb2.ImageCaptionResponse:
-        if ModelType.VLM not in self.schedulers:
+    async def AnalyzeImage(self, request: inference_pb2.AnalyzeImageRequest, context: grpc.ServicerContext) -> inference_pb2.AnalyzeImageResponse:
+        if request.caption_prompt and ModelType.VLM not in self.schedulers:
             await context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
         frames = await self._load_frames(request.image, context)
-
-        clip_image = frames[len(frames) // 2]
-        vlm_image = draw_stitch(frames)
-        width, height = frames[0].width, frames[0].height
-
         priority = request.options.priority
 
-        clip_future = self.schedulers[ModelType.CLIP_IMAGE].submit(
-            clip_image,
-            priority=priority,
-            context=context
-        )
-        vlm_future = self.schedulers[ModelType.VLM].submit(
-            (vlm_image, request.prompt),
-            priority=priority,
-            context=context
-        )
+        submits = [self.schedulers[ModelType.CLIP_IMAGE].submit(frames[len(frames) // 2], priority=priority, context=context)]
+        if request.caption_prompt:
+            submits.append(self.schedulers[ModelType.VLM].submit((draw_stitch(frames), request.caption_prompt), priority=priority, context=context))
+        clip_embedding, *caption = await asyncio.gather(*submits)
 
-        clip_embedding, caption = await asyncio.gather(clip_future, vlm_future)
-
-        return inference_pb2.ImageCaptionResponse(
-            caption=caption,
-            width=width,
-            height=height,
+        return inference_pb2.AnalyzeImageResponse(
+            caption=caption[0] if caption else '',
+            width=frames[0].width,
+            height=frames[0].height,
             clip_embedding=inference_pb2.Embedding(values=clip_embedding)
         )
 

@@ -113,10 +113,10 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	res, err := s.inferClient.ImageCaption(ctx, s.cfg.CaptionPrompt, inference.ImageInput{
+	res, err := s.inferClient.AnalyzeImage(ctx, inference.ImageInput{
 		Data:   fileBytes,
 		Format: asset.Extension,
-	})
+	}, s.cfg.CaptionPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to get image caption: %w", err)
 	}

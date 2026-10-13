@@ -569,29 +569,29 @@ func (x *RerankResponse) GetScore() float32 {
 	return 0
 }
 
-type ImageCaptionRequest struct {
+type AnalyzeImageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Options       *TaskOptions           `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
 	Image         *Image                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
-	Prompt        string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	CaptionPrompt string                 `protobuf:"bytes,3,opt,name=caption_prompt,json=captionPrompt,proto3" json:"caption_prompt,omitempty"` // Captions the image with the VLM; empty skips it
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ImageCaptionRequest) Reset() {
-	*x = ImageCaptionRequest{}
+func (x *AnalyzeImageRequest) Reset() {
+	*x = AnalyzeImageRequest{}
 	mi := &file_inference_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ImageCaptionRequest) String() string {
+func (x *AnalyzeImageRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ImageCaptionRequest) ProtoMessage() {}
+func (*AnalyzeImageRequest) ProtoMessage() {}
 
-func (x *ImageCaptionRequest) ProtoReflect() protoreflect.Message {
+func (x *AnalyzeImageRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_inference_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -603,35 +603,35 @@ func (x *ImageCaptionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ImageCaptionRequest.ProtoReflect.Descriptor instead.
-func (*ImageCaptionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use AnalyzeImageRequest.ProtoReflect.Descriptor instead.
+func (*AnalyzeImageRequest) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ImageCaptionRequest) GetOptions() *TaskOptions {
+func (x *AnalyzeImageRequest) GetOptions() *TaskOptions {
 	if x != nil {
 		return x.Options
 	}
 	return nil
 }
 
-func (x *ImageCaptionRequest) GetImage() *Image {
+func (x *AnalyzeImageRequest) GetImage() *Image {
 	if x != nil {
 		return x.Image
 	}
 	return nil
 }
 
-func (x *ImageCaptionRequest) GetPrompt() string {
+func (x *AnalyzeImageRequest) GetCaptionPrompt() string {
 	if x != nil {
-		return x.Prompt
+		return x.CaptionPrompt
 	}
 	return ""
 }
 
-type ImageCaptionResponse struct {
+type AnalyzeImageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Caption       string                 `protobuf:"bytes,1,opt,name=caption,proto3" json:"caption,omitempty"`
+	Caption       string                 `protobuf:"bytes,1,opt,name=caption,proto3" json:"caption,omitempty"` // Empty when not asked for
 	Width         int32                  `protobuf:"varint,2,opt,name=width,proto3" json:"width,omitempty"`
 	Height        int32                  `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
 	ClipEmbedding *Embedding             `protobuf:"bytes,4,opt,name=clip_embedding,json=clipEmbedding,proto3" json:"clip_embedding,omitempty"`
@@ -639,20 +639,20 @@ type ImageCaptionResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ImageCaptionResponse) Reset() {
-	*x = ImageCaptionResponse{}
+func (x *AnalyzeImageResponse) Reset() {
+	*x = AnalyzeImageResponse{}
 	mi := &file_inference_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ImageCaptionResponse) String() string {
+func (x *AnalyzeImageResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ImageCaptionResponse) ProtoMessage() {}
+func (*AnalyzeImageResponse) ProtoMessage() {}
 
-func (x *ImageCaptionResponse) ProtoReflect() protoreflect.Message {
+func (x *AnalyzeImageResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_inference_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -664,33 +664,33 @@ func (x *ImageCaptionResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ImageCaptionResponse.ProtoReflect.Descriptor instead.
-func (*ImageCaptionResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use AnalyzeImageResponse.ProtoReflect.Descriptor instead.
+func (*AnalyzeImageResponse) Descriptor() ([]byte, []int) {
 	return file_inference_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ImageCaptionResponse) GetCaption() string {
+func (x *AnalyzeImageResponse) GetCaption() string {
 	if x != nil {
 		return x.Caption
 	}
 	return ""
 }
 
-func (x *ImageCaptionResponse) GetWidth() int32 {
+func (x *AnalyzeImageResponse) GetWidth() int32 {
 	if x != nil {
 		return x.Width
 	}
 	return 0
 }
 
-func (x *ImageCaptionResponse) GetHeight() int32 {
+func (x *AnalyzeImageResponse) GetHeight() int32 {
 	if x != nil {
 		return x.Height
 	}
 	return 0
 }
 
-func (x *ImageCaptionResponse) GetClipEmbedding() *Embedding {
+func (x *AnalyzeImageResponse) GetClipEmbedding() *Embedding {
 	if x != nil {
 		return x.ClipEmbedding
 	}
@@ -828,12 +828,12 @@ const file_inference_proto_rawDesc = "" +
 	"\bdocument\x18\x03 \x01(\tR\bdocument\x12)\n" +
 	"\x10task_description\x18\x04 \x01(\tR\x0ftaskDescription\"&\n" +
 	"\x0eRerankResponse\x12\x14\n" +
-	"\x05score\x18\x01 \x01(\x02R\x05score\"\x87\x01\n" +
-	"\x13ImageCaptionRequest\x120\n" +
+	"\x05score\x18\x01 \x01(\x02R\x05score\"\x96\x01\n" +
+	"\x13AnalyzeImageRequest\x120\n" +
 	"\aoptions\x18\x01 \x01(\v2\x16.inference.TaskOptionsR\aoptions\x12&\n" +
-	"\x05image\x18\x02 \x01(\v2\x10.inference.ImageR\x05image\x12\x16\n" +
-	"\x06prompt\x18\x03 \x01(\tR\x06prompt\"\x9b\x01\n" +
-	"\x14ImageCaptionResponse\x12\x18\n" +
+	"\x05image\x18\x02 \x01(\v2\x10.inference.ImageR\x05image\x12%\n" +
+	"\x0ecaption_prompt\x18\x03 \x01(\tR\rcaptionPrompt\"\x9b\x01\n" +
+	"\x14AnalyzeImageResponse\x12\x18\n" +
 	"\acaption\x18\x01 \x01(\tR\acaption\x12\x14\n" +
 	"\x05width\x18\x02 \x01(\x05R\x05width\x12\x16\n" +
 	"\x06height\x18\x03 \x01(\x05R\x06height\x12;\n" +
@@ -848,7 +848,7 @@ const file_inference_proto_rawDesc = "" +
 	"\x12ClipImageEmbedding\x12$.inference.ClipImageEmbeddingRequest\x1a%.inference.ClipImageEmbeddingResponse\x12^\n" +
 	"\x11ClipTextEmbedding\x12#.inference.ClipTextEmbeddingRequest\x1a$.inference.ClipTextEmbeddingResponse\x12=\n" +
 	"\x06Rerank\x12\x18.inference.RerankRequest\x1a\x19.inference.RerankResponse\x12O\n" +
-	"\fImageCaption\x12\x1e.inference.ImageCaptionRequest\x1a\x1f.inference.ImageCaptionResponse\x12@\n" +
+	"\fAnalyzeImage\x12\x1e.inference.AnalyzeImageRequest\x1a\x1f.inference.AnalyzeImageResponse\x12@\n" +
 	"\aMetrics\x12\x19.inference.MetricsRequest\x1a\x1a.inference.MetricsResponseB-Z+github.com/hyunel/MemeDB/server/internal/pbb\x06proto3"
 
 var (
@@ -876,8 +876,8 @@ var file_inference_proto_goTypes = []any{
 	(*ClipTextEmbeddingResponse)(nil),  // 8: inference.ClipTextEmbeddingResponse
 	(*RerankRequest)(nil),              // 9: inference.RerankRequest
 	(*RerankResponse)(nil),             // 10: inference.RerankResponse
-	(*ImageCaptionRequest)(nil),        // 11: inference.ImageCaptionRequest
-	(*ImageCaptionResponse)(nil),       // 12: inference.ImageCaptionResponse
+	(*AnalyzeImageRequest)(nil),        // 11: inference.AnalyzeImageRequest
+	(*AnalyzeImageResponse)(nil),       // 12: inference.AnalyzeImageResponse
 	(*MetricsRequest)(nil),             // 13: inference.MetricsRequest
 	(*MetricsResponse)(nil),            // 14: inference.MetricsResponse
 }
@@ -890,20 +890,20 @@ var file_inference_proto_depIdxs = []int32{
 	0,  // 5: inference.ClipTextEmbeddingRequest.options:type_name -> inference.TaskOptions
 	2,  // 6: inference.ClipTextEmbeddingResponse.embedding:type_name -> inference.Embedding
 	0,  // 7: inference.RerankRequest.options:type_name -> inference.TaskOptions
-	0,  // 8: inference.ImageCaptionRequest.options:type_name -> inference.TaskOptions
-	1,  // 9: inference.ImageCaptionRequest.image:type_name -> inference.Image
-	2,  // 10: inference.ImageCaptionResponse.clip_embedding:type_name -> inference.Embedding
+	0,  // 8: inference.AnalyzeImageRequest.options:type_name -> inference.TaskOptions
+	1,  // 9: inference.AnalyzeImageRequest.image:type_name -> inference.Image
+	2,  // 10: inference.AnalyzeImageResponse.clip_embedding:type_name -> inference.Embedding
 	3,  // 11: inference.InferenceService.TextEmbedding:input_type -> inference.TextEmbeddingRequest
 	5,  // 12: inference.InferenceService.ClipImageEmbedding:input_type -> inference.ClipImageEmbeddingRequest
 	7,  // 13: inference.InferenceService.ClipTextEmbedding:input_type -> inference.ClipTextEmbeddingRequest
 	9,  // 14: inference.InferenceService.Rerank:input_type -> inference.RerankRequest
-	11, // 15: inference.InferenceService.ImageCaption:input_type -> inference.ImageCaptionRequest
+	11, // 15: inference.InferenceService.AnalyzeImage:input_type -> inference.AnalyzeImageRequest
 	13, // 16: inference.InferenceService.Metrics:input_type -> inference.MetricsRequest
 	4,  // 17: inference.InferenceService.TextEmbedding:output_type -> inference.TextEmbeddingResponse
 	6,  // 18: inference.InferenceService.ClipImageEmbedding:output_type -> inference.ClipImageEmbeddingResponse
 	8,  // 19: inference.InferenceService.ClipTextEmbedding:output_type -> inference.ClipTextEmbeddingResponse
 	10, // 20: inference.InferenceService.Rerank:output_type -> inference.RerankResponse
-	12, // 21: inference.InferenceService.ImageCaption:output_type -> inference.ImageCaptionResponse
+	12, // 21: inference.InferenceService.AnalyzeImage:output_type -> inference.AnalyzeImageResponse
 	14, // 22: inference.InferenceService.Metrics:output_type -> inference.MetricsResponse
 	17, // [17:23] is the sub-list for method output_type
 	11, // [11:17] is the sub-list for method input_type

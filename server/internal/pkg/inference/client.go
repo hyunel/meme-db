@@ -26,8 +26,8 @@ type ImageInput struct {
 	Format string
 }
 
-type ImageCaptionResult struct {
-	Caption       string
+type ImageAnalysis struct {
+	Caption       string // Empty unless a caption prompt was given
 	Width         int
 	Height        int
 	ClipEmbedding []float32
@@ -111,10 +111,11 @@ func (c *Client) Rerank(ctx context.Context, query string, document string, task
 	return resp.Score, nil
 }
 
-func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInput) (*ImageCaptionResult, error) {
-	resp, err := c.client.ImageCaption(ctx, &pb.ImageCaptionRequest{
-		Options: c.options(),
-		Prompt:  prompt,
+// AnalyzeImage measures and embeds an image, and captions it with the VLM unless captionPrompt is empty.
+func (c *Client) AnalyzeImage(ctx context.Context, image ImageInput, captionPrompt string) (*ImageAnalysis, error) {
+	resp, err := c.client.AnalyzeImage(ctx, &pb.AnalyzeImageRequest{
+		Options:       c.options(),
+		CaptionPrompt: captionPrompt,
 		Image: &pb.Image{
 			Data:       image.Data,
 			FileFormat: image.Format,
@@ -129,7 +130,7 @@ func (c *Client) ImageCaption(ctx context.Context, prompt string, image ImageInp
 		clipEmbedding = resp.ClipEmbedding.Values
 	}
 
-	return &ImageCaptionResult{
+	return &ImageAnalysis{
 		Caption:       resp.Caption,
 		Width:         int(resp.Width),
 		Height:        int(resp.Height),

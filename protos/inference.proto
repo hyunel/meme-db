@@ -17,8 +17,8 @@ service InferenceService {
   // Rerank text pair using Qwen
   rpc Rerank (RerankRequest) returns (RerankResponse);
 
-  // Caption image using VLM
-  rpc ImageCaption (ImageCaptionRequest) returns (ImageCaptionResponse);
+  // Decodes an image once for its size and CLIP embedding, and a VLM caption when asked for
+  rpc AnalyzeImage (AnalyzeImageRequest) returns (AnalyzeImageResponse);
 
   // Resource usage and request statistics of the last span_seconds, in step_seconds buckets
   rpc Metrics (MetricsRequest) returns (MetricsResponse);
@@ -76,14 +76,14 @@ message RerankResponse {
   float score = 1;
 }
 
-message ImageCaptionRequest {
+message AnalyzeImageRequest {
   TaskOptions options = 1;
   Image image = 2;
-  string prompt = 3;
+  string caption_prompt = 3; // Captions the image with the VLM; empty skips it
 }
 
-message ImageCaptionResponse {
-  string caption = 1;
+message AnalyzeImageResponse {
+  string caption = 1; // Empty when not asked for
   int32 width = 2;
   int32 height = 3;
   Embedding clip_embedding = 4;

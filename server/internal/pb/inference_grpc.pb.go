@@ -23,7 +23,7 @@ const (
 	InferenceService_ClipImageEmbedding_FullMethodName = "/inference.InferenceService/ClipImageEmbedding"
 	InferenceService_ClipTextEmbedding_FullMethodName  = "/inference.InferenceService/ClipTextEmbedding"
 	InferenceService_Rerank_FullMethodName             = "/inference.InferenceService/Rerank"
-	InferenceService_ImageCaption_FullMethodName       = "/inference.InferenceService/ImageCaption"
+	InferenceService_AnalyzeImage_FullMethodName       = "/inference.InferenceService/AnalyzeImage"
 	InferenceService_Metrics_FullMethodName            = "/inference.InferenceService/Metrics"
 )
 
@@ -39,8 +39,8 @@ type InferenceServiceClient interface {
 	ClipTextEmbedding(ctx context.Context, in *ClipTextEmbeddingRequest, opts ...grpc.CallOption) (*ClipTextEmbeddingResponse, error)
 	// Rerank text pair using Qwen
 	Rerank(ctx context.Context, in *RerankRequest, opts ...grpc.CallOption) (*RerankResponse, error)
-	// Caption image using VLM
-	ImageCaption(ctx context.Context, in *ImageCaptionRequest, opts ...grpc.CallOption) (*ImageCaptionResponse, error)
+	// Decodes an image once for its size and CLIP embedding, and a VLM caption when asked for
+	AnalyzeImage(ctx context.Context, in *AnalyzeImageRequest, opts ...grpc.CallOption) (*AnalyzeImageResponse, error)
 	// Resource usage and request statistics of the last span_seconds, in step_seconds buckets
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error)
 }
@@ -93,10 +93,10 @@ func (c *inferenceServiceClient) Rerank(ctx context.Context, in *RerankRequest, 
 	return out, nil
 }
 
-func (c *inferenceServiceClient) ImageCaption(ctx context.Context, in *ImageCaptionRequest, opts ...grpc.CallOption) (*ImageCaptionResponse, error) {
+func (c *inferenceServiceClient) AnalyzeImage(ctx context.Context, in *AnalyzeImageRequest, opts ...grpc.CallOption) (*AnalyzeImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ImageCaptionResponse)
-	err := c.cc.Invoke(ctx, InferenceService_ImageCaption_FullMethodName, in, out, cOpts...)
+	out := new(AnalyzeImageResponse)
+	err := c.cc.Invoke(ctx, InferenceService_AnalyzeImage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,8 +125,8 @@ type InferenceServiceServer interface {
 	ClipTextEmbedding(context.Context, *ClipTextEmbeddingRequest) (*ClipTextEmbeddingResponse, error)
 	// Rerank text pair using Qwen
 	Rerank(context.Context, *RerankRequest) (*RerankResponse, error)
-	// Caption image using VLM
-	ImageCaption(context.Context, *ImageCaptionRequest) (*ImageCaptionResponse, error)
+	// Decodes an image once for its size and CLIP embedding, and a VLM caption when asked for
+	AnalyzeImage(context.Context, *AnalyzeImageRequest) (*AnalyzeImageResponse, error)
 	// Resource usage and request statistics of the last span_seconds, in step_seconds buckets
 	Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error)
 	mustEmbedUnimplementedInferenceServiceServer()
@@ -151,8 +151,8 @@ func (UnimplementedInferenceServiceServer) ClipTextEmbedding(context.Context, *C
 func (UnimplementedInferenceServiceServer) Rerank(context.Context, *RerankRequest) (*RerankResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rerank not implemented")
 }
-func (UnimplementedInferenceServiceServer) ImageCaption(context.Context, *ImageCaptionRequest) (*ImageCaptionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ImageCaption not implemented")
+func (UnimplementedInferenceServiceServer) AnalyzeImage(context.Context, *AnalyzeImageRequest) (*AnalyzeImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AnalyzeImage not implemented")
 }
 func (UnimplementedInferenceServiceServer) Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Metrics not implemented")
@@ -250,20 +250,20 @@ func _InferenceService_Rerank_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _InferenceService_ImageCaption_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ImageCaptionRequest)
+func _InferenceService_AnalyzeImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnalyzeImageRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(InferenceServiceServer).ImageCaption(ctx, in)
+		return srv.(InferenceServiceServer).AnalyzeImage(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: InferenceService_ImageCaption_FullMethodName,
+		FullMethod: InferenceService_AnalyzeImage_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(InferenceServiceServer).ImageCaption(ctx, req.(*ImageCaptionRequest))
+		return srv.(InferenceServiceServer).AnalyzeImage(ctx, req.(*AnalyzeImageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -310,8 +310,8 @@ var InferenceService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _InferenceService_Rerank_Handler,
 		},
 		{
-			MethodName: "ImageCaption",
-			Handler:    _InferenceService_ImageCaption_Handler,
+			MethodName: "AnalyzeImage",
+			Handler:    _InferenceService_AnalyzeImage_Handler,
 		},
 		{
 			MethodName: "Metrics",
