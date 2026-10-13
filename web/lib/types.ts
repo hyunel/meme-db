@@ -242,6 +242,8 @@ export interface Task {
   updated_at: string
   /** Finished attempts, oldest first. */
   history: TaskAttempt[]
+  /** Only on a row standing for a batch, whose ID it has. */
+  batch?: TaskBatchCounts
 }
 
 export interface TaskAttempt {
@@ -254,13 +256,8 @@ export interface TaskDetail extends Task {
   runs: Task[]
 }
 
-/** How far the tasks an admin queued together have got. */
-export interface TaskBatch {
-  id: string
-  job_type: string
-  created_at: string
-  /** Once none of its tasks is left to run. */
-  finished_at: string | null
+/** A batch's tasks counted by status. */
+export interface TaskBatchCounts {
   total: number
   /** Waiting retries included. */
   pending: number

@@ -98,7 +98,8 @@ type Task struct {
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 
-	History []TaskAttempt `json:"history" db:"history"` // Finished attempts, oldest first
+	History []TaskAttempt    `json:"history" db:"history"`       // Finished attempts, oldest first
+	Batch   *TaskBatchCounts `json:"batch,omitempty" db:"batch"` // Only on a row standing for a batch, whose ID it has
 }
 
 type TaskAttempt struct {
@@ -107,17 +108,13 @@ type TaskAttempt struct {
 	Error *string   `json:"error"`
 }
 
-// TaskBatch is how far the tasks an admin queued together have got.
-type TaskBatch struct {
-	ID         string     `json:"id" db:"id"`
-	JobType    string     `json:"job_type" db:"job_type"`
-	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
-	FinishedAt *time.Time `json:"finished_at" db:"finished_at"` // Once none of its tasks is left to run
-	Total      int        `json:"total" db:"total"`
-	Pending    int        `json:"pending" db:"pending"` // Waiting retries included
-	Running    int        `json:"running" db:"running"`
-	Completed  int        `json:"completed" db:"completed"`
-	Failed     int        `json:"failed" db:"failed"`
+// TaskBatchCounts counts the tasks of a batch by status, on the row standing for it in a task list.
+type TaskBatchCounts struct {
+	Total     int `json:"total"`
+	Pending   int `json:"pending"` // Waiting retries included
+	Running   int `json:"running"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
 }
 
 type TaskTypeCounts struct {

@@ -12,7 +12,26 @@ import (
 )
 
 const taskSelectColumns = `id, owner_id, parent_task_id, batch_id, job_type, payload, status, error_message, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
-	COALESCE(context->'attempts', '[]') AS history`
+	COALESCE(context->'attempts', '[]') AS history, NULL::jsonb AS batch`
+
+// tasksByBatch lists the tasks outside batches beside a row for each batch, whose status is its tasks' most pressing:
+// running, then waiting (to retry when none waits for a first attempt), then failed.
+var tasksByBatch = fmt.Sprintf(`
+	SELECT %s FROM jobs.tasks WHERE batch_id IS NULL
+	UNION ALL
+	SELECT batch_id, NULL, NULL, batch_id, min(job_type), '{}'::jsonb,
+		CASE WHEN bool_or(status = 'running') THEN 'running' WHEN bool_or(status = 'pending') THEN 'pending'
+			WHEN bool_or(status = 'failed') THEN 'failed' ELSE 'completed' END,
+		NULL, max(priority), NULL, CASE WHEN bool_or(status = 'pending' AND attempts = 0) THEN 0 ELSE 1 END,
+		max(max_attempts), max(timeout_secs),
+		COALESCE(min(run_at) FILTER (WHERE status IN ('pending', 'running')), min(run_at)), min(started_at),
+		CASE WHEN bool_and(status IN ('completed', 'failed')) THEN max(finished_at) END, min(created_at), max(updated_at),
+		'[]'::jsonb,
+		jsonb_build_object('total', count(*), 'pending', count(*) FILTER (WHERE status = 'pending'),
+			'running', count(*) FILTER (WHERE status = 'running'), 'completed', count(*) FILTER (WHERE status = 'completed'),
+			'failed', count(*) FILTER (WHERE status = 'failed'))
+	FROM jobs.tasks WHERE batch_id IS NOT NULL GROUP BY batch_id
+`, taskSelectColumns)
 
 func withAttempt(ctx, ok, errorMessage string) string {
 	return fmt.Sprintf(`jsonb_set(COALESCE(%[1]s, '{}'), '{attempts}',
@@ -206,6 +225,7 @@ type TaskFilter struct {
 	States    []string // Keys of taskStates
 	JobType   string
 	Batch     string
+	Group     bool   // Rolls each batch up into one row, unless the filter picks out a batch or a task
 	Query     string // Matches the task ID or the asset it works on
 	Created   TimeRange
 	Recurring bool
@@ -241,8 +261,12 @@ func (f TaskFilter) where() filter {
 }
 
 func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*model.Task, int, error) {
+	from, columns := "jobs.tasks", taskSelectColumns
+	if f.Group && f.Batch == "" && f.Query == "" {
+		from, columns = "("+tasksByBatch+") t", "*"
+	}
 	w := f.where()
-	total, err := count(ctx, r.db, "SELECT count(*) FROM jobs.tasks "+w.clause(), w.args...)
+	total, err := count(ctx, r.db, "SELECT count(*) FROM "+from+" "+w.clause(), w.args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -251,7 +275,7 @@ func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*
 	if order == "" {
 		order = "CASE WHEN status = 'running' THEN 0 WHEN attempts > 0 THEN 1 ELSE 2 END, run_at"
 	}
-	query := fmt.Sprintf(`SELECT %s FROM jobs.tasks %s ORDER BY %s %s`, taskSelectColumns, w.clause(), order, page.clause())
+	query := fmt.Sprintf(`SELECT %s FROM %s %s ORDER BY %s %s`, columns, from, w.clause(), order, page.clause())
 	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, w.args...))
 	return tasks, total, err
 }
@@ -279,20 +303,4 @@ func (r *TaskRepository) Summary(ctx context.Context, finished TimeRange) ([]*mo
 		FROM jobs.tasks GROUP BY job_type ORDER BY job_type
 	`, taskStates["pending"], taskStates["retrying"], inRange)
 	return collectAll[model.TaskTypeCounts](r.db.Query(ctx, query, w.args...))
-}
-
-// Batches lists the latest batches with their tasks counted by status.
-func (r *TaskRepository) Batches(ctx context.Context, limit int) ([]*model.TaskBatch, error) {
-	query := `
-		SELECT batch_id::text AS id, min(job_type) AS job_type, min(created_at) AS created_at,
-			CASE WHEN bool_and(status IN ('completed', 'failed')) THEN max(finished_at) END AS finished_at,
-			count(*) AS total,
-			count(*) FILTER (WHERE status = 'pending') AS pending,
-			count(*) FILTER (WHERE status = 'running') AS running,
-			count(*) FILTER (WHERE status = 'completed') AS completed,
-			count(*) FILTER (WHERE status = 'failed') AS failed
-		FROM jobs.tasks WHERE batch_id IS NOT NULL
-		GROUP BY batch_id ORDER BY min(created_at) DESC LIMIT $1
-	`
-	return collectAll[model.TaskBatch](r.db.Query(ctx, query, limit))
 }

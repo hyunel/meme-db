@@ -85,10 +85,6 @@ func (s *TaskService) Cancel(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *TaskService) Batches(ctx context.Context, limit int) ([]*model.TaskBatch, error) {
-	return s.repo.Task.Batches(ctx, limit)
-}
-
 func (s *TaskService) CancelBatch(ctx context.Context, id string) (int, error) {
 	n, err := s.queue.CancelBatch(ctx, id)
 	if err == nil && n == 0 {

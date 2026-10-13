@@ -34,7 +34,7 @@ import { TaskStatusBadge, jobLabel, taskState, taskStateLabel } from './labels'
 import { ConfirmDialog, rangeOptions, rangeStart, useSelection, type RangeKey } from './shared'
 import { api, qs, refresh } from '@/lib/api'
 import { formatDateTime, formatDuration, formatRelative, toMs } from '@/lib/format'
-import type { Page, Task, TaskBatch, TaskDetail, TaskState, TaskTypeCounts } from '@/lib/types'
+import type { Page, Task, TaskBatchCounts, TaskDetail, TaskState, TaskTypeCounts } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { TabSwitch } from '@/components/tab-switch'
 
@@ -51,7 +51,7 @@ const sortOptions = [
 const canRunNow = (t: Task, now: number) => t.status === 'pending' && toMs(t.run_at) > now
 
 type RetryTarget = { ids: string[] } | { filter: Record<string, unknown> }
-type Pending = { kind: 'retry'; target: RetryTarget; count: number; scope: string } | { kind: 'cancel'; task: Task } | { kind: 'cancelBatch'; batch: TaskBatch } | null
+type Pending = { kind: 'retry'; target: RetryTarget; count: number; scope: string } | { kind: 'cancel'; task: Task } | { kind: 'cancelBatch'; task: Task } | null
 
 function useTaskActions() {
   const [pending, setPending] = useState<Pending>(null)
@@ -102,13 +102,13 @@ function useTaskActions() {
         destructive
         description={
           pending?.kind === 'cancelBatch'
-            ? `批次中排队的 ${pending.batch.pending} 个任务会被标记为失败，执行中的任务会继续完成。${pending.batch.job_type === 'analyze_meme' ? '对应的表情包会显示为处理失败。' : ''}`
+            ? `批次中排队的 ${pending.task.batch?.pending} 个任务会被标记为失败，执行中的任务会继续完成。${pending.task.job_type === 'analyze_meme' ? '对应的表情包会显示为处理失败。' : ''}`
             : ''
         }
         confirmLabel="取消批次"
         onConfirm={async () => {
           if (pending?.kind !== 'cancelBatch') return
-          const { count } = await api<{ count: number }>(`/admin/tasks/batches/${pending.batch.id}/cancel`, { method: 'POST' })
+          const { count } = await api<{ count: number }>(`/admin/tasks/batches/${pending.task.id}/cancel`, { method: 'POST' })
           await refresh()
           toast.success(`已取消 ${count} 个排队中的任务`)
         }}
@@ -122,37 +122,19 @@ function useTaskActions() {
     retry: (tasks: Task[], scope = '') => setPending({ kind: 'retry', target: { ids: tasks.map((t) => t.id) }, count: tasks.length, scope }),
     retryAll: (filter: Record<string, unknown>, count: number) => setPending({ kind: 'retry', target: { filter }, count, scope: '当前筛选下的全部' }),
     cancel: (task: Task) => setPending({ kind: 'cancel', task }),
-    cancelBatch: (batch: TaskBatch) => setPending({ kind: 'cancelBatch', batch }),
+    retryBatch: (batch: Task) => setPending({ kind: 'retry', target: { filter: { batch: batch.id } }, count: batch.batch?.failed ?? 0, scope: '该批次的' }),
+    cancelBatch: (batch: Task) => setPending({ kind: 'cancelBatch', task: batch }),
   }
 }
 
-function BatchCard({ batch: b, selected, onView, onCancel }: { batch: TaskBatch; selected: boolean; onView: () => void; onCancel: () => void }) {
+function BatchProgress({ counts: b }: { counts: TaskBatchCounts }) {
   const done = b.completed + b.failed
-  const left = b.pending + b.running
   return (
-    <div className={cn('flex flex-col gap-2.5 rounded-xl border bg-card p-3.5', selected && 'border-foreground')}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-sm font-medium">{jobLabel(b.job_type)}</span>
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{b.finished_at ? `${formatDateTime(b.finished_at)} 结束` : `${formatDateTime(b.created_at)} 开始`}</span>
-      </div>
-      <Progress value={(done / b.total) * 100} aria-label={`${jobLabel(b.job_type)}进度`} />
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
-        <span>
-          <span className="font-medium text-foreground">{done}</span> / {b.total}
-        </span>
-        {b.failed > 0 && <span className="text-destructive">失败 {b.failed}</span>}
-        {left > 0 && <span>剩余 {left}</span>}
-        <span className="ml-auto flex gap-1">
-          <Button size="sm" variant="ghost" onClick={onView}>
-            查看任务
-          </Button>
-          {b.pending > 0 && (
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={onCancel}>
-              取消
-            </Button>
-          )}
-        </span>
-      </div>
+    <div className="flex w-36 flex-col gap-1">
+      <Progress value={(done / b.total) * 100} aria-label="批次进度" />
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {done} / {b.total}
+      </span>
     </div>
   )
 }
@@ -165,7 +147,28 @@ function TimeCell({ task, now }: { task: Task; now: number }) {
   return <span className="text-muted-foreground">—</span>
 }
 
-function TaskActionItems({ task, now, actions }: { task: Task; now: number; actions: ReturnType<typeof useTaskActions> }) {
+function TaskActionItems({ task, now, actions, onViewBatch }: { task: Task; now: number; actions: ReturnType<typeof useTaskActions>; onViewBatch: (id: string) => void }) {
+  if (task.batch)
+    return (
+      <>
+        <DropdownMenuItem onClick={() => onViewBatch(task.id)}>
+          <ListChecks />
+          查看任务
+        </DropdownMenuItem>
+        {task.batch.failed > 0 && (
+          <DropdownMenuItem onClick={() => actions.retryBatch(task)}>
+            <RotateCw />
+            重试失败
+          </DropdownMenuItem>
+        )}
+        {task.batch.pending > 0 && (
+          <DropdownMenuItem variant="destructive" onClick={() => actions.cancelBatch(task)}>
+            <Ban />
+            取消排队
+          </DropdownMenuItem>
+        )}
+      </>
+    )
   return (
     <>
       <DropdownMenuItem render={<Link href={`/admin/tasks/${task.id}`} />}>
@@ -237,13 +240,13 @@ export function AdminTasks() {
     sort,
   }
   const paging = usePaging(JSON.stringify(filter))
-  const tasks = useSWR<Page<Task>>(`/admin/tasks${qs({ ...filter, ...paging.query })}`, { refreshInterval, keepPreviousData: true })
+  // A batch shows as one row, until it is picked out to list its tasks.
+  const tasks = useSWR<Page<Task>>(`/admin/tasks${qs({ ...filter, group: true, ...paging.query })}`, { refreshInterval, keepPreviousData: true })
   const { data: summary = [] } = useSWR<TaskTypeCounts[]>('/admin/tasks/summary', { refreshInterval })
-  const { data: batches = [] } = useSWR<TaskBatch[]>('/admin/tasks/batches', { refreshInterval })
 
   const rows = tasks.data?.items ?? []
   const sel = useSelection(paging.pageKey)
-  const selectedFailed = rows.filter((t) => sel.ids.has(t.id) && t.status === 'failed')
+  const selectedFailed = rows.filter((t) => sel.ids.has(t.id) && t.status === 'failed' && !t.batch)
   // Failed tasks anywhere in the current filter, for retrying them all at once.
   const failedFilter = { ...filter, state: ['failed'] }
   const canRetryAll = view === 'history' && filter.state.includes('failed')
@@ -262,25 +265,38 @@ export function AdminTasks() {
       mobile: 'title',
       cell: (t) => (
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Link href={`/admin/tasks/${t.id}`} className="truncate font-medium hover:underline">
-            {jobLabel(t.job_type)}
-          </Link>
+          {t.batch ? (
+            <button type="button" onClick={() => setBatch(t.id)} className="truncate text-left font-medium hover:underline">
+              {jobLabel(t.job_type)} · 批次 {t.batch.total} 个
+            </button>
+          ) : (
+            <Link href={`/admin/tasks/${t.id}`} className="truncate font-medium hover:underline">
+              {jobLabel(t.job_type)}
+            </Link>
+          )}
           <CopyId value={t.id} className="text-muted-foreground" />
         </div>
       ),
     },
     { key: 'status', header: '状态', cell: (t) => <TaskStatusBadge status={taskState(t)} /> },
-    { key: 'attempts', header: '尝试', cell: (t) => <span className="tabular-nums">{t.attempts}/{t.max_attempts} 次</span>, className: 'w-20' },
+    {
+      key: 'attempts',
+      header: '尝试',
+      className: 'w-20',
+      cell: (t) => (t.batch ? <span className="text-muted-foreground">—</span> : <span className="tabular-nums">{t.attempts}/{t.max_attempts} 次</span>),
+    },
     { key: 'scheduled', header: '计划执行', cell: (t) => <span className="tabular-nums whitespace-nowrap">{formatDateTime(t.run_at)}</span> },
     { key: 'started', header: '开始', mobile: 'hidden', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.started_at ? formatDateTime(t.started_at) : '—'}</span> },
     { key: 'finished', header: '结束', cell: (t) => <span className="tabular-nums whitespace-nowrap">{t.finished_at ? formatDateTime(t.finished_at) : '—'}</span> },
-    { key: 'time', header: '耗时 / 进度', cell: (t) => <TimeCell task={t} now={now} /> },
+    { key: 'time', header: '耗时 / 进度', cell: (t) => (t.batch ? <BatchProgress counts={t.batch} /> : <TimeCell task={t} now={now} />) },
     {
       key: 'error',
       header: '错误',
       className: 'max-w-56',
       cell: (t) =>
-        t.error_message ? (
+        t.batch?.failed ? (
+          <span className="text-destructive tabular-nums">失败 {t.batch.failed} 个</span>
+        ) : t.error_message ? (
           <span className="text-destructive">
             <ExpandableText text={t.error_message} max={24} />
           </span>
@@ -326,16 +342,6 @@ export function AdminTasks() {
           </span>
         ))}
       </section>
-      {batches.length > 0 && (
-        <section aria-label="批量任务" className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">批量任务</h2>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {batches.map((b) => (
-              <BatchCard key={b.id} batch={b} selected={b.id === batch} onView={() => setBatch(b.id)} onCancel={() => actions.cancelBatch(b)} />
-            ))}
-          </div>
-        </section>
-      )}
 
       <div className="flex flex-col gap-3">
         <TabSwitch
@@ -401,7 +407,7 @@ export function AdminTasks() {
         selected={sel.ids}
         onSelectedChange={sel.set}
         empty={<EmptyState icon={ListChecks} title="没有符合条件的任务" description="试试调整筛选条件或切换视图。" className="border-0" />}
-        actions={(t) => <TaskActionItems task={t} now={now} actions={actions} />}
+        actions={(t) => <TaskActionItems task={t} now={now} actions={actions} onViewBatch={setBatch} />}
       />
       <Pagination paging={paging} total={tasks.data?.total ?? 0} />
 
