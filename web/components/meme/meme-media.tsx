@@ -24,24 +24,44 @@ function AutoVideo({ src, className, controls, label }: { src: string; className
   const ref = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const el = ref.current
-    if (!el || controls) return
-    const io = new IntersectionObserver(
+    if (!el) return
+    // React drops media events from before it mounts, which a video the browser holds, as on coming back to a page, may already have fired.
+    if (el.readyState >= el.HAVE_METADATA || el.error) el.dataset.loaded = ''
+    if (controls) return
+    // Set before playing: a source set after play() reloads the video paused.
+    const load = () => {
+      if (!el.hasAttribute('src')) el.src = src
+    }
+    const release = () => {
+      if (!el.hasAttribute('src')) return
+      el.removeAttribute('src')
+      el.load() // Frees its decoder and connection, which a video keeps until collected otherwise
+      delete el.dataset.loaded // Fades in again once it comes back
+    }
+    // Videos load only within a screen of the viewport, so a long grid holds a few dozen players however many it has.
+    const near = new IntersectionObserver(([entry]) => (entry.isIntersecting ? load() : release()), { rootMargin: '100% 0px' })
+    const visible = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) el.play().catch(() => {})
-        else el.pause()
+        if (entry.isIntersecting) {
+          load()
+          el.play().catch(() => {})
+        } else el.pause()
       },
       { threshold: 0.25 },
     )
-    io.observe(el)
+    near.observe(el)
+    visible.observe(el)
     return () => {
-      io.disconnect()
+      near.disconnect()
+      visible.disconnect()
       el.pause() // Also when hidden, as by an inactive tab
+      release()
     }
-  }, [controls])
+  }, [src, controls])
   return (
     <video
       ref={ref}
-      src={src}
+      src={controls ? src : undefined}
       className={cn(fitted, className)}
       onLoadedMetadata={reveal}
       onError={reveal}

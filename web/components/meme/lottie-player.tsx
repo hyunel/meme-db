@@ -1,16 +1,22 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { AnimationItem } from 'lottie-web'
+import type { DotLottieWorker } from '@lottiefiles/dotlottie-web'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-/** Fetches a Lottie animation: JSON, or gzip-compressed JSON (Telegram .tgs stickers). */
+// Served with the app rather than fetched from the player's CDN.
+const wasmUrl = new URL('@lottiefiles/dotlottie-web/dotlottie-player.wasm', import.meta.url).href
+const WORKERS = 4 // Players render off the main thread, spread over this many shared workers
+let nextWorker = 0
+
+/** Fetches a Lottie animation as the player takes it: JSON, gzip-compressed JSON (Telegram .tgs stickers), or a zipped .lottie file. */
 async function fetchAnimation(url: string, mime: string, signal: AbortSignal) {
   const res = await fetch(url, { signal })
   if (!res.ok || !res.body) throw new Error(`failed to fetch ${url}`)
+  if (mime === 'application/zip') return res.arrayBuffer()
   const body = mime.includes('gzip') ? res.body.pipeThrough(new DecompressionStream('gzip')) : res.body
-  return new Response(body).json()
+  return new Response(body).text()
 }
 
 export function LottiePlayer({ url, mime, label, className }: { url: string; mime: string; label: string; className?: string }) {
@@ -20,39 +26,50 @@ export function LottiePlayer({ url, mime, label, className }: { url: string; mim
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const ctrl = new AbortController()
-    let anim: AnimationItem | undefined
-    let visible = false
-    let started = false
+    let ctrl: AbortController | undefined
+    let player: DotLottieWorker | undefined
+    let canvas: HTMLCanvasElement | undefined
 
+    const stop = () => {
+      ctrl?.abort()
+      ctrl = undefined
+      void player?.destroy()
+      player = undefined
+      canvas?.remove() // A canvas handed to a worker cannot be handed over again
+      canvas = undefined
+    }
     const start = async () => {
-      started = true
+      const c = (ctrl = new AbortController())
       try {
-        const [data, { default: lottie }] = await Promise.all([fetchAnimation(url, mime, ctrl.signal), import('lottie-web/build/player/lottie_light')])
-        if (ctrl.signal.aborted) return
-        anim = lottie.loadAnimation({ container: el, renderer: 'svg', loop: true, autoplay: visible, animationData: data })
+        const [data, { DotLottieWorker }] = await Promise.all([fetchAnimation(url, mime, c.signal), import('@lottiefiles/dotlottie-web')])
+        if (c.signal.aborted) return
+        DotLottieWorker.setWasmUrl(wasmUrl)
+        canvas = document.createElement('canvas')
+        canvas.className = 'size-full'
+        el.append(canvas)
+        // Pauses itself while offscreen and follows the box's size.
+        player = new DotLottieWorker({ canvas, data, loop: true, autoplay: true, workerId: `lottie-${nextWorker++ % WORKERS}`, renderConfig: { autoResize: true } })
+        player.addEventListener('loadError', () => {
+          stop()
+          setFailed(true)
+        })
       } catch {
-        if (!ctrl.signal.aborted) setFailed(true) // e.g. a zipped .lottie file, which lottie-web cannot read
+        if (!c.signal.aborted) setFailed(true)
       }
     }
 
+    // Players exist only within a screen of the viewport, so a long grid holds a few dozen however many memes it has.
     const io = new IntersectionObserver(
       ([entry]) => {
-        visible = entry.isIntersecting
-        if (anim) {
-          if (visible) anim.play()
-          else anim.pause()
-        } else if (visible && !started) {
-          void start()
-        }
+        if (!entry.isIntersecting) stop()
+        else if (!ctrl) void start()
       },
-      { threshold: 0.1 },
+      { rootMargin: '100% 0px' },
     )
     io.observe(el)
     return () => {
-      ctrl.abort()
       io.disconnect()
-      anim?.destroy()
+      stop()
     }
   }, [url, mime])
 
