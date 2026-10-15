@@ -15,7 +15,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
   {
     title: '表情包与搜索',
     endpoints: [
-      ['POST', '/search', 'public', '按文字或图片搜索，返回第一页；表单字段 q、image、scope（all 或 mine）、folder_id'],
+      ['POST', '/search', 'public', '按文字或图片搜索，返回第一页；表单字段 q、image、scope（all 或 mine）、folder_id（限定在能打开的文件夹或合集中，优先于 scope）、share（打开它的私密链接令牌）；搜全站时第一页附带 collections，即命中最多的公开合集'],
       ['GET', '/search', 'public', '搜索的下一页：cursor 为上一页的 next，过期后返回 404，可带原参数与 page 重新 POST'],
       ['GET', '/memes', 'public', '热门表情包，可按 tag 筛选；分页，带 cursor 取下一页'],
       ['GET', '/memes/{id}', 'public', '表情包详情与识别状态；share 为私密链接的令牌'],

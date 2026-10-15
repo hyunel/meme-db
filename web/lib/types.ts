@@ -185,6 +185,11 @@ export interface SearchResult {
   similarity: number
 }
 
+export interface SearchFeed extends Feed<SearchResult> {
+  /** On the first page of a search of the whole site: public collections holding its best hits, previewed by them */
+  collections?: Folder[]
+}
+
 export interface SiteStats {
   /** Analyzed memes, public or not */
   memes: number

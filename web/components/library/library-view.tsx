@@ -355,7 +355,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                 <SelectItem value="name">按名称</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="ghost" nativeButton={false} render={<Link href={`/search?scope=mine${folder ? `&folder=${folder.id}` : ''}`} />}>
+            <Button variant="ghost" nativeButton={false} render={<Link href={folder ? `/search?folder=${folder.id}` : '/search?scope=mine'} />}>
               <Search data-icon="inline-start" />
               <span className="hidden sm:inline">在{folder ? '此文件夹' : '我的库'}中搜索</span>
               <span className="sm:hidden">搜索</span>

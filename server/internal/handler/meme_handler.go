@@ -29,7 +29,8 @@ type SearchRequest struct {
 	Query    string                `form:"q" validate:"max=200"`
 	Scope    string                `form:"scope" validate:"omitempty,oneof=all mine"`
 	FolderID string                `form:"folder_id" validate:"omitempty,uuid"`
-	Page     int                   `form:"page" validate:"min=0"` // Resumes a search whose cursor expired
+	Share    string                `form:"share" validate:"omitempty,uuid"` // The private link opening the folder
+	Page     int                   `form:"page" validate:"min=0"`           // Resumes a search whose cursor expired
 	Image    *multipart.FileHeader `form:"image"`
 }
 
@@ -48,6 +49,7 @@ func (h *MemeHandler) Search(c echo.Context) error {
 		Query:    req.Query,
 		Mine:     req.Scope == "mine",
 		FolderID: req.FolderID,
+		Share:    req.Share,
 		Page:     req.Page,
 	}
 	if req.Image != nil {

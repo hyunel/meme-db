@@ -32,5 +32,6 @@ export function useFeed<T>(key: unknown[] | null, fetchPage: (cursor: string | n
   const loadMore = useCallback(() => setSize((s) => (data && s > data.length ? s : s + 1)), [data, setSize])
   const retry = useCallback(() => setSize((s) => s), [setSize])
 
-  return { items, isLoading, hasMore: Boolean(data?.at(-1)?.next), isLoadingMore, error, loadMore, retry }
+  // first carries what a feed's first page has beyond its items
+  return { items, first: data?.[0], isLoading, hasMore: Boolean(data?.at(-1)?.next), isLoadingMore, error, loadMore, retry }
 }

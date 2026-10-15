@@ -283,20 +283,19 @@ type RecallScope struct {
 	ViewerID   string
 	Admin      bool
 	Mine       bool    // Only memes in the viewer's library
-	FolderPath *string // With Mine, restricts the library to a folder subtree
+	FolderPath *string // Only memes in a folder subtree, all of which the viewer may see once they may open the folder
 	Exclude    string  // An asset to leave out
 }
 
 // cond filters core.meme_info aliased m down to the scope.
 func (s RecallScope) cond(w *filter) string {
 	var cond string
-	if s.Mine {
-		owned := "n.owner_id = " + w.arg(s.ViewerID) + "::uuid"
-		if s.FolderPath != nil {
-			owned += " AND n.path <@ " + w.arg(*s.FolderPath) + "::ltree"
-		}
-		cond = "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND " + owned + ")"
-	} else {
+	switch {
+	case s.FolderPath != nil:
+		cond = "EXISTS (SELECT 1 FROM library.nodes n WHERE n.asset_id = m.asset_id AND n.path <@ " + w.arg(*s.FolderPath) + "::ltree)"
+	case s.Mine:
+		cond = memeOwnedBy(w.arg(s.ViewerID))
+	default:
 		cond = memeListed(w, s.ViewerID, s.Admin)
 	}
 	if s.Exclude != "" {

@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { MemeFeed } from '@/components/meme/meme-feed'
+import { FolderCard } from '@/components/folder/folder-card'
 import { useFeed } from '@/hooks/use-feed'
 import { useImageInput } from '@/hooks/use-image-input'
 import { ErrorState, EmptyState, MemeGridSkeleton } from '@/components/states'
@@ -16,7 +17,7 @@ import { ApiError, api, qs } from '@/lib/api'
 import { getImageQuery, putImageQuery, type ImageQuery } from '@/lib/image-query'
 import { clearRecentSearches, pushRecentSearch, removeRecentSearch, useRecentSearches } from '@/lib/recent-searches'
 import { useSession } from '@/lib/session'
-import type { Feed, LibraryView, SearchResult } from '@/lib/types'
+import type { FolderPage, SearchFeed } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Scope = 'all' | 'mine'
@@ -27,10 +28,10 @@ const EXAMPLES = [
   { icon: ScanText, title: '搜图中的文字', query: '收到' },
 ] as const
 
-async function search(q: string, scope: Scope, folderId: string | null, image: ImageQuery | null, cursor: string | null, page: number) {
+async function search(q: string, scope: Scope, folderId: string | null, share: string | null, image: ImageQuery | null, cursor: string | null, page: number) {
   if (cursor) {
     try {
-      return await api<Feed<SearchResult>>(`/search${qs({ cursor })}`)
+      return await api<SearchFeed>(`/search${qs({ cursor })}`)
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 404)) throw err // The search expired: run it again from this page
     }
@@ -39,9 +40,10 @@ async function search(q: string, scope: Scope, folderId: string | null, image: I
   form.set('q', q)
   form.set('scope', scope)
   if (folderId) form.set('folder_id', folderId)
+  if (share) form.set('share', share)
   if (image) form.set('image', image.file)
   if (page) form.set('page', String(page))
-  return api<Feed<SearchResult>>('/search', { method: 'POST', form })
+  return api<SearchFeed>('/search', { method: 'POST', form })
 }
 
 export function SearchView() {
@@ -53,21 +55,23 @@ export function SearchView() {
 
   const q = params.get('q')?.trim() ?? ''
   const scope: Scope = params.get('scope') === 'mine' ? 'mine' : 'all'
-  const folderId = scope === 'mine' ? params.get('folder') : null
+  const folderId = params.get('folder') // A folder or collection to search within, whatever the scope
+  const share = params.get('share') // The private link opening it
   const imageRef = params.get('img')
   const image = getImageQuery(imageRef)
   const imageLost = Boolean(imageRef && !image)
   const hasQuery = Boolean(q || image)
-  const blocked = scope === 'mine' && !user
+  const blocked = scope === 'mine' && !folderId && !user
 
   const [run, setRun] = useState(0) // Bumped to run the same search again
   // Searches are keyed by their parameters, so revisiting one is instant.
-  const feed = useFeed(ready && hasQuery && !blocked ? ['search', q, scope, folderId, imageRef, run] : null, (cursor, page) =>
-    search(q, scope, folderId, image, cursor, page),
+  const feed = useFeed(ready && hasQuery && !blocked ? ['search', q, scope, folderId, share, imageRef, run] : null, (cursor, page) =>
+    search(q, scope, folderId, share, image, cursor, page),
   )
+  const collections = (feed.first as SearchFeed | undefined)?.collections
   const { items: results, isLoading } = feed
   const error = results ? undefined : feed.error // A later page's error shows at the end of the feed
-  const { data: folderView } = useSWR<LibraryView>(folderId && user ? `/library?folder_id=${folderId}` : null)
+  const folderPage = useSWR<FolderPage>(folderId ? `/folders/${folderId}${qs({ share })}` : null)
   const recent = useRecentSearches()
 
   const [input, setInput] = useState(q)
@@ -83,7 +87,9 @@ export function SearchView() {
     if (!hasQuery) inputRef.current?.focus()
   }, [hasQuery])
 
-  const folder = folderView?.folder
+  const folder = folderPage.data?.folder
+  const own = Boolean(folder && folder.owner.id === user?.id)
+  const within = folder ? `「${folder.name}」` : !folderId && scope === 'mine' ? '我的库' : null
   // Kept across renders, as typing a new query rerenders the page under the results.
   const memes = useMemo(() => results?.map((r) => r.meme), [results])
   const similarity = useMemo(() => (image && results ? new Map(results.map((r) => [r.meme.id, r.similarity])) : undefined), [image, results])
@@ -95,8 +101,10 @@ export function SearchView() {
     const nf = next.folder === undefined ? folderId : next.folder
     const ni = next.img === undefined ? imageRef : next.img
     if (nq) p.set('q', nq)
-    if (ns === 'mine') p.set('scope', 'mine')
-    if (ns === 'mine' && nf) p.set('folder', nf)
+    if (nf) {
+      p.set('folder', nf)
+      if (share) p.set('share', share)
+    } else if (ns === 'mine') p.set('scope', 'mine')
     if (ni) p.set('img', ni)
     const qs = p.toString()
     router.push(qs ? `${pathname}?${qs}` : pathname)
@@ -119,10 +127,27 @@ export function SearchView() {
   const dragging = imageInput.dragging
 
   const setScope = (next: Scope) => {
-    if (next === scope) return
+    if (next === scope && !folderId) return
     if (next === 'mine' && !requireLogin('登录后即可在你的私人库中搜索。')) return
     navigate({ scope: next, folder: null })
   }
+
+  const related = collections?.length ? (
+    <section aria-labelledby="related-collections" className="flex flex-col gap-3">
+      <h2 id="related-collections" className="text-sm font-medium">
+        {image ? '包含相似表情的合集' : '相关合集'}
+      </h2>
+      <div className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
+        <ul className="flex w-max gap-3">
+          {collections.map((f) => (
+            <li key={f.id} className="w-44 sm:w-52">
+              <FolderCard folder={f} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  ) : null
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
@@ -150,7 +175,7 @@ export function SearchView() {
             onChange={(e) => setInput(e.target.value)}
             onPaste={imageInput.onPaste}
             autoComplete="off"
-            placeholder={dragging ? '松开以添加图片' : scope === 'mine' ? '在我的库中搜索…' : '关键词，或粘贴/拖入图片'}
+            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : '关键词，或粘贴/拖入图片'}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           <input {...imageInput.inputProps} />
@@ -196,11 +221,11 @@ export function SearchView() {
               key={o.id}
               type="button"
               role="radio"
-              aria-checked={scope === o.id}
+              aria-checked={!folderId && scope === o.id}
               onClick={() => setScope(o.id)}
               className={cn(
                 'flex h-9 items-center gap-1.5 rounded-md px-3 text-sm transition-colors',
-                scope === o.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
+                !folderId && scope === o.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <o.icon className="size-4" aria-hidden />
@@ -209,10 +234,13 @@ export function SearchView() {
             </button>
           ))}
         </div>
-        {folder && (
+        {folderId && (
           <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-brand/30 pr-1 pl-3 text-sm">
             <FolderIcon className="size-4" aria-hidden />
-            <span className="max-w-40 truncate">限定：{folder.name}</span>
+            <span className="max-w-56 truncate">
+              限定：
+              {folder ? `${own ? '我的库' : `@${folder.owner.username}`} / ${folder.name}` : folderPage.error ? '合集不可用' : '…'}
+            </span>
             <button
               type="button"
               aria-label="移除文件夹范围"
@@ -230,7 +258,7 @@ export function SearchView() {
             onClick={() => {
               setInput('')
               inputRef.current?.focus()
-              router.push(scope === 'mine' ? `${pathname}?scope=mine` : pathname)
+              navigate({ q: '', img: null })
             }}
           >
             <RotateCcw data-icon="inline-start" />
@@ -273,7 +301,7 @@ export function SearchView() {
               </div>
             )}
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium">{scope === 'mine' ? '在我的库中，试试这样搜' : '试试这样搜'}</h2>
+              <h2 className="text-sm font-medium">{within ? `在${within}中，试试这样搜` : '试试这样搜'}</h2>
               <ul className="grid gap-2 sm:grid-cols-3">
                 {[
                   ...EXAMPLES.map(({ icon, title, query }) => ({ icon, title, hint: `“${query}”`, onClick: () => navigate({ q: query }) })),
@@ -326,35 +354,39 @@ export function SearchView() {
           </div>
         ) : memes.length > 0 ? (
           <div className="flex flex-col gap-4">
+            {related}
             <p className="text-sm text-muted-foreground">按相关度排序</p>
-            {scope === 'mine' && (
+            {(folderId ? own : scope === 'mine') && (
               <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 新上传的表情包需处理完成后才能被搜到。
               </p>
             )}
-            <MemeFeed memes={memes} feed={feed} similarity={similarity} allowAdd />
+            <MemeFeed memes={memes} feed={feed} share={share ?? undefined} similarity={similarity} allowAdd />
           </div>
         ) : (
-          <EmptyState
-            icon={SearchX}
-            title="没有找到相关表情包"
-            description="换个关键词试试，或调整搜索范围。"
-            action={
-              <div className="flex flex-wrap justify-center gap-2">
-                {scope === 'mine' && (
-                  <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
-                    切换到全站
-                  </Button>
-                )}
-                {image && (
-                  <Button variant="outline" onClick={() => navigate({ img: null })}>
-                    移除图片
-                  </Button>
-                )}
-              </div>
-            }
-          />
+          <div className="flex flex-col gap-4">
+            {related}
+            <EmptyState
+              icon={SearchX}
+              title="没有找到相关表情包"
+              description="换个关键词试试，或调整搜索范围。"
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  {(scope === 'mine' || folderId) && (
+                    <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
+                      切换到全站
+                    </Button>
+                  )}
+                  {image && (
+                    <Button variant="outline" onClick={() => navigate({ img: null })}>
+                      移除图片
+                    </Button>
+                  )}
+                </div>
+              }
+            />
+          </div>
         )}
       </section>
     </div>

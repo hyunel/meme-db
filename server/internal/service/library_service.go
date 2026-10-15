@@ -52,7 +52,7 @@ func (s *LibraryService) Get(ctx context.Context, viewer *rbac.Identity, folderI
 	var folder *located
 	if folderID != nil {
 		var err error
-		if folder, err = s.locate(ctx, viewer, *folderID, model.NodeTypeFolder, ""); err != nil {
+		if folder, err = locate(ctx, s.repo, viewer, *folderID, model.NodeTypeFolder, ""); err != nil {
 			return nil, err
 		}
 		if folder == nil || folder.OwnerID != viewer.UserID {
@@ -70,7 +70,7 @@ type PublicFolderView struct {
 
 // PublicFolder shows a folder opened by its link, which may be another user's public one, or one a private link (share) opens.
 func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity, id, share string) (*PublicFolderView, error) {
-	folder, err := s.publicFolder(ctx, viewer, id, share)
+	folder, err := publicFolder(ctx, s.repo, viewer, id, share)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (s *LibraryService) PublicFolder(ctx context.Context, viewer *rbac.Identity
 
 // FolderEntries pages through the files of a folder opened by its link; the cursor is the id of the last file before.
 func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identity, id, share, cursor string, limit int) (*model.Feed[*model.Entry], error) {
-	folder, err := s.publicFolder(ctx, viewer, id, share)
+	folder, err := publicFolder(ctx, s.repo, viewer, id, share)
 	if err != nil {
 		return nil, err
 	}
@@ -107,8 +107,8 @@ func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identit
 	return &model.Feed[*model.Entry]{Items: entries, Next: next}, nil
 }
 
-func (s *LibraryService) publicFolder(ctx context.Context, viewer *rbac.Identity, id, share string) (*located, error) {
-	folder, err := s.locate(ctx, viewer, id, model.NodeTypeFolder, share)
+func publicFolder(ctx context.Context, repo *repository.Provider, viewer *rbac.Identity, id, share string) (*located, error) {
+	folder, err := locate(ctx, repo, viewer, id, model.NodeTypeFolder, share)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ type EntryDetail struct {
 
 // Entry finds a file opened by its link, which may be in another user's public folder, or in one a private link (share) opens.
 func (s *LibraryService) Entry(ctx context.Context, viewer *rbac.Identity, id, share string) (*EntryDetail, error) {
-	file, err := s.locate(ctx, viewer, id, model.NodeTypeFile, share)
+	file, err := locate(ctx, s.repo, viewer, id, model.NodeTypeFile, share)
 	if err != nil {
 		return nil, err
 	}
@@ -209,23 +209,23 @@ type located struct {
 
 // locate finds a node the viewer may see: any of their own, or one of an active user that is public
 // or that a private link (share) to a folder opens, whose path others see from the topmost public or linked folder down.
-func (s *LibraryService) locate(ctx context.Context, viewer *rbac.Identity, id string, nodeType model.NodeType, share string) (*located, error) {
-	node, err := s.repo.Node.Get(ctx, id)
+func locate(ctx context.Context, repo *repository.Provider, viewer *rbac.Identity, id string, nodeType model.NodeType, share string) (*located, error) {
+	node, err := repo.Node.Get(ctx, id)
 	if err != nil || node == nil || node.Type != nodeType {
 		return nil, err
 	}
-	owner, err := s.repo.User.Get(ctx, node.OwnerID)
+	owner, err := repo.User.Get(ctx, node.OwnerID)
 	if err != nil {
 		return nil, err
 	}
-	ancestors, err := s.repo.Node.Ancestors(ctx, node.Path)
+	ancestors, err := repo.Node.Ancestors(ctx, node.Path)
 	if err != nil {
 		return nil, err
 	}
 	own := node.OwnerID == viewer.UserID
 	linked := "" // The folder the link opens, at or above the node
 	if share != "" && !own {
-		if linked, err = s.repo.Share.Folder(ctx, share, node.Path); err != nil {
+		if linked, err = repo.Share.Folder(ctx, share, node.Path); err != nil {
 			return nil, err
 		}
 	}
@@ -426,7 +426,7 @@ func (s *LibraryService) Copy(ctx context.Context, viewer *rbac.Identity, ids []
 
 // SaveFolder copies a folder the viewer may open, or one a private link (share) opens, with all it holds into their library.
 func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, id string, parentID *string, share string) (*model.Folder, error) {
-	folder, err := s.publicFolder(ctx, viewer, id, share)
+	folder, err := publicFolder(ctx, s.repo, viewer, id, share)
 	if err != nil {
 		return nil, err
 	}

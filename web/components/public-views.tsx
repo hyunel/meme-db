@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MemeFeed } from '@/components/meme/meme-feed'
+import { SearchBar } from '@/components/search/search-bar'
 import { FolderCard, FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { PrivateLinkDialog, shareFolder } from '@/components/meme/share-dialog'
@@ -257,6 +258,7 @@ export function PublicFolderView({ id, share }: { id: string; share?: string }) 
               }
               action={<FolderActions folder={folder} own={own} viaLink={viaLink} share={share} />}
             />
+            <SearchBar folderId={folder.id} share={share} className="max-w-md" />
             {folders.length > 0 && (
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {folders.map((f) => (

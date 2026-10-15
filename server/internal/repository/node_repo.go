@@ -253,3 +253,35 @@ func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, 
 	`
 	return collectScalars[string](r.db.Query(ctx, query, nullable(ownerID), limit))
 }
+
+// CollectionHit is a public collection holding memes a search found.
+type CollectionHit struct {
+	ID       string            `db:"id"`
+	Previews []model.MemeThumb `db:"previews"` // Its first four memes among the hits, best first
+}
+
+// Collections ranks the public collections, topmost public folders of active users, by the memes of them among the
+// hits: a meme scores Σ 1 / (60 + rank) over the channels that found it, and a collection the sum of its best three,
+// so a large one gains nothing from holding many weak hits.
+func (r *NodeRepository) Collections(ctx context.Context, assetIDs []string, ranks []int, limit int) ([]*CollectionHit, error) {
+	query := `
+		WITH hit AS (
+			SELECT asset_id, sum(1.0 / (60 + rank)) AS score FROM unnest($1::uuid[], $2::int[]) AS h(asset_id, rank) GROUP BY asset_id
+		), member AS (
+			SELECT DISTINCT c.id, h.asset_id, h.score FROM hit h
+			JOIN library.nodes n ON n.asset_id = h.asset_id
+			JOIN library.nodes c ON c.is_public AND c.type = 'FOLDER' AND c.path @> n.path
+			JOIN iam.users u ON u.id = c.owner_id AND u.status = 'active'
+			WHERE NOT EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> c.path AND p.id <> c.id)
+		), ranked AS (
+			SELECT m.*, row_number() OVER (PARTITION BY m.id ORDER BY m.score DESC, m.asset_id) AS i FROM member m
+		)
+		SELECT r.id::text AS id, jsonb_agg(jsonb_build_object('id', r.asset_id, 'mime_type', a.mime_type) ORDER BY r.i) AS previews
+		FROM ranked r JOIN core.assets a ON a.id = r.asset_id
+		WHERE r.i <= 4
+		GROUP BY r.id
+		ORDER BY sum(r.score) FILTER (WHERE r.i <= 3) DESC, r.id
+		LIMIT $3
+	`
+	return collectAll[CollectionHit](r.db.Query(ctx, query, assetIDs, ranks, limit))
+}

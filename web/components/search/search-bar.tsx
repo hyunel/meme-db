@@ -15,6 +15,7 @@ export function SearchBar({
   defaultValue = '',
   scope,
   folderId,
+  share,
   className,
   autoFocus,
 }: {
@@ -22,6 +23,7 @@ export function SearchBar({
   defaultValue?: string
   scope?: 'all' | 'mine'
   folderId?: string | null
+  share?: string // The private link opening the folder
   className?: string
   autoFocus?: boolean
 }) {
@@ -30,8 +32,10 @@ export function SearchBar({
 
   const buildParams = (extra: Record<string, string>) => {
     const p = new URLSearchParams(extra)
-    if (scope === 'mine') p.set('scope', 'mine')
-    if (folderId) p.set('folder', folderId)
+    if (folderId) {
+      p.set('folder', folderId)
+      if (share) p.set('share', share)
+    } else if (scope === 'mine') p.set('scope', 'mine')
     return p.toString()
   }
 
@@ -70,7 +74,7 @@ export function SearchBar({
         onPaste={imageInput.onPaste}
         autoFocus={autoFocus}
         autoComplete="off"
-        placeholder={dragging ? '松开以按图片搜索' : scope === 'mine' ? '在我的库中搜索…' : '输入关键词，或拖入/粘贴图片搜索'}
+        placeholder={dragging ? '松开以按图片搜索' : folderId ? '在此合集中搜索…' : scope === 'mine' ? '在我的库中搜索…' : '输入关键词，或拖入/粘贴图片搜索'}
         className={cn('h-full min-w-0 flex-1 bg-transparent px-2 outline-none placeholder:text-muted-foreground', lg ? 'text-base' : 'text-sm')}
       />
       <input {...imageInput.inputProps} />

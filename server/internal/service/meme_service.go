@@ -21,6 +21,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const relatedCollections = 8 // Listed above the memes found in the whole site
+
 type MemeServiceConfig struct {
 	RetrievalPrompt string
 	TagMinUsage     int
@@ -180,8 +182,9 @@ type SearchParams struct {
 	Query    string
 	Image    *inference.ImageInput
 	Mine     bool   // Search only the viewer's library instead of every meme they may see
-	FolderID string // With Mine, restricts the search to a folder subtree
-	Page     int    // The page to return, which resumes a search kept no more
+	FolderID string // Restricts the search to a folder subtree the viewer may open, if need be by the private link Share
+	Share    string
+	Page     int // The page to return, which resumes a search kept no more
 }
 
 // searchSession is a search recalled every page deep, kept for its pages to be reranked as they are fetched.
@@ -189,23 +192,30 @@ type searchSession struct {
 	viewerID string
 	query    string
 	pages    [][]*model.SearchCandidate
+	viaLink  bool // Searched a folder a private link opens, whose memes the viewer may see though hidden
+}
+
+// SearchFeed is a page of a search; the first of a search of the whole site comes with the public collections it found.
+type SearchFeed struct {
+	*model.Feed[model.SearchResult]
+	Collections []*model.Folder `json:"collections,omitempty"`
 }
 
 // Search runs a search and returns a page of it; the cursors of the pages after it work while the search is kept.
-func (s *MemeService) Search(ctx context.Context, params SearchParams) (*model.Feed[model.SearchResult], error) {
-	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Admin: params.Viewer.IsAdmin(), Mine: params.Mine}
-	if params.Mine && params.Viewer.UserID == "" {
-		return nil, apperror.Unauthorized("library_search_unauthenticated", "sign in to search your library")
-	}
-	if params.Mine && params.FolderID != "" {
-		folder, err := s.repo.Node.Get(ctx, params.FolderID)
+func (s *MemeService) Search(ctx context.Context, params SearchParams) (*SearchFeed, error) {
+	scope := repository.RecallScope{ViewerID: params.Viewer.UserID, Admin: params.Viewer.IsAdmin()}
+	var viaLink bool
+	switch {
+	case params.FolderID != "":
+		folder, err := publicFolder(ctx, s.repo, params.Viewer, params.FolderID, params.Share)
 		if err != nil {
 			return nil, err
 		}
-		if folder == nil || folder.OwnerID != params.Viewer.UserID || folder.Type != model.NodeTypeFolder {
-			return nil, apperror.NotFound("folder_not_found", "folder not found")
-		}
-		scope.FolderPath = &folder.Path
+		scope.FolderPath, viaLink = &folder.Path, folder.ViaLink
+	case params.Mine && params.Viewer.UserID == "":
+		return nil, apperror.Unauthorized("library_search_unauthenticated", "sign in to search your library")
+	default:
+		scope.Mine = params.Mine
 	}
 
 	run, err := s.search(ctx, params.Query, params.Image, scope, s.cfg.RecallLimits, s.cfg.SearchPages)
@@ -213,9 +223,44 @@ func (s *MemeService) Search(ctx context.Context, params SearchParams) (*model.F
 		return nil, err
 	}
 	id := rand.Text()
-	session := &searchSession{viewerID: params.Viewer.UserID, query: params.Query, pages: run.pages}
+	session := &searchSession{viewerID: params.Viewer.UserID, query: params.Query, pages: run.pages, viaLink: viaLink}
 	s.sessions.Add(id, session)
-	return s.searchPage(ctx, params.Viewer, id, session, params.Page)
+	feed, err := s.searchPage(ctx, params.Viewer, id, session, params.Page)
+	if err != nil {
+		return nil, err
+	}
+	result := &SearchFeed{Feed: feed}
+	if params.Page == 0 && !scope.Mine && scope.FolderPath == nil {
+		result.Collections, err = s.collections(ctx, params.Viewer, run.hits)
+	}
+	return result, err
+}
+
+// collections lists the public collections holding the best of the hits, each shown by its memes among them.
+func (s *MemeService) collections(ctx context.Context, viewer *rbac.Identity, hits []*model.SearchCandidate) ([]*model.Folder, error) {
+	assetIDs := make([]string, len(hits))
+	ranks := make([]int, len(hits))
+	for i, h := range hits {
+		assetIDs[i], ranks[i] = h.AssetID, h.Rank
+	}
+	found, err := s.repo.Node.Collections(ctx, assetIDs, ranks, relatedCollections)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(found))
+	previews := make(map[string][]model.MemeThumb, len(found))
+	for i, c := range found {
+		ids[i], previews[c.ID] = c.ID, c.Previews
+	}
+	folders, err := s.repo.Node.Folders(ctx, viewer.UserID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range folders {
+		f.Previews = previews[f.ID]
+	}
+	s.assets.signFolders(folders)
+	return orderByID(folders, ids, func(f *model.Folder) string { return f.ID }), nil
 }
 
 // SearchPage returns a page of a kept search by its cursor.
@@ -244,7 +289,7 @@ func (s *MemeService) searchPage(ctx context.Context, viewer *rbac.Identity, id 
 	for i, c := range candidates {
 		ids[i] = c.AssetID
 	}
-	memes, err := s.Memes(ctx, viewer, ids)
+	memes, err := s.load(ctx, viewer, ids, viewer.IsAdmin() || session.viaLink)
 	if err != nil {
 		return nil, err
 	}
