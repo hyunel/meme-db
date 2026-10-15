@@ -44,7 +44,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
       ['POST', '/library/folders', 'write', '新建文件夹：{ name, parent_id }'],
       ['POST', '/library/folders/{id}/save', 'write', '把他人的合集连同内容复制到库中：{ parent_id, share }，share 为打开它的私密链接令牌'],
       ['PATCH', '/library/nodes/{id}', 'write', '重命名文件或文件夹：{ name }'],
-      ['PATCH', '/library/nodes', 'write', '设为公开或私有：{ ids, is_public }'],
+      ['PATCH', '/library/nodes', 'write', '设为公开或私有：{ ids, is_public }；设为私有时，文件夹里的一切一并设为私有'],
       ['POST', '/library/nodes/move', 'write', '移动：{ ids, target_id }，target_id 留空即库根目录'],
       ['POST', '/library/nodes/copy', 'write', '复制：{ ids, target_id }'],
       ['DELETE', '/library/nodes', 'write', '删除：{ ids }'],

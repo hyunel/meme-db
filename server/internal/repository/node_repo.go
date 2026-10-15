@@ -129,9 +129,12 @@ func (r *NodeRepository) Rename(ctx context.Context, id, name string) error {
 }
 
 func (r *NodeRepository) SetPublic(ctx context.Context, ownerID string, ids []string, isPublic bool) error {
+	// Making a folder private clears the flags inside it too, so nothing in it stays public.
 	query := `
-		UPDATE library.nodes SET is_public = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ANY($1::uuid[]) AND owner_id = $2::uuid
+		UPDATE library.nodes n SET is_public = $3, updated_at = CURRENT_TIMESTAMP
+		FROM library.nodes t
+		WHERE t.id = ANY($1::uuid[]) AND t.owner_id = $2::uuid
+		  AND (n.id = t.id OR (NOT $3 AND n.is_public AND n.path <@ t.path))
 	`
 	_, err := r.db.Exec(ctx, query, ids, ownerID, isPublic)
 	return err
