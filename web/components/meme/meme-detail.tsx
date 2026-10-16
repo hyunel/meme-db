@@ -161,7 +161,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
     return (
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
         {back}
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
           <Skeleton className="aspect-square rounded-2xl md:aspect-auto md:h-[28rem]" />
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
@@ -241,7 +241,7 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
       <div className="flex flex-col gap-4">
         {back}
 
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
           <div className="flex items-center justify-center rounded-2xl bg-muted/50 p-4 md:min-h-[28rem] md:self-start md:p-8">
             {/* As large as fits at the meme's own ratio, even above its size */}
             <div className="overflow-hidden rounded-lg border" style={{ aspectRatio: ratio, width: `min(100%, calc(70vh * ${ratio}))` }}>

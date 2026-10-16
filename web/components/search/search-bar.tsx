@@ -74,8 +74,8 @@ export function SearchBar({
         onPaste={imageInput.onPaste}
         autoFocus={autoFocus}
         autoComplete="off"
-        placeholder={dragging ? '松开以按图片搜索' : folderId ? '在此合集中搜索…' : scope === 'mine' ? '在我的库中搜索…' : '输入关键词，或拖入/粘贴图片搜索'}
-        className={cn('h-full min-w-0 flex-1 bg-transparent px-2 outline-none placeholder:text-muted-foreground', lg ? 'text-base' : 'text-sm')}
+        placeholder={dragging ? '松开以按图片搜索' : folderId ? '在此合集中搜索…' : scope === 'mine' ? '在我的库中搜索…' : '关键词，或粘贴图片'}
+        className={cn('h-full min-w-0 flex-1 bg-transparent px-2 text-ellipsis outline-none placeholder:text-muted-foreground', lg ? 'text-base' : 'text-sm')}
       />
       <input {...imageInput.inputProps} />
       <Tooltip>

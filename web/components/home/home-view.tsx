@@ -35,15 +35,18 @@ export function HomeView() {
             <span className="font-medium text-foreground tabular-nums">{stats?.memes ?? '…'}</span>
             {' 张表情包，支持以图搜图'}
           </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-balance md:text-6xl">
-            找到那张<span className="relative whitespace-nowrap">
+          {/* break-keep wraps Chinese only between phrases: at the <wbr>, or after punctuation */}
+          <h1 className="text-4xl font-semibold tracking-tight text-balance break-keep md:text-6xl">
+            找到那张<wbr />
+            <span className="relative whitespace-nowrap">
               <span className="relative z-10">刚刚好</span>
               <span className="absolute inset-x-0 bottom-1 -z-0 h-3 rounded-sm bg-brand md:h-4" aria-hidden />
             </span>
             的表情包
           </h1>
-          <p className="max-w-xl text-pretty text-muted-foreground md:text-lg">
-            输入一句话、一个情绪，或直接丢一张图进来。MemeDB 会识别图中的文字和角色，帮你秒找同款。
+          <p className="max-w-xl text-pretty break-keep text-muted-foreground md:text-lg">
+            <span className="inline-block">输入一句话、一个情绪，或直接丢一张图进来。</span>
+            <span className="inline-block">MemeDB 会识别图中的文字和角色，帮你秒找同款。</span>
           </p>
           <SearchBar size="lg" className="max-w-2xl" />
           <div className="flex flex-col items-center gap-3">

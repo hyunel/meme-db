@@ -124,7 +124,8 @@ export function UserProfileView({ username }: { username: string }) {
             <div className="flex min-w-0 flex-col gap-0.5">
               <h1 className="truncate text-2xl font-semibold tracking-tight">@{user.username}</h1>
               <p className="text-sm text-muted-foreground">
-                {formatDate(user.created_at)} 加入 · {folders.length} 个公开合集 · {meme_count} 个公开表情包
+                <span className="whitespace-nowrap">{formatDate(user.created_at)} 加入</span> · <span className="whitespace-nowrap">{folders.length} 个公开合集</span> ·{' '}
+                <span className="whitespace-nowrap">{meme_count} 个公开表情包</span>
               </p>
             </div>
           </header>

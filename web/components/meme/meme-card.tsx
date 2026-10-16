@@ -71,7 +71,8 @@ export const MemeCard = memo(function MemeCard({
         </div>
       )}
       <div className="flex min-h-8 items-center gap-1">
-        <div className="flex min-w-0 flex-1 gap-1">
+        {/* A tag that does not fit wraps out of sight, rather than shrinking to "#…" */}
+        <div className="flex h-5 min-w-0 flex-1 flex-wrap gap-x-1 overflow-hidden">
           {shown.map((t) => (
             <Link
               key={t}

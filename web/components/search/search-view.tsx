@@ -212,8 +212,8 @@ export function SearchView() {
             onChange={(e) => setInput(e.target.value)}
             onPaste={imageInput.onPaste}
             autoComplete="off"
-            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词（可选）' : '关键词，或粘贴/拖入图片'}
-            className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词（可选）' : '关键词，或粘贴图片'}
+            className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base text-ellipsis outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           <input {...imageInput.inputProps} />
           <Button type="button" variant="ghost" size="icon-lg" onClick={imageInput.open} aria-label={image ? '替换图片' : '添加图片'}>
