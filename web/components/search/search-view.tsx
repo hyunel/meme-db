@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useRequireLogin } from '@/components/app-providers'
 import { MemeFeed } from '@/components/meme/meme-feed'
-import { FolderCard } from '@/components/folder/folder-card'
+import { MemeMedia } from '@/components/meme/meme-media'
 import { useFeed } from '@/hooks/use-feed'
 import { useImageInput } from '@/hooks/use-image-input'
 import { ErrorState, EmptyState, MemeGridSkeleton } from '@/components/states'
@@ -132,16 +132,28 @@ export function SearchView() {
     navigate({ scope: next, folder: null })
   }
 
+  // Each collection by the meme of it found best, as a meme's page lists the places holding it.
   const related = collections?.length ? (
-    <section aria-labelledby="related-collections" className="flex flex-col gap-3">
+    <section aria-labelledby="related-collections" className="flex flex-col gap-2">
       <h2 id="related-collections" className="text-sm font-medium">
         {image ? '包含相似表情的合集' : '相关合集'}
       </h2>
       <div className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
-        <ul className="flex w-max gap-3">
+        <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
           {collections.map((f) => (
-            <li key={f.id} className="w-44 sm:w-52">
-              <FolderCard folder={f} />
+            <li key={f.id}>
+              <Link
+                href={f.owner.id === user?.id ? `/library?folder=${f.id}` : `/f/${f.id}`}
+                className="flex items-center gap-2.5 rounded-xl border bg-card p-1.5 pr-3.5 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/50" aria-hidden>
+                  {f.previews[0] && <MemeMedia meme={f.previews[0]} />}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="max-w-44 truncate text-sm font-medium">{f.name}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{f.item_count} 张</span>
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
@@ -355,7 +367,6 @@ export function SearchView() {
         ) : memes.length > 0 ? (
           <div className="flex flex-col gap-4">
             {related}
-            <p className="text-sm text-muted-foreground">按相关度排序</p>
             {(folderId ? own : scope === 'mine') && (
               <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
