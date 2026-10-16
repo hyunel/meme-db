@@ -59,13 +59,12 @@ export function SearchView() {
   const share = params.get('share') // The private link opening it
   const imageRef = params.get('img')
   const image = getImageQuery(imageRef)
-  const imageLost = Boolean(imageRef && !image)
   const hasQuery = Boolean(q || image)
   const blocked = scope === 'mine' && !folderId && !user
 
   const [run, setRun] = useState(0) // Bumped to run the same search again
   // Searches are keyed by their parameters, so revisiting one is instant.
-  const feed = useFeed(ready && hasQuery && !blocked ? ['search', q, scope, folderId, share, imageRef, run] : null, (cursor, page) =>
+  const feed = useFeed(ready && hasQuery && !blocked ? ['search', q, scope, folderId, share, image?.id ?? null, run] : null, (cursor, page) =>
     search(q, scope, folderId, share, image, cursor, page),
   )
   const collections = (feed.first as SearchFeed | undefined)?.collections
@@ -86,6 +85,14 @@ export function SearchView() {
   useEffect(() => {
     if (!hasQuery) inputRef.current?.focus()
   }, [hasQuery])
+
+  // Query images last as long as the tab, so after a reload or in a copied link the reference is dropped.
+  useEffect(() => {
+    if (!imageRef || image) return
+    const p = new URLSearchParams(params)
+    p.delete('img')
+    router.replace(p.size ? `${pathname}?${p}` : pathname)
+  }, [imageRef, image, params, pathname, router])
 
   const folder = folderPage.data?.folder
   const own = Boolean(folder && folder.owner.id === user?.id)
@@ -169,12 +176,30 @@ export function SearchView() {
         onSubmit={submit}
         {...imageInput.dropProps}
         className={cn(
-          'flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-xs transition focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20',
+          'rounded-2xl border bg-card p-2 shadow-xs transition focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20',
           dragging && 'border-dashed border-foreground bg-brand/20',
         )}
       >
         <div className="flex items-center gap-1">
-          <Search className="ml-2 size-5 shrink-0 text-muted-foreground" aria-hidden />
+          {image ? (
+            // Into the form's padding, its corners concentric with the form's
+            <button
+              type="button"
+              title="移除图片"
+              onClick={() => navigate({ img: null })}
+              className="group relative -my-1 -ml-1 size-13 shrink-0 overflow-hidden rounded-xl border bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <img src={image.url} alt="" className="size-full object-contain" />
+              <span
+                className="absolute inset-0 flex items-center justify-center bg-foreground/50 text-background opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                aria-hidden
+              >
+                <X className="size-5" />
+              </span>
+            </button>
+          ) : (
+            <Search className="ml-2 size-5 shrink-0 text-muted-foreground" aria-hidden />
+          )}
           <label htmlFor="search-main" className="sr-only">
             关键词
           </label>
@@ -187,7 +212,7 @@ export function SearchView() {
             onChange={(e) => setInput(e.target.value)}
             onPaste={imageInput.onPaste}
             autoComplete="off"
-            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : '关键词，或粘贴/拖入图片'}
+            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词（可选）' : '关键词，或粘贴/拖入图片'}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           <input {...imageInput.inputProps} />
@@ -201,24 +226,6 @@ export function SearchView() {
             <span className="sr-only sm:hidden">搜索</span>
           </Button>
         </div>
-        {(image || imageLost) && (
-          <div className="flex items-center gap-3 rounded-xl bg-muted/60 p-2">
-            {image ? (
-              <img src={image.url} alt="用于搜索的图片" className="size-12 rounded-lg border bg-card object-contain" />
-            ) : (
-              <div className="flex size-12 items-center justify-center rounded-lg border bg-card">
-                <ImageIcon className="size-5 text-muted-foreground" aria-hidden />
-              </div>
-            )}
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="truncate font-medium">{image ? image.name : '图片已失效'}</p>
-              <p className="text-xs text-muted-foreground">{image ? '按图片相似度搜索' : '刷新页面后需要重新添加图片'}</p>
-            </div>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="移除图片" onClick={() => navigate({ img: null })}>
-              <X />
-            </Button>
-          </div>
-        )}
       </form>
 
       <div className="flex flex-wrap items-center gap-2">

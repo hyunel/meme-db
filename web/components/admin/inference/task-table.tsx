@@ -85,7 +85,6 @@ export function TaskTable({ data, onOpen }: { data?: InferenceSnapshot; onOpen: 
     <section aria-labelledby="task-types" className="flex flex-col gap-3">
       <h2 id="task-types" className="text-sm font-medium text-muted-foreground">
         任务类型
-        <span className="ml-2 font-normal">点击查看详情</span>
       </h2>
       <DataList
         rows={sortRows(data.tasks, columns, sort)}
