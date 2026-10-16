@@ -1,7 +1,8 @@
 'use client'
 
 import { toast } from 'sonner'
-import { kindOf } from './media'
+import type { ConvertSource } from './convert-worker'
+import { fetchAnimation, kindOf } from './media'
 import type { Meme } from './types'
 
 export type DownloadFormat = 'original' | 'png' | 'jpg' | 'gif'
@@ -33,8 +34,8 @@ function saveBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-async function fetchBlob(meme: Meme) {
-  const res = await fetch(meme.url)
+async function fetchBlob(meme: Meme, signal?: AbortSignal) {
+  const res = await fetch(meme.url, { signal })
   if (!res.ok) throw new Error('文件获取失败')
   return res.blob()
 }
@@ -44,31 +45,70 @@ export async function downloadOriginal(meme: Meme) {
   saveBlob(blob, `${fileBase(meme)}.${extOf(meme)}`)
 }
 
-export async function downloadConverted(meme: Meme, format: Exclude<DownloadFormat, 'original'>, onProgress: (p: number) => void) {
-  const kind = kindOf(meme.mime_type)
-  if (kind === 'video' || kind === 'lottie') throw new Error('视频和矢量动画暂不支持格式转换，请下载原格式')
-  onProgress(10)
-  const blob = await fetchBlob(meme)
-  onProgress(35)
-  const bitmap = await createImageBitmap(blob)
-  onProgress(60)
-  const canvas = document.createElement('canvas')
-  canvas.width = bitmap.width
-  canvas.height = bitmap.height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('当前浏览器无法完成转换')
-  if (format === 'jpg') {
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+/** Quality (1–100) is of a JPG; fps, the most frames a second, and speed are of a GIF of an animation; scale is of the size. */
+export type ConvertOptions = { quality: number; fps: number; speed: number; scale: number }
+
+export const defaultOptions: ConvertOptions = { quality: 92, fps: 30, speed: 1, scale: 1 }
+
+const mimeOf = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif' }
+
+/** Converts on the device, in a worker; animations become a GIF whole, or a PNG or JPG of their first frame. */
+export async function downloadConverted(
+  meme: Meme,
+  format: Exclude<DownloadFormat, 'original'>,
+  options: ConvertOptions,
+  onProgress: (p: number) => void,
+  signal: AbortSignal,
+) {
+  const unchanged = (Object.keys(options) as (keyof ConvertOptions)[]).every((k) => options[k] === defaultOptions[k])
+  if (meme.mime_type === mimeOf[format] && unchanged) return downloadOriginal(meme)
+  const worker = new Worker(new URL('./convert-worker.ts', import.meta.url), { type: 'module' })
+  const video = kindOf(meme.mime_type) === 'video' ? document.createElement('video') : undefined
+  try {
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason))
+      worker.onerror = reject
+      worker.onmessage = ({ data }) => {
+        if (data.blob) resolve(data.blob)
+        else if (data.error) reject(new Error('无法转换这个文件，请下载原格式'))
+        else if (data.progress) onProgress(Math.round(data.progress * 100))
+        else if (video) frameAt(video, data.seek).then((frame) => worker.postMessage({ frame }, [frame]), reject)
+      }
+      sourceOf(meme, video, signal).then((source) => worker.postMessage({ format, options, source }), reject)
+    })
+    saveBlob(blob, `${fileBase(meme)}.${format}`)
+  } finally {
+    worker.terminate()
+    if (video) URL.revokeObjectURL(video.src)
   }
-  ctx.drawImage(bitmap, 0, 0)
-  onProgress(80)
-  const mime = format === 'jpg' ? 'image/jpeg' : format === 'gif' ? 'image/gif' : 'image/png'
-  const out = await new Promise<Blob | null>((r) => canvas.toBlob(r, mime, 0.92))
-  if (!out || out.type !== mime) throw new Error(`当前浏览器不支持转换为 ${format.toUpperCase()}`)
-  onProgress(100)
-  saveBlob(out, `${fileBase(meme)}.${format}`)
 }
+
+async function sourceOf(meme: Meme, video: HTMLVideoElement | undefined, signal: AbortSignal): Promise<ConvertSource> {
+  if (kindOf(meme.mime_type) === 'lottie') return { lottie: await fetchAnimation(meme.url, meme.mime_type, signal) }
+  const blob = await fetchBlob(meme, signal)
+  if (!video) return { image: blob }
+  video.muted = true
+  video.src = URL.createObjectURL(blob)
+  await videoEvent(video, 'loadedmetadata')
+  // Recordings may leave their length out, which seeking to the end finds.
+  if (video.duration === Infinity) {
+    video.currentTime = 1e9
+    await videoEvent(video, 'seeked')
+  }
+  return { video: { width: video.videoWidth, height: video.videoHeight, duration: video.duration } }
+}
+
+async function frameAt(video: HTMLVideoElement, time: number) {
+  video.currentTime = time
+  await videoEvent(video, 'seeked')
+  return createImageBitmap(video)
+}
+
+const videoEvent = (video: HTMLVideoElement, type: string) =>
+  new Promise((resolve, reject) => {
+    video.addEventListener(type, resolve, { once: true })
+    video.addEventListener('error', () => reject(new Error('当前浏览器无法解码这个视频')), { once: true })
+  })
 
 export async function downloadMany(memes: Meme[]) {
   let ok = 0

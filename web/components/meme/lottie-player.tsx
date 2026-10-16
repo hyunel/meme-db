@@ -3,21 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DotLottieWorker } from '@lottiefiles/dotlottie-web'
 import { Sparkles } from 'lucide-react'
+import { fetchAnimation } from '@/lib/media'
 import { cn } from '@/lib/utils'
 
 // Served with the app rather than fetched from the player's CDN.
 const wasmUrl = new URL('@lottiefiles/dotlottie-web/dotlottie-player.wasm', import.meta.url).href
 const WORKERS = 4 // Players render off the main thread, spread over this many shared workers
 let nextWorker = 0
-
-/** Fetches a Lottie animation as the player takes it: JSON, gzip-compressed JSON (Telegram .tgs stickers), or a zipped .lottie file. */
-async function fetchAnimation(url: string, mime: string, signal: AbortSignal) {
-  const res = await fetch(url, { signal })
-  if (!res.ok || !res.body) throw new Error(`failed to fetch ${url}`)
-  if (mime === 'application/zip') return res.arrayBuffer()
-  const body = mime.includes('gzip') ? res.body.pipeThrough(new DecompressionStream('gzip')) : res.body
-  return new Response(body).text()
-}
 
 export function LottiePlayer({ url, mime, label, className }: { url: string; mime: string; label: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
