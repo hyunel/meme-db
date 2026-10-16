@@ -88,8 +88,9 @@ export const MemeCard = memo(function MemeCard({
   )
 })
 
-// The Tailwind lg / md / sm breakpoints, widest first.
+// The Tailwind xl / lg / md / sm breakpoints, widest first.
 const columnQueries: [string, number][] = [
+  ['(min-width: 80rem)', 6],
   ['(min-width: 64rem)', 5],
   ['(min-width: 48rem)', 4],
   ['(min-width: 40rem)', 3],

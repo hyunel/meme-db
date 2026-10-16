@@ -84,7 +84,7 @@ const SKELETON_RATIOS = [1, 1.3, 0.75, 1.1, 0.9, 1.25]
 export function MemeGridSkeleton() {
   return (
     <div className="flex items-start gap-3" aria-busy="true" aria-label="加载中">
-      {['flex', 'flex', 'hidden sm:flex', 'hidden md:flex', 'hidden lg:flex'].map((display, c) => (
+      {['flex', 'flex', 'hidden sm:flex', 'hidden md:flex', 'hidden lg:flex', 'hidden xl:flex'].map((display, c) => (
         <div key={c} className={cn('min-w-0 flex-1 flex-col gap-4', display)}>
           {[0, 1, 2].map((r) => (
             <div key={r} className="flex flex-col gap-1.5">

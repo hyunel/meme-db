@@ -5,7 +5,7 @@ import useSWR from 'swr'
 import { ArrowRight, Clock, Flame, X } from 'lucide-react'
 import { SearchBar } from '@/components/search/search-bar'
 import { MemeGrid } from '@/components/meme/meme-card'
-import { FolderCard } from '@/components/folder/folder-card'
+import { FolderGrid } from '@/components/folder/folder-card'
 import { MemeGridSkeleton } from '@/components/states'
 import { Button } from '@/components/ui/button'
 import { clearRecentSearches, useRecentSearches } from '@/lib/recent-searches'
@@ -23,8 +23,8 @@ export function HomeView() {
   const recent = useRecentSearches()
   const { data: hot } = useSWR<string[]>('/tags/hot?limit=8')
   const { data: stats } = useSWR<SiteStats>('/stats')
-  const { data: popular } = useSWR<Feed<Meme>>('/memes?limit=10')
-  const { data: folders } = useSWR<Folder[]>('/folders?limit=4')
+  const { data: popular } = useSWR<Feed<Meme>>('/memes?limit=12')
+  const { data: folders } = useSWR<Folder[]>('/folders?limit=6')
 
   return (
     <>
@@ -104,13 +104,7 @@ export function HomeView() {
           </h2>
           <p className="text-sm text-muted-foreground">由用户整理并公开分享的表情包合集</p>
         </div>
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {folders.map((f) => (
-            <li key={f.id}>
-              <FolderCard folder={f} />
-            </li>
-          ))}
-        </ul>
+        <FolderGrid folders={folders} />
       </section>
       )}
     </>

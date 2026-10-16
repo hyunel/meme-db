@@ -65,8 +65,8 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
 
 export function FolderGridSkeleton() {
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-busy="true" aria-label="加载中">
-      {Array.from({ length: 4 }, (_, i) => (
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" aria-busy="true" aria-label="加载中">
+      {Array.from({ length: 6 }, (_, i) => (
         <li key={i} className="flex flex-col gap-3 rounded-xl border bg-card p-3">
           <Skeleton className="aspect-[4/3] rounded-lg" />
           <Skeleton className="mx-1 h-5 w-2/3" />
@@ -77,12 +77,12 @@ export function FolderGridSkeleton() {
   )
 }
 
-export function FolderGrid({ folders, showOwner }: { folders: Folder[]; showOwner?: boolean }) {
+export function FolderGrid({ folders, showOwner, share }: { folders: Folder[]; showOwner?: boolean; share?: string }) {
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {folders.map((f) => (
         <li key={f.id}>
-          <FolderCard folder={f} showOwner={showOwner} />
+          <FolderCard folder={f} showOwner={showOwner} share={share} />
         </li>
       ))}
     </ul>

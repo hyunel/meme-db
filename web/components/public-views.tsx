@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MemeFeed } from '@/components/meme/meme-feed'
 import { SearchBar } from '@/components/search/search-bar'
-import { FolderCard, FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
+import { FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { PrivateLinkDialog, shareFolder } from '@/components/meme/share-dialog'
 import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
@@ -259,15 +259,7 @@ export function PublicFolderView({ id, share }: { id: string; share?: string }) 
               action={<FolderActions folder={folder} own={own} viaLink={viaLink} share={share} />}
             />
             <SearchBar folderId={folder.id} share={share} className="max-w-md" />
-            {folders.length > 0 && (
-              <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {folders.map((f) => (
-                  <li key={f.id}>
-                    <FolderCard folder={f} showOwner={false} share={share} />
-                  </li>
-                ))}
-              </ul>
-            )}
+            {folders.length > 0 && <FolderGrid folders={folders} showOwner={false} share={share} />}
             <MemeFeed
               memes={entries.items}
               feed={entries}

@@ -82,8 +82,8 @@ export function LibraryView() {
             <Skeleton className="h-4 w-48" />
           </div>
           <Skeleton className="h-9 w-28" />
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {Array.from({ length: 10 }, (_, i) => (
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {Array.from({ length: 12 }, (_, i) => (
               <li key={i} className="flex flex-col gap-2 rounded-xl border bg-card p-2">
                 <Skeleton className="aspect-square rounded-lg" />
                 <Skeleton className="h-4 w-2/3" />
@@ -379,7 +379,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
           }
         />
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {items.map((item) => {
             const node = nodeOf(item)
             const checked = selected.has(node.id)
