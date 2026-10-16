@@ -130,8 +130,6 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const router = useRouter()
   const params = useSearchParams()
   const folder = lib.folder
-  // Whatever a public folder holds is public through it, with no switch of its own.
-  const inPublic = folder !== null && folder.visibility !== 'private'
   const here = folder?.name ?? '我的库'
   const libraryHref = (id: string | null) => (id ? `/library?folder=${id}` : '/library')
 
@@ -455,12 +453,10 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                         <Copy />
                         复制到…
                       </DropdownMenuItem>
-                      {!inPublic && (
-                        <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
-                          {isPublicSelf ? <Lock /> : <Globe />}
-                          {isPublicSelf ? '设为私有' : '设为公开'}
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
+                        {isPublicSelf ? <Lock /> : <Globe />}
+                        {isPublicSelf ? '设为私有' : '设为公开'}
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => share(item)}>
                         <Share2 />
                         分享
@@ -496,12 +492,8 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
             [
               { label: '移动', icon: FolderInput, on: () => setPicker({ mode: 'move', items: sel }) },
               { label: '复制', icon: Copy, on: () => setPicker({ mode: 'copy', items: sel }) },
-              ...(inPublic
-                ? []
-                : [
-                    { label: '公开', icon: Globe, on: () => setPublic(sel, true) },
-                    { label: '私有', icon: Lock, on: () => setPublic(sel, false) },
-                  ]),
+              { label: '公开', icon: Globe, on: () => setPublic(sel, true) },
+              { label: '私有', icon: Lock, on: () => setPublic(sel, false) },
               { label: '下载', icon: Download, on: () => download(sel) },
               { label: '删除', icon: Trash2, on: () => setConfirmDelete(sel) },
             ] as const
