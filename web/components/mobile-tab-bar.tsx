@@ -13,9 +13,10 @@ export function MobileTabBar() {
   const tabs = [{ href: '/', label: '首页', icon: House }, ...useMainNav(), ...(user ? [] : [{ href: '/login', label: '登录', icon: LogIn }])]
 
   return (
+    // Hidden while typing: iOS lifts fixed bars above the keyboard, where its glass toolbar shows the page beneath them
     <nav
       aria-label="底部导航"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden [body:has(:is(input,textarea):focus)_&]:hidden"
     >
       <ul className="flex">
         {tabs.map((t) => {

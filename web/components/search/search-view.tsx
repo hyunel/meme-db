@@ -81,9 +81,10 @@ export function SearchView() {
   }
 
   // The page without a query is for typing one; results are left unfocused, so no keyboard covers them.
+  // Only with a mouse: a touch screen opens no keyboard for a focus outside a tap, and the focus alone would hide the tab bar.
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (!hasQuery) inputRef.current?.focus()
+    if (!hasQuery && matchMedia('(pointer: fine)').matches) inputRef.current?.focus()
   }, [hasQuery])
 
   // Query images last as long as the tab, so after a reload or in a copied link the reference is dropped.
