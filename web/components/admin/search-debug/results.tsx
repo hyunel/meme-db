@@ -107,7 +107,7 @@ function Banner({ tone, title, memeId, onOpen, children }: { tone: 'ok' | 'warn'
       aria-live="polite"
       className={cn('flex gap-3 rounded-xl border p-4', tone === 'ok' ? 'border-success/40 bg-success/10' : 'border-warning/50 bg-warning/10')}
     >
-      <Icon className={cn('mt-0.5 size-5 shrink-0', tone === 'ok' ? 'text-success' : 'text-[oklch(0.5_0.13_70)]')} aria-hidden />
+      <Icon className={cn('mt-0.5 size-5 shrink-0', tone === 'ok' ? 'text-success' : 'text-warning-strong')} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-x-2">
           <h2 className="font-medium">{title}</h2>

@@ -8,8 +8,9 @@ export function Logo({ className, href = '/' }: { className?: string; href?: str
       <svg viewBox="0 0 32 32" className="size-8 shrink-0" aria-hidden>
         <path d="M9 3H5Q3 3 3 5V9M23 3H27Q29 3 29 5V9M3 23V27Q3 29 5 29H9M29 23V27Q29 29 27 29H23" fill="none" className="stroke-foreground" strokeWidth="2" strokeLinecap="round" />
         <g shapeRendering="crispEdges">
+          {/* The face stays dark on its yellow in either theme, as in the dark favicon */}
           <path
-            className="fill-foreground"
+            className="fill-brand-foreground"
             d="M12 6h8v2h-8zM10 8h12v2h-12zM8 10h16v2h-16zM6 12h20v2h-20zM6 14h20v2h-20zM6 16h20v2h-20zM6 18h20v2h-20zM8 20h16v2h-16zM10 22h12v2h-12zM12 24h8v2h-8z"
           />
           <path

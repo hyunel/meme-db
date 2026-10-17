@@ -12,7 +12,7 @@ export const processLabel: Record<ProcessStatus, string> = {
 }
 
 const processStyle = {
-  pending: { icon: Clock, cls: 'bg-warning/15 text-[oklch(0.45_0.12_70)]' },
+  pending: { icon: Clock, cls: 'bg-warning/15 text-warning-strong' },
   processing: { icon: Loader2, cls: 'bg-info/12 text-info' },
   success: { icon: CheckCircle2, cls: 'bg-success/12 text-success' },
   failed: { icon: CircleAlert, cls: 'bg-destructive/10 text-destructive' },

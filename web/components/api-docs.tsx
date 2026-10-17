@@ -82,8 +82,8 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
 const methodTone: Record<string, string> = {
   GET: 'text-info',
   POST: 'text-success',
-  PUT: 'text-[oklch(0.5_0.13_70)]',
-  PATCH: 'text-[oklch(0.5_0.13_70)]',
+  PUT: 'text-warning-strong',
+  PATCH: 'text-warning-strong',
   DELETE: 'text-destructive',
 }
 

@@ -444,7 +444,7 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
   )
 }
 
-export const toneText = { warn: 'text-[oklch(0.5_0.13_70)]', danger: 'text-destructive' } as const
+export const toneText = { warn: 'text-warning-strong', danger: 'text-destructive' } as const
 export const toneLabel = { warn: '预警', danger: '严重' } as const
 
 export function StatCard({

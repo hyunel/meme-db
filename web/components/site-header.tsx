@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Compass, Heart, LayoutDashboard, Library, Link2, LogOut, Search, Settings, Upload, UserRound } from 'lucide-react'
+import { Compass, Heart, LayoutDashboard, Library, Link2, LogOut, Monitor, Moon, Search, Settings, Sun, SunMoon, Upload, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -10,6 +10,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -17,6 +19,7 @@ import { Logo } from '@/components/logo'
 import { SearchBar } from '@/components/search/search-bar'
 import { useRequireLogin } from '@/components/app-providers'
 import { logout, useSession } from '@/lib/session'
+import { setTheme, useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
 const mainNav = [
@@ -30,6 +33,12 @@ export function useMainNav() {
   const { user } = useSession()
   return mainNav.filter((n) => !n.auth || user)
 }
+
+const themes = [
+  ['system', '跟随系统', Monitor],
+  ['light', '浅色', Sun],
+  ['dark', '深色', Moon],
+] as const
 
 export function isActive(pathname: string, href: string) {
   return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)
@@ -46,6 +55,7 @@ export function SiteHeader() {
   }
 
   const links = useMainNav()
+  const theme = useTheme()
   const showHeaderSearch = !pathname.startsWith('/search') && pathname !== '/'
 
   return (
@@ -124,6 +134,27 @@ export function SiteHeader() {
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                {/* Choosing keeps the menu open, so the page shows each theme as it is picked */}
+                <div className="flex items-center justify-between gap-2 py-0.5 pl-1.5 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <SunMoon className="size-4 text-muted-foreground" aria-hidden />
+                    外观
+                  </span>
+                  <DropdownMenuRadioGroup value={theme} onValueChange={(v: Theme) => setTheme(v)} aria-label="外观" className="flex rounded-lg border p-0.5">
+                    {themes.map(([value, label, Icon]) => (
+                      <DropdownMenuRadioItem
+                        key={value}
+                        value={value}
+                        aria-label={label}
+                        title={label}
+                        className="size-7 justify-center rounded-md p-0 text-muted-foreground *:data-[slot=dropdown-menu-radio-item-indicator]:hidden data-checked:bg-foreground data-checked:text-background data-checked:focus:bg-foreground data-checked:focus:**:text-background"
+                      >
+                        <Icon />
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                   <LogOut />

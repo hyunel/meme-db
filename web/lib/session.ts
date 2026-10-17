@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react'
 import { mutate } from 'swr'
 import { api, getToken, setToken, setUnauthorizedHandler } from './api'
+import { THEME_KEY } from './theme'
 import type { User } from './types'
 
 export interface Session {
@@ -42,7 +43,7 @@ export function getSession() {
 function clearLocal() {
   try {
     Object.keys(localStorage)
-      .filter((k) => k.startsWith('memedb:'))
+      .filter((k) => k.startsWith('memedb:') && k !== THEME_KEY)
       .forEach((k) => localStorage.removeItem(k))
   } catch {}
   setToken(null)

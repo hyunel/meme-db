@@ -39,8 +39,9 @@ export function HomeView() {
           <h1 className="text-4xl font-semibold tracking-tight text-balance break-keep md:text-6xl">
             找到那张<wbr />
             <span className="relative whitespace-nowrap">
-              <span className="relative z-10">刚刚好</span>
-              <span className="absolute inset-x-0 bottom-1 -z-0 h-3 rounded-sm bg-brand md:h-4" aria-hidden />
+              {/* On a dark page the word itself turns yellow, as light text would vanish into the marker */}
+              <span className="relative z-10 dark:text-brand">刚刚好</span>
+              <span className="absolute inset-x-0 bottom-1 -z-0 h-3 rounded-sm bg-brand md:h-4 dark:hidden" aria-hidden />
             </span>
             的表情包
           </h1>

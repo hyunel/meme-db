@@ -505,7 +505,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
               disabled={busy}
               className={cn(
                 'flex h-12 min-w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] transition-colors hover:bg-background/15 disabled:opacity-50',
-                a.label === '删除' && 'text-[oklch(0.8_0.15_25)]',
+                a.label === '删除' && 'text-[oklch(0.8_0.15_25)] dark:text-[oklch(0.55_0.2_27)]',
               )}
             >
               <a.icon className="size-4" aria-hidden />

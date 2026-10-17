@@ -22,9 +22,9 @@ export const jobLabel = (type: string) => jobTypeLabel[type] ?? type
 
 const taskTone: Record<TaskState, string> = {
   pending: 'bg-muted text-muted-foreground',
-  retrying: 'bg-warning/15 text-[oklch(0.45_0.12_70)]',
-  running: 'bg-[oklch(0.93_0.05_250)] text-[oklch(0.4_0.15_255)]',
-  completed: 'bg-success/15 text-[oklch(0.4_0.1_155)]',
+  retrying: 'bg-warning/15 text-warning-strong',
+  running: 'bg-info/15 text-info-strong',
+  completed: 'bg-success/15 text-success-strong',
   failed: 'bg-destructive/10 text-destructive',
 }
 
@@ -39,8 +39,8 @@ export function TaskStatusBadge({ status }: { status: TaskState }) {
 
 const levelTone: Record<LogLevel, string> = {
   debug: 'text-muted-foreground bg-muted',
-  info: 'text-[oklch(0.4_0.15_255)] bg-[oklch(0.93_0.05_250)]',
-  warn: 'text-[oklch(0.45_0.12_70)] bg-warning/15',
+  info: 'text-info-strong bg-info/15',
+  warn: 'text-warning-strong bg-warning/15',
   error: 'text-destructive bg-destructive/10',
 }
 
@@ -60,7 +60,7 @@ export function RoleBadge({ role }: { role: Role }) {
 
 export function UserStatusBadge({ status }: { status: 'active' | 'disabled' }) {
   return (
-    <span className={cn('inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium', status === 'active' ? 'bg-success/15 text-[oklch(0.4_0.1_155)]' : 'bg-destructive/10 text-destructive')}>
+    <span className={cn('inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium', status === 'active' ? 'bg-success/15 text-success-strong' : 'bg-destructive/10 text-destructive')}>
       <span className="size-1.5 rounded-full bg-current" aria-hidden />
       {status === 'active' ? '正常' : '已禁用'}
     </span>

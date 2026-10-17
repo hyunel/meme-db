@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { fetcher } from '@/lib/api'
 import { bootSession, getSession } from '@/lib/session'
+import { applyTheme, subscribeTheme, useDarkTheme } from '@/lib/theme'
 
 type RequireLogin = (reason?: string) => boolean
 
@@ -29,9 +30,15 @@ export function useRequireLogin() {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [reason, setReason] = useState<string | null>(null)
   const router = useRouter()
+  const dark = useDarkTheme()
 
   useEffect(() => {
     void bootSession()
+  }, [])
+
+  useEffect(() => {
+    applyTheme()
+    return subscribeTheme(applyTheme)
   }, [])
 
   const requireLogin = useCallback<RequireLogin>((why) => {
@@ -70,7 +77,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           </Dialog>
           {/* Below md the toasts sit above the fixed tab bar */}
           <Toaster
-            theme="light"
+            theme={dark ? 'dark' : 'light'}
             position="bottom-right"
             richColors
             className="[--toast-bottom:calc(4.5rem+env(safe-area-inset-bottom))] md:[--toast-bottom:1.5rem]"

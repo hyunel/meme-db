@@ -81,7 +81,7 @@ function TagList({ tabs }: { tabs: React.ReactNode }) {
               <span className={cn(badge, 'bg-muted text-muted-foreground')}>已屏蔽</span>
             ) : (
               t.common && (
-                <span className={cn(badge, 'bg-warning/15 text-[oklch(0.45_0.12_70)]')} title="出现在大部分表情包上，几乎没有区分度，可考虑屏蔽">
+                <span className={cn(badge, 'bg-warning/15 text-warning-strong')} title="出现在大部分表情包上，几乎没有区分度，可考虑屏蔽">
                   高频
                 </span>
               )
