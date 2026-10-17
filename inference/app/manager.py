@@ -1,10 +1,9 @@
 from typing import Dict, Any
 import logging
-from accelerate import Accelerator
 from .config import ModelConfig, ModelType
 from .models.base import BaseModel
 from .models.clip import CLIPModel
-from .models.reranker import RerankerModel
+from .models.reranker import get_reranker_class
 from .models.text_embedding import TextEmbeddingModel
 from .models.vlm import get_vlm_class
 
@@ -16,22 +15,18 @@ class ModelManager:
         self.models: Dict[ModelType, BaseModel] = {}
         self.config = config
 
-        device = Accelerator().device
-        for sub_config in self.config.get_model_configs().values():
-            if sub_config.device is None:
-                sub_config.device = device
-
     def load_models(self) -> "ModelManager":
         logger.info("Initializing models...")
 
-        classes = {
-            ModelType.CLIP: CLIPModel,
-            ModelType.RERANKER: RerankerModel,
-            ModelType.TEXT_EMBEDDING: TextEmbeddingModel,
-            ModelType.VLM: get_vlm_class(self.config),
+        c = self.config
+        roles = {  # Class, and its section of the config
+            ModelType.CLIP: (CLIPModel, c.clip),
+            ModelType.RERANKER: (get_reranker_class(c), c.reranker),
+            ModelType.TEXT_EMBEDDING: (TextEmbeddingModel, c.embedding),
+            ModelType.VLM: (get_vlm_class(c), c.vlm.local),
         }
-        for model_type, model_class in classes.items():
-            self.models[model_type] = model_class(self.config)
+        for model_type, (model_class, settings) in roles.items():
+            self.models[model_type] = model_class(c, None if model_class.remote else settings)
 
         logger.info("All models loaded successfully.")
         return self

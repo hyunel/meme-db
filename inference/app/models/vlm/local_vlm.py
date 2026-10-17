@@ -4,7 +4,6 @@ import torch
 import outlines
 from PIL import Image
 from .base import VLMModel
-from ...config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +12,12 @@ class LocalVLM(VLMModel):
     MAX_PIXELS = 1280 * 32 * 32  # Per image: Qwen3-VL makes a token of each 32x32 patch, so a screenshot could take thousands
     MAX_NEW_TOKENS = 1024  # A caption runs a few hundred; transformers would otherwise stop after 20
 
-    def __init__(self, config: ModelConfig):
-        self.model = None
-        self.processor = None
-        super().__init__(config)
-
     def _load_model(self) -> None:
         from transformers import AutoProcessor, AutoModelForImageTextToText
 
         model_id = self.name = self.config.vlm.local.model
 
-        logger.info(f"Loading local VLM: {model_id} on {self.config.vlm.device}")
+        logger.info(f"Loading local VLM: {model_id} on {self.device}")
 
         self.processor = AutoProcessor.from_pretrained(
             model_id,
@@ -31,14 +25,9 @@ class LocalVLM(VLMModel):
         )
         self.processor.image_processor.size["longest_edge"] = self.MAX_PIXELS  # Qwen-VL reads its pixel cap from here
 
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_id,
-            dtype=self.config.vlm.dtype,
-            attn_implementation=self.config.vlm.attn_implementation,
-            trust_remote_code=True
-        ).to(self.config.vlm.device).eval()
+        model = self.from_pretrained(AutoModelForImageTextToText, model_id, trust_remote_code=True)
 
-        if self.config.vlm.compile:
+        if self.gpu and self.gpu.compile:
             model = torch.compile(model)
 
         self.model = outlines.from_transformers(model, self.processor)

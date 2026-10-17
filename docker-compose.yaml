@@ -34,8 +34,13 @@ services:
       interval: 2s
       retries: 30
 
+  # Without a GPU, remove deploy: the models then run on the CPU (see inference/models.yaml); TORCH=cpu in .env makes
+  # a smaller image.
   inference:
-    build: ./inference
+    build:
+      context: ./inference
+      args:
+        TORCH: ${TORCH:-cuda}
     env_file: .env
     volumes:
       - models:/cache

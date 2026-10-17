@@ -105,6 +105,7 @@ func main() {
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
 	logService := service.NewLogService(repo, cfg.Log.Retention)
+	embeddingService := service.NewEmbeddingService(cfg.Prompt.Tag, repo, memeService, inferClient.WithPriority(inference.PriorityBackground))
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 	taskWorker.RegisterHandler(model.JobEmbedClip, worker.HandlerFunc(ingestService.EmbedClip))
@@ -115,6 +116,7 @@ func main() {
 		defer close(workerDone)
 		taskWorker.Run(ctx)
 	}()
+	go embeddingService.Run(ctx)
 
 	// Stores logs, including those of the startup so far; it stops last, after shutdown.
 	logCtx, stopLogs := context.WithCancel(context.Background())

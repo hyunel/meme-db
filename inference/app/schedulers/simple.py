@@ -1,6 +1,6 @@
-import asyncio
+import threading
 import time
-from typing import Any, List, Callable, Generic, TypeVar
+from typing import Any, List, Callable, Generic, Optional, TypeVar
 from .resource import ResourceManager
 from ..metrics import TaskMetrics
 
@@ -11,13 +11,14 @@ class SimpleScheduler(Generic[T, R]):
     def __init__(
         self,
         resource_manager: ResourceManager,
-        process_func: Callable[[List[T]], List[R]],
-        concurrency: int = 8,
+        process_func: Callable[[Any], List[R]],
+        prepare_func: Optional[Callable[[List[T]], Any]] = None,
     ):
         self.resource_manager = resource_manager
         self.process_func = process_func
-        self.semaphore = asyncio.Semaphore(concurrency)
-        self.metrics = TaskMetrics('concurrent', concurrency)
+        self.prepare_func = prepare_func
+        self.prepare_lock = threading.Lock()  # Tokenizers aren't thread-safe
+        self.metrics = TaskMetrics('concurrent', resource_manager.concurrency)
         self.waiting = 0
 
     async def start(self):
@@ -28,6 +29,12 @@ class SimpleScheduler(Generic[T, R]):
 
     def queued(self) -> int:
         return self.waiting
+
+    def _process(self, items: List[T]) -> List[R]:
+        if self.prepare_func:
+            with self.prepare_lock:
+                items = self.prepare_func(items)
+        return self.process_func(items)
 
     async def submit(self, item: T, priority: int = 0, context: Any = None) -> R:
         submitted = time.time()
@@ -41,8 +48,7 @@ class SimpleScheduler(Generic[T, R]):
         self.waiting += 1
         error = None
         try:
-            async with self.semaphore:
-                results = await self.resource_manager.execute(self.process_func, [item], priority, on_start)
+            results = await self.resource_manager.execute(self._process, [item], priority, on_start)
         except Exception as e:
             error = e
             raise

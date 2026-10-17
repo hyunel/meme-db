@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { EmptyState } from '@/components/states'
 import { ChartCard, SYNC_ID, TimeTooltip, timeAxis } from './charts'
 import { fmtClockSec, fmtLatency, fmtRate, kindLabel, type InferenceSnapshot } from '@/lib/inference'
+import { cn } from '@/lib/utils'
 
 const latencyConfig = {
   p50: { label: 'P50', color: 'var(--chart-2)' },
@@ -102,7 +103,7 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
               </ChartContainer>
             </ChartCard>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className={cn('grid gap-4', stats.schedule === 'batch' && 'sm:grid-cols-2')}>
               <ChartCard title="队列长度">
                 <ChartContainer config={queueConfig} className={chartCls}>
                   <LineChart data={series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>
@@ -115,8 +116,8 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
                 </ChartContainer>
               </ChartCard>
 
-              <ChartCard title="批大小分布" description={stats.schedule === 'batch' ? '横轴为批大小' : undefined}>
-                {stats.schedule === 'batch' ? (
+              {stats.schedule === 'batch' && (
+                <ChartCard title="批大小分布" description="横轴为批大小">
                   <ChartContainer config={batchConfig} className={chartCls}>
                     <BarChart data={stats.batch_dist} margin={{ left: 0, right: 8, top: 4 }}>
                       <CartesianGrid vertical={false} />
@@ -126,12 +127,8 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
                       <Bar dataKey="count" fill="var(--color-count)" radius={3} isAnimationActive={false} />
                     </BarChart>
                   </ChartContainer>
-                ) : (
-                  <p className="flex h-44 items-center justify-center rounded-lg bg-muted/40 px-4 text-center text-sm text-muted-foreground sm:h-52">
-                    该类任务为并发执行，不做批处理
-                  </p>
-                )}
-              </ChartCard>
+                </ChartCard>
+              )}
             </div>
 
             <ChartCard title="吞吐与错误" description="折线为吞吐（次 / 秒），柱为错误数">

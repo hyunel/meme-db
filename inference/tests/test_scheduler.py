@@ -315,7 +315,6 @@ async def test_simple_scheduler_basic():
     scheduler = SimpleScheduler(
         resource_manager=rm,
         process_func=process_func,
-        concurrency=1
     )
     await scheduler.start()
 
@@ -328,14 +327,13 @@ async def test_simple_scheduler_basic():
 
 @pytest.mark.asyncio
 async def test_simple_scheduler_concurrency():
-    rm = ResourceManager(concurrency=10)
+    CONCURRENCY_LIMIT = 2
+    rm = ResourceManager(concurrency=CONCURRENCY_LIMIT)
     await rm.start()
 
     processed_count = 0
     max_concurrent = 0
     lock = threading.Lock()
-
-    CONCURRENCY_LIMIT = 2
 
     def process_func(items):
         nonlocal processed_count, max_concurrent
@@ -352,7 +350,6 @@ async def test_simple_scheduler_concurrency():
     scheduler = SimpleScheduler(
         resource_manager=rm,
         process_func=process_func,
-        concurrency=CONCURRENCY_LIMIT
     )
     await scheduler.start()
 

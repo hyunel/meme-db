@@ -74,9 +74,9 @@ CREATE TABLE IF NOT EXISTS core.meme_info (
     asset_id UUID PRIMARY KEY REFERENCES core.assets(id) ON DELETE CASCADE,
     vlm_json JSONB,
     ocr_text TEXT,
-    metaphor_vector vector(1024),
-    semantic_vector vector(1024),
-    clip_vector vector(768),
+    metaphor_vector vector,                   -- Embeddings, sized and indexed for their models (core.embedding_models)
+    semantic_vector vector,
+    clip_vector vector,
     width INT,
     height INT,
     processing_status VARCHAR(20) DEFAULT 'pending',
@@ -84,10 +84,14 @@ CREATE TABLE IF NOT EXISTS core.meme_info (
     analyzed_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_meme_sem ON core.meme_info USING hnsw (semantic_vector vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS idx_meme_meta ON core.meme_info USING hnsw (metaphor_vector vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS idx_meme_clip ON core.meme_info USING hnsw (clip_vector vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_meme_ocr ON core.meme_info USING GIN (ocr_text gin_trgm_ops);
+
+-- The model the stored embeddings of each inference role come from: clip (core.meme_info.clip_vector) and
+-- text_embedding (its other vectors and library.tags.embedding). The server adopts the inference service's models.
+CREATE TABLE IF NOT EXISTS core.embedding_models (
+    role TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
 
 -- Popularity of each asset (favorites × 3 + library entries), kept by triggers so the popular list pages by an index.
 -- Not a column of core.meme_info, where updating an indexed column would rewrite its vector indexes on every favorite.
@@ -189,12 +193,10 @@ RETURN btrim(regexp_replace(lower(normalize(name, NFKC)), '[\s_/"''“”‘’�
 CREATE TABLE IF NOT EXISTS library.tags (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name VARCHAR(100) UNIQUE NOT NULL,
-    embedding vector(1024),                 -- Of the founding spelling, which new spellings are matched against; NULL for a tag a user started, never merged
+    embedding vector,                       -- Of the founding spelling, which new spellings are matched against; NULL for a tag a user started, never merged
     hidden BOOLEAN NOT NULL DEFAULT FALSE,  -- Still matched, so its spellings don't come back as new tags, but never shown
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE INDEX IF NOT EXISTS idx_tags_embedding ON library.tags USING hnsw (embedding vector_cosine_ops);
 
 -- Every spelling given by the VLM or users, mapped to the tag it means.
 CREATE TABLE IF NOT EXISTS library.labels (

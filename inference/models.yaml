@@ -1,18 +1,42 @@
-# Global concurrency for CPU resource manager
-concurrency: 8
+# device: auto (the first GPU, or the CPU without one), cpu, cuda:1, mps, ...
+# On a GPU, fp32 would double the memory and run 2-3x slower. SigLIP matches it exactly in float16;
+# the Qwen models were trained in bfloat16. On the CPU, models run in float32.
+
+# A SigLIP model
+clip:
+  model: "google/siglip2-base-patch16-224"
+  device: auto
+  gpu:
+    batch_size: 64
+    dtype: float16
+  # cpu:
+  #   threads: 8  # Requests run at once; by default the models on the CPU split its threads
+
+# On the CPU: microsoft/harrier-oss-v1-270m
+embedding:
+  model: "Qwen/Qwen3-Embedding-0.6B"
+  device: auto
+  gpu:
+    batch_size: 16
+    dtype: bfloat16
+
+# Qwen3-Reranker, or any cross-encoder with a single relevance logit. On the CPU: Horizon-Labs/multilingual-reranker-small
+reranker:
+  model: "Qwen/Qwen3-Reranker-0.6B"
+  device: auto
+  gpu:
+    batch_size: 16
+    dtype: bfloat16
 
 vlm:
-  # Change it according to your GPU memory capacity
-  batch_size: 4
-  dtype: bfloat16  # For a local model
-
-  # Change it according to your API rate limits
-  concurrency: 8
-
   # Option 1: Use local transformers model (Qwen2-VL, etc.)
   # provider: "local"
   # local:
   #   model: "Qwen/Qwen3-VL-2B-Instruct"  # HuggingFace model ID
+  #   device: auto
+  #   gpu:
+  #     batch_size: 4  # Change it according to your GPU memory
+  #     dtype: bfloat16
 
   # Option 2: Use OpenAI-compatible API (Gemini, GLM, OpenAI, etc.)
   provider: "openai"
@@ -34,17 +58,4 @@ vlm:
     model: "${VLM_MODEL}"
     api_key: "${VLM_API_KEY}"
     base_url: "${VLM_BASE_URL}"
-
-# fp32 would double the memory and run 2-3x slower. SigLIP matches it exactly in float16;
-# the Qwen models were trained in bfloat16.
-clip:
-  batch_size: 64
-  dtype: float16
-
-embedding:
-  batch_size: 16
-  dtype: bfloat16
-
-reranker:
-  batch_size: 16
-  dtype: bfloat16
+    concurrency: 8  # Requests in flight; change it according to your API rate limits

@@ -12,16 +12,13 @@ class TextEmbeddingModel(BaseModel):
     MAX_LENGTH = 1024  # Captions and queries run a few hundred tokens; the cap bounds a batch's memory
 
     def _load_model(self) -> None:
-        model_id = self.name = 'Qwen/Qwen3-Embedding-0.6B'
-        logger.info(f"Loading Text Embedding model: {model_id}")
+        model_id = self.name = self.config.embedding.model
+        logger.info(f"Loading Text Embedding model: {model_id} on {self.device}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side='left')
-        self.model = AutoModel.from_pretrained(
-            model_id,
-            dtype=self.config.embedding.dtype,
-            attn_implementation=self.config.embedding.attn_implementation
-        ).to(self.config.embedding.device).eval()
+        self.model = self.from_pretrained(AutoModel, model_id)
+        self.dims = self.model.config.hidden_size  # The last hidden state is the embedding
 
-        if self.config.embedding.compile:
+        if self.gpu and self.gpu.compile:
             self.model = torch.compile(self.model)
 
     def tokenize(self, items: List[tuple[str, str]]) -> BatchEncoding:
@@ -30,7 +27,7 @@ class TextEmbeddingModel(BaseModel):
 
     def get_embedding(self, inputs: BatchEncoding) -> List[List[float]]:
         with torch.no_grad():
-            outputs = self.model(**inputs.to(self.config.embedding.device), use_cache=False)
+            outputs = self.model(**inputs.to(self.device), use_cache=False)
             # Padding is on the left, so every sequence ends with its last real (EOS) token.
             embeddings = F.normalize(outputs.last_hidden_state[:, -1], p=2, dim=1)
             return embeddings.float().cpu().numpy().tolist()

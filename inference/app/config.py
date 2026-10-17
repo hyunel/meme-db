@@ -3,7 +3,7 @@ import os
 import re
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, Any, Dict
+from typing import Optional, Literal
 
 class ModelType(str, Enum):
     CLIP = "clip"
@@ -13,56 +13,52 @@ class ModelType(str, Enum):
     RERANKER = "reranker"
     VLM = "vlm"
 
-class BaseModelConfig(BaseModel):
-    # Model parameters
-    device: Optional[Any] = None
+class GPUConfig(BaseModel):
+    # Models on one GPU take turns, a batch at a time
+    batch_size: int = 32
+    max_latency: float = 0.1  # Seconds a batch waits to fill
     dtype: Optional[str] = None
     attn_implementation: str = "sdpa"
     compile: bool = False
 
-    # Task execution settings
-    batch_size: int = 32
-    max_latency: float = 0.1  # seconds
-    concurrency: int = 8
+class CPUConfig(BaseModel):
+    # A model on the CPU runs in float32, requests side by side, one thread each
+    threads: Optional[int] = None  # Requests run at once; by default the models on the CPU split its threads
+
+class LocalModelConfig(BaseModel):
+    device: str = "auto"  # The first GPU, or the CPU without one; or cpu, cuda:1, mps, ...
+    gpu: GPUConfig = Field(default_factory=GPUConfig)
+    cpu: CPUConfig = Field(default_factory=CPUConfig)
+
+class CLIPConfig(LocalModelConfig):
+    model: str = "google/siglip2-base-patch16-224"
+
+class EmbeddingConfig(LocalModelConfig):
+    model: str = "Qwen/Qwen3-Embedding-0.6B"
+
+class RerankerConfig(LocalModelConfig):
+    model: str = "Qwen/Qwen3-Reranker-0.6B"
 
 class OpenAIConfig(BaseModel):
     model: str = "gpt-4o"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     max_retries: int = 3
+    concurrency: int = 8  # Requests in flight
 
-class LocalVLMConfig(BaseModel):
+class LocalVLMConfig(LocalModelConfig):
     model: str = "Qwen/Qwen3-VL-2B-Instruct"
 
-class VLMConfig(BaseModelConfig):
+class VLMConfig(BaseModel):
     provider: Literal["openai", "local"] = "openai"
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     local: LocalVLMConfig = Field(default_factory=LocalVLMConfig)
 
-class CLIPConfig(BaseModelConfig):
-    pass
-
-class EmbeddingConfig(BaseModelConfig):
-    pass
-
-class RerankerConfig(BaseModelConfig):
-    pass
-
 class ModelConfig(BaseModel):
-    concurrency: int = 16
-
-    vlm: VLMConfig = Field(default_factory=VLMConfig)
     clip: CLIPConfig = Field(default_factory=CLIPConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
-
-    def get_model_configs(self) -> Dict[ModelType, BaseModelConfig]:
-        return {
-            ModelType.VLM: self.vlm,
-            ModelType.CLIP: self.clip,
-            ModelType.TEXT_EMBEDDING: self.embedding,
-            ModelType.RERANKER: self.reranker,
-        }
+    vlm: VLMConfig = Field(default_factory=VLMConfig)
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "ModelConfig":

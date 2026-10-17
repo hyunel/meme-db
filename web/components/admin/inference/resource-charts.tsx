@@ -16,8 +16,8 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
   const gpus = data?.gpus ?? []
   const shown = gpus.map((_, i) => i).filter((i) => gpu === 'all' || gpu === String(i))
 
-  const computeConfig: ChartConfig = { cpu: { label: 'CPU', color: 'var(--chart-2)' } }
-  const memoryConfig: ChartConfig = { mem: { label: '内存', color: 'var(--chart-2)' } }
+  const computeConfig: ChartConfig = { cpu: { label: 'CPU', color: 'var(--chart-2)' }, proc_cpu: { label: '推理进程', color: 'var(--chart-5)' } }
+  const memoryConfig: ChartConfig = { mem: { label: '内存', color: 'var(--chart-2)' }, proc_mem: { label: '推理进程', color: 'var(--chart-5)' } }
   gpus.forEach((g, i) => {
     computeConfig[`gpu${i}`] = { label: `GPU ${g.id}`, color: gpuColors[i % gpuColors.length] }
     memoryConfig[`vram${i}`] = { label: `显存 ${g.id}`, color: gpuColors[i % gpuColors.length] }
@@ -43,7 +43,7 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <ChartCard title="计算" description={gpus.length ? 'CPU 与 GPU 利用率（%）' : 'CPU 利用率（%）'}>
+        <ChartCard title="计算" description={gpus.length ? 'CPU、其中推理进程与 GPU 利用率（%）' : 'CPU 与其中推理进程的利用率（%）'}>
           {data ? (
             <ChartContainer config={computeConfig} className={chartCls}>
               <LineChart data={data.series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>
@@ -52,8 +52,9 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
                 <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickLine={false} axisLine={false} width={44} tickFormatter={(v) => `${v}%`} />
                 <ThresholdLines warn={80} danger={95} />
                 <TimeTooltip config={computeConfig} format={(v) => fmtPct(v)} />
-                <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
+                <ChartLegend content={<ChartLegendContent className="flex-wrap" />} itemSorter={(item) => Object.keys(computeConfig).indexOf(String(item.dataKey))} />
                 <Line dataKey="cpu" stroke="var(--color-cpu)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
+                <Line dataKey="proc_cpu" stroke="var(--color-proc_cpu)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
                 {shown.map((i) => (
                   <Line key={i} dataKey={`gpu${i}`} stroke={`var(--color-gpu${i})`} strokeWidth={1.75} dot={false} isAnimationActive={false} />
                 ))}
@@ -64,7 +65,7 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
           )}
         </ChartCard>
 
-        <ChartCard title="内存" description={vramTotal ? '内存与显存用量；虚线为单卡显存 80% / 95%' : '内存用量'}>
+        <ChartCard title="内存" description={vramTotal ? '内存、其中推理进程与显存用量；虚线为单卡显存 80% / 95%' : '内存与其中推理进程的用量'}>
           {data ? (
             <ChartContainer config={memoryConfig} className={chartCls}>
               <LineChart data={data.series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>
@@ -73,8 +74,9 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
                 <YAxis tickLine={false} axisLine={false} width={60} tickFormatter={(v) => fmtBytes(v).replace('.0 ', ' ')} />
                 {vramTotal && <ThresholdLines warn={vramTotal * 0.8} danger={vramTotal * 0.95} />}
                 <TimeTooltip config={memoryConfig} format={(v) => fmtBytes(v)} />
-                <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
+                <ChartLegend content={<ChartLegendContent className="flex-wrap" />} itemSorter={(item) => Object.keys(memoryConfig).indexOf(String(item.dataKey))} />
                 <Line dataKey="mem" stroke="var(--color-mem)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
+                <Line dataKey="proc_mem" stroke="var(--color-proc_mem)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
                 {shown.map((i) => (
                   <Line key={i} dataKey={`vram${i}`} stroke={`var(--color-vram${i})`} strokeWidth={1.75} dot={false} isAnimationActive={false} />
                 ))}

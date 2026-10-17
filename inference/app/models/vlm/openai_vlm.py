@@ -3,15 +3,10 @@ from PIL import Image
 from io import BytesIO
 from base64 import b64encode
 from .base import VLMModel
-from ...config import ModelConfig
 
 
 class OpenAIVLM(VLMModel):
-    is_gpu: bool = False
-
-    def __init__(self, config: ModelConfig):
-        self.client = None
-        super().__init__(config)
+    remote: bool = True
 
     def _load_model(self) -> None:
         from openai import OpenAI

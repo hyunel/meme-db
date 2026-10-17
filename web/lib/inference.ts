@@ -31,6 +31,9 @@ export interface ResourcePoint {
   t: number
   cpu: number | null
   mem: number | null
+  /** The inference process's share of all cores, and its resident memory */
+  proc_cpu: number | null
+  proc_mem: number | null
   throughput: number | null
   p95: number | null
   error_rate: number | null
@@ -75,7 +78,8 @@ export interface InferenceSnapshot {
   started_at: number
   mem_total: number
   gpus: { id: string; name: string; vram_total: number }[]
-  models: { role: string; name: string; device: string }[]
+  /** dims: of an embedding model's embeddings */
+  models: { role: string; name: string; device: string; dims: number | null }[]
   series: ResourcePoint[]
   /** The latest sample */
   current: ResourcePoint

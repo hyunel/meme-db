@@ -88,7 +88,8 @@ MemeDB/
 - Keep `lib/types.ts` in sync with the server's JSON, and the API reference in `components/api-docs.tsx` with the routes.
 
 ### Inference Service
-- Models subclass `BaseModel` and expose `inference_methods` as `(prepare, run)` pairs. GPU models are batched by `BatchScheduler`, which prepares a batch (tokenizing, preprocessing) on a CPU thread before it waits for the GPU; the others run on `SimpleScheduler` executor threads, so their code must be thread-safe.
+- Models subclass `BaseModel` and expose `inference_methods` as `(prepare, run)` pairs. Each runs on its `device` (auto by default), and the service keeps a `ResourceManager` per GPU, per model on the CPU, and for the API. Models on one GPU take turns, batched by `BatchScheduler`, which prepares a batch (tokenizing, preprocessing) on a CPU thread before it waits for the GPU. On the CPU, and for `remote` (API) models, `SimpleScheduler` runs requests side by side on executor threads (one torch thread each on the CPU), so `run` must be thread-safe; a task's `prepare` runs one at a time, as tokenizers aren't.
+- `models.yaml` gives each role its model, `device`, and how it runs on a GPU (`gpu`: batching, precision) or the CPU (`cpu`: threads); `vlm.openai` sets the API's concurrency. The server keeps the stored embeddings (CLIP, and text for memes and tags) from the inference service's models: when one changes, it resizes their columns, embeds the tags anew and rebuilds the memes' (`EmbeddingService`).
 - The VLM in `models.yaml` may be a paid API: anything that triggers ingestion (uploads, reprocessing) costs money.
 
 ## Key Features

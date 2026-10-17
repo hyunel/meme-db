@@ -41,6 +41,24 @@ func (r *TagRepository) Nearest(ctx context.Context, embedding pgvector.Vector) 
 	return
 }
 
+// Lock holds off changes to the tags until the transaction ends.
+func (r *TagRepository) Lock(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `LOCK TABLE library.tags IN SHARE MODE`)
+	return err
+}
+
+// Embedded returns the names of the tags with embeddings: the ones the VLM started.
+func (r *TagRepository) Embedded(ctx context.Context) ([]string, error) {
+	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE embedding IS NOT NULL`))
+}
+
+// SetEmbeddings gives the tags of names the vectors.
+func (r *TagRepository) SetEmbeddings(ctx context.Context, names []string, vectors []pgvector.Vector) error {
+	query := `UPDATE library.tags t SET embedding = v.e FROM unnest($1::text[], $2::vector[]) AS v(name, e) WHERE t.name = v.name`
+	_, err := r.db.Exec(ctx, query, names, vectors)
+	return err
+}
+
 // Create returns the tag with this name, which a concurrent resolve may have created first; embedding is nil for a tag a user starts.
 func (r *TagRepository) Create(ctx context.Context, name string, embedding *pgvector.Vector) (string, error) {
 	query := `

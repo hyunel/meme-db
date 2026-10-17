@@ -1,9 +1,9 @@
-from typing import List, Tuple, Dict, Callable
+from typing import List, Tuple, Dict, Callable, Type
 import logging
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BatchEncoding, DynamicCache
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, BatchEncoding, DynamicCache
 from .base import BaseModel, DEFAULT_TASK
-from ..config import ModelType
+from ..config import ModelConfig, ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -20,23 +20,20 @@ class SharedPrefixCache(DynamicCache):
                 torch.cat([layer.values.expand(rows, -1, -1, -1), value_states], dim=-2))
 
 
-class RerankerModel(BaseModel):
+class LMReranker(BaseModel):
+    # Qwen3-Reranker: a language model answers whether the document meets the query, scored by P("yes")
     PREFIX = "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n"
     SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     MAX_LENGTH = 1024  # Documents are captions of a few hundred tokens; the cap bounds a batch's memory
 
     def _load_model(self) -> None:
-        model_id = self.name = "Qwen/Qwen3-Reranker-0.6B"
-        logger.info(f"Loading Reranker model: {model_id}")
+        model_id = self.name = self.config.reranker.model
+        logger.info(f"Loading Reranker model: {model_id} on {self.device}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side='left')
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            dtype=self.config.reranker.dtype,
-            attn_implementation=self.config.reranker.attn_implementation
-        ).to(self.config.reranker.device).eval()
+        self.model = self.from_pretrained(AutoModelForCausalLM, model_id)
 
-        if self.config.reranker.compile:
+        if self.gpu and self.gpu.compile:
             self.model = torch.compile(self.model)
 
         self.yes_id = self.tokenizer.convert_tokens_to_ids("yes")
@@ -65,7 +62,7 @@ class RerankerModel(BaseModel):
         return batches
 
     def predict(self, batches: List[Tuple[Tuple[int, ...], List[int], BatchEncoding]]) -> List[float]:
-        device = self.config.reranker.device
+        device = self.device
         scores = {}
         with torch.no_grad():
             for indices, head, docs in batches:
@@ -90,3 +87,35 @@ class RerankerModel(BaseModel):
     @property
     def inference_methods(self) -> Dict[ModelType, Tuple[Callable, Callable]]:
         return {ModelType.RERANKER: (self.tokenize, self.predict)}
+
+
+class CrossEncoderReranker(BaseModel):
+    MAX_LENGTH = 512  # Query and document together; documents are captions of a few hundred tokens
+
+    def _load_model(self) -> None:
+        model_id = self.name = self.config.reranker.model
+        logger.info(f"Loading Reranker model: {model_id} on {self.device}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.model = self.from_pretrained(AutoModelForSequenceClassification, model_id)
+
+        if self.gpu and self.gpu.compile:
+            self.model = torch.compile(self.model)
+
+    def tokenize(self, items: List[Tuple[Tuple[str, str], str]]) -> BatchEncoding:
+        queries, docs = zip(*(pair for pair, _ in items))  # Cross-encoders take no task description
+        return self.tokenizer(list(queries), list(docs), padding=True, truncation=True, max_length=self.MAX_LENGTH, return_tensors='pt')
+
+    def predict(self, inputs: BatchEncoding) -> List[float]:
+        with torch.no_grad():
+            logits = self.model(**inputs.to(self.device)).logits[:, 0]  # One relevance logit per pair
+            return logits.sigmoid().float().cpu().tolist()
+
+    @property
+    def inference_methods(self) -> Dict[ModelType, Tuple[Callable, Callable]]:
+        return {ModelType.RERANKER: (self.tokenize, self.predict)}
+
+
+def get_reranker_class(config: ModelConfig) -> Type[BaseModel]:
+    architectures = AutoConfig.from_pretrained(config.reranker.model).architectures or []
+    return CrossEncoderReranker if any(a.endswith('ForSequenceClassification') for a in architectures) else LMReranker

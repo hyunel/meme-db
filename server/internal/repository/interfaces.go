@@ -13,32 +13,34 @@ import (
 )
 
 type Repos struct {
-	User     *UserRepository
-	Token    *TokenRepository
-	Meme     *MemeRepository
-	Asset    *AssetRepository
-	Task     *TaskRepository
-	Node     *NodeRepository
-	Tag      *TagRepository
-	Favorite *FavoriteRepository
-	Share    *ShareRepository
-	Stats    *StatsRepository
-	Log      *LogRepository
+	User      *UserRepository
+	Token     *TokenRepository
+	Meme      *MemeRepository
+	Asset     *AssetRepository
+	Task      *TaskRepository
+	Node      *NodeRepository
+	Tag       *TagRepository
+	Favorite  *FavoriteRepository
+	Share     *ShareRepository
+	Stats     *StatsRepository
+	Log       *LogRepository
+	Embedding *EmbeddingRepository
 }
 
 func NewRepos(db db.DBTX) *Repos {
 	return &Repos{
-		User:     &UserRepository{db: db},
-		Token:    &TokenRepository{db: db},
-		Meme:     &MemeRepository{db: db},
-		Asset:    &AssetRepository{db: db},
-		Task:     &TaskRepository{db: db},
-		Node:     &NodeRepository{db: db},
-		Tag:      &TagRepository{db: db},
-		Favorite: &FavoriteRepository{db: db},
-		Share:    &ShareRepository{db: db},
-		Stats:    &StatsRepository{db: db},
-		Log:      &LogRepository{db: db},
+		User:      &UserRepository{db: db},
+		Token:     &TokenRepository{db: db},
+		Meme:      &MemeRepository{db: db},
+		Asset:     &AssetRepository{db: db},
+		Task:      &TaskRepository{db: db},
+		Node:      &NodeRepository{db: db},
+		Tag:       &TagRepository{db: db},
+		Favorite:  &FavoriteRepository{db: db},
+		Share:     &ShareRepository{db: db},
+		Stats:     &StatsRepository{db: db},
+		Log:       &LogRepository{db: db},
+		Embedding: &EmbeddingRepository{db: db},
 	}
 }
 

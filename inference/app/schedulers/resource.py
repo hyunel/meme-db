@@ -30,6 +30,7 @@ class ResourceManager:
     def __init__(self, concurrency: int = 1, post_execution_callback: Optional[Callable[[], None]] = None):
         self.queue: PriorityQueue[BatchRequest] = PriorityQueue()
         self.worker_task: Optional[asyncio.Task] = None
+        self.concurrency = concurrency
         self.semaphore = asyncio.Semaphore(concurrency)
         self.running_tasks: set[asyncio.Task] = set()
         self.post_execution_callback = post_execution_callback

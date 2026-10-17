@@ -34,6 +34,7 @@ const tone = (l: Level) => (l === 'ok' ? undefined : l)
 
 export function StatusStrip({ data, connection, now }: { data?: InferenceSnapshot; connection: Connection; now: number }) {
   const meta = connection ? connectionMeta[connection] : null
+  const devices = data ? [...data.gpus.map((g) => [g.id, g.name]), ...(data.models.some((m) => m.device === 'cpu') ? [['CPU']] : [])] : []
   return (
     <section aria-label="服务状态" className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4 lg:flex-row lg:items-center lg:gap-6">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:flex sm:flex-wrap sm:gap-x-8">
@@ -50,10 +51,18 @@ export function StatusStrip({ data, connection, now }: { data?: InferenceSnapsho
         </div>
         <div className="col-span-2 flex flex-col gap-0.5 sm:col-span-1">
           <dt className="text-xs text-muted-foreground">运行设备</dt>
-          <dd className="flex items-center gap-1.5 font-mono text-[13px]">
-            <Cpu className="size-3.5 text-muted-foreground" aria-hidden />
-            {!data ? '—' : data.gpus.length ? data.gpus.map((g) => g.id).join('、') : 'CPU'}
-            {data?.gpus.length ? <span className="font-sans text-xs text-muted-foreground">（{data.gpus[0].name}）</span> : null}
+          <dd className="flex items-start gap-1.5 font-mono text-[13px]">
+            <Cpu className="mt-[3px] size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+              {devices.length
+                ? devices.map(([id, detail]) => (
+                    <span key={id}>
+                      {id}
+                      {detail && <span className="font-sans text-xs text-muted-foreground">（{detail}）</span>}
+                    </span>
+                  ))
+                : '—'}
+            </span>
           </dd>
         </div>
       </dl>
@@ -66,7 +75,7 @@ export function StatusStrip({ data, connection, now }: { data?: InferenceSnapsho
               <span className="truncate font-mono text-muted-foreground" title={`${m.name} · ${m.device}`}>
                 {m.name}
               </span>
-              <span className="hidden shrink-0 text-muted-foreground sm:inline">· {m.device}</span>
+              <span className="shrink-0 text-muted-foreground">· {m.device}</span>
             </li>
           ))}
         </ul>
@@ -103,10 +112,10 @@ export function MetricCards({ data }: { data?: InferenceSnapshot }) {
     { label: '内存', value: fmtBytes(c.mem), hint: `共 ${fmtBytes(mem_total)} · ${fmtPct(pctOf(c.mem, mem_total))}`, level: memLevel, spark: <Sparkline data={s} dataKey="mem" level={memLevel} domain={[0, mem_total]} /> },
     gpus.length
       ? { label: 'GPU 利用率', value: fmtPct(gpuAvg(c)), hint: `${gpus.length} 卡平均 · 最高 ${fmtPct(gpuMax)}`, level: pctLevel(gpuMax), spark: <Sparkline data={s.map((p) => ({ v: gpuAvg(p) }))} dataKey="v" level={pctLevel(gpuMax)} domain={[0, 100]} /> }
-      : { label: 'GPU 利用率', value: '—', hint: '无 GPU', level: 'ok' as Level, spark: null },
+      : { label: '推理进程 CPU', value: fmtPct(c.proc_cpu), hint: '占全部核心', level: pctLevel(c.proc_cpu), spark: <Sparkline data={s} dataKey="proc_cpu" level={pctLevel(c.proc_cpu)} domain={[0, 100]} /> },
     gpus.length
       ? { label: '显存', value: fmtBytes(vramUsed(c)), hint: `共 ${fmtBytes(vramTotal)} · 单卡最高 ${fmtPct(vramMaxPct)}`, level: pctLevel(vramMaxPct), spark: <Sparkline data={s.map((p) => ({ v: vramUsed(p) }))} dataKey="v" level={pctLevel(vramMaxPct)} domain={[0, vramTotal]} /> }
-      : { label: '显存', value: '—', hint: '无 GPU', level: 'ok' as Level, spark: null },
+      : { label: '推理进程内存', value: fmtBytes(c.proc_mem), hint: `占总内存 ${fmtPct(pctOf(c.proc_mem, mem_total))}`, level: 'ok' as Level, spark: <Sparkline data={s} dataKey="proc_mem" domain={[0, mem_total]} /> },
     { label: '吞吐', value: fmtRate(c.throughput), hint: '全部任务类型', level: 'ok' as Level, spark: <Sparkline data={s} dataKey="throughput" /> },
     { label: 'P95 延迟', value: fmtLatency(c.p95), hint: '不含 VLM', level: 'ok' as Level, spark: <Sparkline data={s} dataKey="p95" /> },
     { label: '错误率', value: fmtPct(c.error_rate), hint: '≥ 1% 预警 · ≥ 5% 严重', level: errLevel(c.error_rate), spark: <Sparkline data={s} dataKey="error_rate" level={errLevel(c.error_rate)} /> },
