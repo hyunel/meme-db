@@ -101,10 +101,9 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id, share 
 func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag, cursor string, limit int) (*model.Feed[*model.Meme], error) {
 	var after *repository.Popularity
 	if cursor != "" {
-		score, id, _ := strings.Cut(cursor, "_")
-		n, err := strconv.Atoi(score)
-		if err != nil || uuid.Validate(id) != nil {
-			return nil, apperror.BadRequest("invalid_cursor", "invalid cursor")
+		n, id, err := rankCursor(cursor)
+		if err != nil {
+			return nil, err
 		}
 		after = &repository.Popularity{Score: n, AssetID: id}
 	}

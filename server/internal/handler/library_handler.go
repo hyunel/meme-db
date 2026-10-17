@@ -241,7 +241,9 @@ func (h *LibraryHandler) Copy(c echo.Context) error {
 }
 
 type PublicFoldersRequest struct {
-	Limit int `query:"limit" validate:"omitempty,min=1,max=100"`
+	Username string `param:"username" validate:"max=50"` // Set on a profile's route
+	Cursor   string `query:"cursor" validate:"max=64"`
+	Limit    int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
 func (h *LibraryHandler) PublicFolders(c echo.Context) error {
@@ -250,11 +252,11 @@ func (h *LibraryHandler) PublicFolders(c echo.Context) error {
 		return err
 	}
 
-	folders, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), limitOr(req.Limit, 40))
+	feed, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), req.Username, req.Cursor, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, folders)
+	return c.JSON(http.StatusOK, feed)
 }
 
 type MemeFoldersRequest struct {

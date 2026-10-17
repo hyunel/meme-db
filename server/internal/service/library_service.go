@@ -94,7 +94,7 @@ func (s *LibraryService) FolderEntries(ctx context.Context, viewer *rbac.Identit
 	if err != nil {
 		return nil, err
 	}
-	q := repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin() || folder.ViaLink, OwnerID: folder.OwnerID, ParentID: &folder.ID}
+	q := repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin() || folder.ViaLink, OwnerID: folder.OwnerID, ParentID: folder.ID}
 	files, err := s.repo.Node.Files(ctx, q, cursor, limit+1)
 	if err != nil {
 		return nil, err
@@ -599,12 +599,39 @@ func visibility(isPublic, parentPublic bool) string {
 	}
 }
 
-func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, limit int) ([]*model.Folder, error) {
-	ids, err := s.repo.Node.PublicRootFolders(ctx, "", limit)
+// PublicFolders pages through the topmost public folders, of one user if given, most favorited first; the cursor is the
+// favorite count and id of the last folder before.
+func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, username, cursor string, limit int) (*model.Feed[*model.Folder], error) {
+	var ownerID string
+	if username != "" {
+		user, err := s.activeUser(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		ownerID = user.ID
+	}
+	var after *repository.FolderRank
+	if cursor != "" {
+		n, id, err := rankCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		after = &repository.FolderRank{Favorites: n, ID: id}
+	}
+	rows, err := s.repo.Node.PublicRootFolders(ctx, ownerID, after, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	return s.Folders(ctx, viewer, ids)
+	rows, next := nextPage(rows, limit, func(r *repository.FolderRank) string { return fmt.Sprintf("%d_%s", r.Favorites, r.ID) })
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	folders, err := s.Folders(ctx, viewer, ids)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Feed[*model.Folder]{Items: folders, Next: next}, nil
 }
 
 func (s *LibraryService) MemeFolders(ctx context.Context, viewer *rbac.Identity, memeID string, limit int) ([]*model.Folder, error) {
@@ -616,9 +643,9 @@ func (s *LibraryService) MemeFolders(ctx context.Context, viewer *rbac.Identity,
 }
 
 type Profile struct {
-	User      model.PublicUser `json:"user"`
-	Folders   []*model.Folder  `json:"folders"`    // Topmost public folders
-	MemeCount int              `json:"meme_count"` // Public files at the root of the library, paged by ProfileMemes
+	User        model.PublicUser `json:"user"`
+	FolderCount int              `json:"folder_count"` // Topmost public folders, paged by PublicFolders
+	MemeCount   int              `json:"meme_count"`   // Memes of public files, once each, paged by ProfileMemes
 }
 
 func (s *LibraryService) Profile(ctx context.Context, viewer *rbac.Identity, username string) (*Profile, error) {
@@ -626,43 +653,34 @@ func (s *LibraryService) Profile(ctx context.Context, viewer *rbac.Identity, use
 	if err != nil {
 		return nil, err
 	}
-	folderIDs, err := s.repo.Node.PublicRootFolders(ctx, user.ID, 100)
-	if err != nil {
-		return nil, err
-	}
-
 	profile := &Profile{User: model.PublicUser{UserRef: model.UserRef{ID: user.ID, Username: user.Username}, CreatedAt: user.CreatedAt}}
-	if profile.Folders, err = s.Folders(ctx, viewer, folderIDs); err != nil {
+	if profile.FolderCount, err = s.repo.Node.CountPublicRootFolders(ctx, user.ID); err != nil {
 		return nil, err
 	}
-	profile.MemeCount, err = s.repo.Node.CountFiles(ctx, rootPublicFiles(viewer, user.ID))
+	profile.MemeCount, err = s.repo.Node.CountPublicMemes(ctx, viewer.UserID, viewer.IsAdmin(), user.ID)
 	return profile, err
 }
 
-// ProfileMemes pages through the public files at the root of a user's library; the cursor is the id of the last file before.
+// ProfileMemes pages through the memes of a user's public files, newest first; the cursor is the file of the last meme before.
 func (s *LibraryService) ProfileMemes(ctx context.Context, viewer *rbac.Identity, username, cursor string, limit int) (*model.Feed[*model.Meme], error) {
 	user, err := s.activeUser(ctx, username)
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.repo.Node.Files(ctx, rootPublicFiles(viewer, user.ID), cursor, limit+1)
+	rows, err := s.repo.Node.PublicMemes(ctx, viewer.UserID, viewer.IsAdmin(), user.ID, cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	files, next := nextPage(files, limit, func(n *model.Node) string { return n.ID })
-	ids := make([]string, len(files))
-	for i, n := range files {
-		ids[i] = *n.AssetID
+	rows, next := nextPage(rows, limit, func(r *repository.PublicMeme) string { return r.FileID })
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.AssetID
 	}
 	memes, err := s.memes.Memes(ctx, viewer, ids)
 	if err != nil {
 		return nil, err
 	}
 	return &model.Feed[*model.Meme]{Items: memes, Next: next}, nil
-}
-
-func rootPublicFiles(viewer *rbac.Identity, ownerID string) repository.FileQuery {
-	return repository.FileQuery{ViewerID: viewer.UserID, Admin: viewer.IsAdmin(), OwnerID: ownerID, PublicOnly: true}
 }
 
 func (s *LibraryService) activeUser(ctx context.Context, username string) (*model.User, error) {

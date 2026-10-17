@@ -226,6 +226,7 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	api.POST("/folders/:id/share/views", h.share.View)
 	api.GET("/entries/:id", h.library.Entry)
 	api.GET("/users/:username", h.library.Profile)
+	api.GET("/users/:username/folders", h.library.PublicFolders)
 	api.GET("/users/:username/memes", h.library.ProfileMemes)
 
 	// Signed-in users; read-scoped API tokens may only read

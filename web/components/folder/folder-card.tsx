@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Folder as FolderIcon, Images } from 'lucide-react'
+import { Folder as FolderIcon } from 'lucide-react'
 import type { Folder, MemeThumb } from '@/lib/types'
 import { qs } from '@/lib/api'
 import { useSession } from '@/lib/session'
@@ -38,25 +38,34 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
   const viaLink = Boolean(share) && folder.visibility === 'private' && !own // Opened only by the link, so not to be favorited
 
   return (
-    <div className="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 transition hover:border-foreground/30 hover:shadow-md">
-      <Link href={href} className="flex flex-col gap-3 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+    <div className="group relative flex flex-col gap-2 rounded-xl border bg-card p-2.5 transition hover:border-foreground/30 hover:shadow-md">
+      <Link href={href} className="flex flex-col gap-2 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
         <FolderMosaic previews={folder.previews} className="aspect-[4/3] bg-muted/60" />
-        <p className="truncate px-1 pr-10 font-medium">{folder.name}</p>
+        <p className="truncate px-1 font-medium">{folder.name}</p>
       </Link>
-      <div className="flex items-center gap-3 px-1 text-xs text-muted-foreground">
+      <p className="-mt-1.5 flex min-w-0 gap-1 px-1 text-xs whitespace-nowrap text-muted-foreground">
         {showOwner && (
-          <Link href={`/u/${folder.owner.username}`} className="truncate hover:text-foreground hover:underline">
-            @{folder.owner.username}
-          </Link>
+          <>
+            <Link href={`/u/${folder.owner.username}`} className="truncate hover:text-foreground hover:underline">
+              @{folder.owner.username}
+            </Link>
+            ·
+          </>
         )}
-        <span className="ml-auto flex items-center gap-1 tabular-nums">
-          <Images className="size-3" aria-hidden />
-          {folder.item_count} 项
-        </span>
-      </div>
+        <span className="tabular-nums">{folder.item_count} 项</span>
+      </p>
+      {/* On the cover's corner, as on a meme card */}
       {!viaLink && (
-        <div className="absolute right-2 bottom-12">
-          <FavoriteButton kind="folder" id={folder.id} active={folder.is_favorite} count={folder.favorite_count} size="icon-sm" variant="ghost" />
+        <div className="absolute top-4 right-4 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+          <FavoriteButton
+            kind="folder"
+            id={folder.id}
+            active={folder.is_favorite}
+            count={folder.favorite_count}
+            size="icon-sm"
+            variant="secondary"
+            className="bg-background/90 shadow-sm backdrop-blur"
+          />
         </div>
       )}
     </div>
@@ -67,10 +76,10 @@ export function FolderGridSkeleton() {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" aria-busy="true" aria-label="加载中">
       {Array.from({ length: 6 }, (_, i) => (
-        <li key={i} className="flex flex-col gap-3 rounded-xl border bg-card p-3">
+        <li key={i} className="flex flex-col gap-2 rounded-xl border bg-card p-2.5">
           <Skeleton className="aspect-[4/3] rounded-lg" />
           <Skeleton className="mx-1 h-5 w-2/3" />
-          <Skeleton className="mx-1 h-4 w-1/3 self-end" />
+          <Skeleton className="mx-1 -mt-0.5 h-3.5 w-1/3" />
         </li>
       ))}
     </ul>

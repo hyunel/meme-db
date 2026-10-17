@@ -165,8 +165,8 @@ export interface FolderPage {
 
 export interface Profile {
   user: UserRef & { created_at: string }
-  folders: Folder[]
-  /** Public memes at the root of the library, a feed of their own */
+  /** Topmost public folders, and the memes of public files once each; each a feed of their own */
+  folder_count: number
   meme_count: number
 }
 

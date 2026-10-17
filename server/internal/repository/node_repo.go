@@ -71,33 +71,19 @@ func (r *NodeRepository) Children(ctx context.Context, ownerID string, parentID 
 	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
 }
 
-// FileQuery picks the files of a folder, or of the root of a library, whose memes the viewer may see.
+// FileQuery picks the files of a folder whose memes the viewer may see.
 type FileQuery struct {
-	ViewerID   string
-	Admin      bool
-	OwnerID    string
-	ParentID   *string // Nil for the root
-	PublicOnly bool
-}
-
-func (q FileQuery) filter() filter {
-	var w filter
-	w.where("c.owner_id = " + w.arg(q.OwnerID) + "::uuid AND c.type = 'FILE'")
-	if q.ParentID == nil {
-		w.where("c.parent_id IS NULL")
-	} else {
-		w.where("c.parent_id = " + w.arg(*q.ParentID) + "::uuid")
-	}
-	if q.PublicOnly {
-		w.where("c.is_public")
-	}
-	w.where(memeVisible(w.arg(nullable(q.ViewerID)), w.arg(q.Admin)))
-	return w
+	ViewerID string
+	Admin    bool
+	OwnerID  string
+	ParentID string
 }
 
 // Files lists the files oldest first, from the one after the given id if any.
 func (r *NodeRepository) Files(ctx context.Context, q FileQuery, after string, limit int) ([]*model.Node, error) {
-	w := q.filter()
+	var w filter
+	w.where("c.owner_id = " + w.arg(q.OwnerID) + "::uuid AND c.parent_id = " + w.arg(q.ParentID) + "::uuid AND c.type = 'FILE'")
+	w.where(memeVisible(w.arg(nullable(q.ViewerID)), w.arg(q.Admin)))
 	if after != "" {
 		w.where("c.id > " + w.arg(after) + "::uuid")
 	}
@@ -106,9 +92,40 @@ func (r *NodeRepository) Files(ctx context.Context, q FileQuery, after string, l
 	return collectAll[model.Node](r.db.Query(ctx, query, w.args...))
 }
 
-func (r *NodeRepository) CountFiles(ctx context.Context, q FileQuery) (int, error) {
-	w := q.filter()
-	return count(ctx, r.db, "SELECT count(*) FROM library.nodes c JOIN core.meme_info m ON m.asset_id = c.asset_id "+w.clause(), w.args...)
+// PublicMeme places a meme of a user's public files by the file of it added last.
+type PublicMeme struct {
+	AssetID string `db:"asset_id"`
+	FileID  string `db:"file_id"`
+}
+
+// publicMemes filters f, a public file of the owner, to those whose meme m the viewer may see.
+func publicMemes(viewerID string, admin bool, ownerID string) filter {
+	var w filter
+	w.where("f.owner_id = " + w.arg(ownerID) + "::uuid")
+	// memeVisible, knowing the meme is public through f
+	w.where("(" + w.arg(admin) + " OR " + memeAnalyzed + " OR " + memeOwnedBy(w.arg(nullable(viewerID))) + ")")
+	return w
+}
+
+// PublicMemes lists the memes of a user's public files once each, newest first, from the one before the given file if any.
+func (r *NodeRepository) PublicMemes(ctx context.Context, viewerID string, admin bool, ownerID, before string, limit int) ([]*PublicMeme, error) {
+	w := publicMemes(viewerID, admin, ownerID)
+	page := ""
+	if before != "" {
+		page = "WHERE t.id < " + w.arg(before) + "::uuid"
+	}
+	query := fmt.Sprintf(`
+		SELECT t.asset_id::text AS asset_id, t.id::text AS file_id FROM (
+			SELECT DISTINCT ON (f.asset_id) f.asset_id, f.id FROM library.public_files f JOIN core.meme_info m ON m.asset_id = f.asset_id
+			%s ORDER BY f.asset_id, f.id DESC
+		) t %s ORDER BY t.id DESC LIMIT %d
+	`, w.clause(), page, limit)
+	return collectAll[PublicMeme](r.db.Query(ctx, query, w.args...))
+}
+
+func (r *NodeRepository) CountPublicMemes(ctx context.Context, viewerID string, admin bool, ownerID string) (int, error) {
+	w := publicMemes(viewerID, admin, ownerID)
+	return count(ctx, r.db, "SELECT count(DISTINCT f.asset_id) FROM library.public_files f JOIN core.meme_info m ON m.asset_id = f.asset_id "+w.clause(), w.args...)
 }
 
 func (r *NodeRepository) Ancestors(ctx context.Context, path string) ([]*model.Node, error) {
@@ -238,17 +255,40 @@ func (r *NodeRepository) MemeFolders(ctx context.Context, viewerID, assetID stri
 	return collectScalars[string](r.db.Query(ctx, query, assetID, nullable(viewerID), limit))
 }
 
-func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, limit int) ([]string, error) {
-	query := `
-		SELECT f.id::text FROM library.nodes f
-		JOIN iam.users u ON u.id = f.owner_id AND u.status = 'active'
-		WHERE f.type = 'FOLDER' AND f.is_public
-		  AND ($1::uuid IS NULL OR f.owner_id = $1::uuid)
-		  AND NOT EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> f.path AND p.id <> f.id)
-		ORDER BY (SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) DESC, f.created_at DESC
-		LIMIT $2
-	`
-	return collectScalars[string](r.db.Query(ctx, query, nullable(ownerID), limit))
+// FolderRank places a folder in the list of public ones.
+type FolderRank struct {
+	Favorites int    `db:"favorites"`
+	ID        string `db:"id"`
+}
+
+// publicRootFolders filters f, a folder of u, to those of active users public at their topmost, of one owner if given.
+func publicRootFolders(ownerID string) filter {
+	var w filter
+	w.where(`f.type = 'FOLDER' AND f.is_public AND u.status = 'active'
+		AND NOT EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> f.path AND p.id <> f.id)`)
+	if ownerID != "" {
+		w.where("f.owner_id = " + w.arg(ownerID) + "::uuid")
+	}
+	return w
+}
+
+// PublicRootFolders lists the public folders most favorited first, then newest, from the one after the given one if any.
+func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, after *FolderRank, limit int) ([]*FolderRank, error) {
+	w := publicRootFolders(ownerID)
+	if after != nil {
+		w.where(fmt.Sprintf("(fv.n, f.id) < (%s, %s::uuid)", w.arg(after.Favorites), w.arg(after.ID)))
+	}
+	query := fmt.Sprintf(`
+		SELECT f.id::text AS id, fv.n AS favorites FROM library.nodes f JOIN iam.users u ON u.id = f.owner_id
+		CROSS JOIN LATERAL (SELECT count(*)::int AS n FROM library.favorites WHERE node_id = f.id) fv
+		%s ORDER BY fv.n DESC, f.id DESC LIMIT %d
+	`, w.clause(), limit)
+	return collectAll[FolderRank](r.db.Query(ctx, query, w.args...))
+}
+
+func (r *NodeRepository) CountPublicRootFolders(ctx context.Context, ownerID string) (int, error) {
+	w := publicRootFolders(ownerID)
+	return count(ctx, r.db, "SELECT count(*) FROM library.nodes f JOIN iam.users u ON u.id = f.owner_id "+w.clause(), w.args...)
 }
 
 // CollectionHit is a public collection holding memes a search found.

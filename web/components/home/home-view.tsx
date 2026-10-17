@@ -24,7 +24,7 @@ export function HomeView() {
   const { data: hot } = useSWR<string[]>('/tags/hot?limit=8')
   const { data: stats } = useSWR<SiteStats>('/stats')
   const { data: popular } = useSWR<Feed<Meme>>('/memes?limit=12')
-  const { data: folders } = useSWR<Folder[]>('/folders?limit=6')
+  const { data: folders } = useSWR<Feed<Folder>>('/folders?limit=6')
 
   return (
     <>
@@ -100,7 +100,7 @@ export function HomeView() {
         {popular ? <MemeGrid memes={popular.items} /> : <MemeGridSkeleton />}
       </section>
 
-      {folders && folders.length > 0 && (
+      {folders && folders.items.length > 0 && (
       <section className="mx-auto w-full max-w-6xl px-4 pb-16" aria-labelledby="folders-heading">
         <div className="mb-5">
           <h2 id="folders-heading" className="text-xl font-semibold tracking-tight">
@@ -108,7 +108,7 @@ export function HomeView() {
           </h2>
           <p className="text-sm text-muted-foreground">由用户整理并公开分享的表情包合集</p>
         </div>
-        <FolderGrid folders={folders} />
+        <FolderGrid folders={folders.items} />
       </section>
       )}
     </>

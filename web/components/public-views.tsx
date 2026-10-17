@@ -4,11 +4,12 @@ import { Activity, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { Check, ChevronRight, FolderOpen, FolderPlus, Hash, ImageOff, Link2, Share2, UserRound } from 'lucide-react'
+import { Check, ChevronRight, FolderOpen, FolderPlus, Hash, ImageOff, Library, Link2, Share2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MemeFeed } from '@/components/meme/meme-feed'
+import { FeedList } from '@/components/feed-list'
 import { SearchBar } from '@/components/search/search-bar'
 import { FolderGrid, FolderGridSkeleton } from '@/components/folder/folder-card'
 import { FavoriteButton } from '@/components/meme/meme-actions'
@@ -22,7 +23,7 @@ import { api, qs, refresh } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { Entry, Feed, Folder, FolderPage, Meme, Profile } from '@/lib/types'
-import { TabSwitch } from '@/components/tab-switch'
+import { TabSwitch, useTabParam } from '@/components/tab-switch'
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.ReactNode; title: string; description?: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -71,22 +72,22 @@ export function TagView({ tag }: { tag: string }) {
 }
 
 export function DiscoverView() {
-  const [tab, setTab] = useState<'memes' | 'folders'>('memes')
+  const [tab, setTab] = useTabParam(['memes', 'folders'] as const)
   const memes = useFeed(['popular'], (cursor) => api<Feed<Meme>>(`/memes${qs({ cursor })}`))
-  const folders = useSWR<Folder[]>('/folders?limit=40')
+  const folders = useFeed(['public-folders'], (cursor) => api<Feed<Folder>>(`/folders${qs({ cursor })}`))
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title="发现" description="全站热门表情包与社区公开分享的合集" />
-      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包'], ['folders', '公开合集', folders.data?.length]] as const} />
+      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包'], ['folders', '公开合集']] as const} />
       {/* Both tabs stay mounted, so switching shows the cards built before rather than building them again */}
       <div role="tabpanel">
         <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
           <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无表情包" />} />
         </Activity>
         <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
-          <Loadable result={folders} loading={<FolderGridSkeleton />}>
-            {(list) => (list.length ? <FolderGrid folders={list} /> : <EmptyState icon={FolderOpen} title="暂无公开合集" />)}
-          </Loadable>
+          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
+            {(list) => <FolderGrid folders={list} />}
+          </FeedList>
         </Activity>
       </div>
     </div>
@@ -94,53 +95,60 @@ export function DiscoverView() {
 }
 
 export function UserProfileView({ username }: { username: string }) {
+  const { user: viewer } = useSession()
   const path = `/users/${encodeURIComponent(username)}`
   const profile = useSWR<Profile>(path)
+  // Opens on the collections, or on the memes of a profile with only those
+  const memesFirst = Boolean(profile.data && !profile.data.folder_count && profile.data.meme_count)
+  const [tab, setTab] = useTabParam(memesFirst ? (['memes', 'folders'] as const) : (['folders', 'memes'] as const))
+  const folders = useFeed(['profile-folders', username], (cursor) => api<Feed<Folder>>(`${path}/folders${qs({ cursor })}`), { live: true })
   const memes = useFeed(['profile-memes', username], (cursor) => api<Feed<Meme>>(`${path}/memes${qs({ cursor })}`), { live: true })
   return (
     <Loadable
       result={profile}
       notFound={{ title: '用户不存在', description: '该用户不存在或已被停用。' }}
       loading={
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
           <div className="flex items-center gap-4">
             <Skeleton className="size-16 rounded-full" />
             <div className="flex flex-col gap-2">
               <Skeleton className="h-7 w-40" />
-              <Skeleton className="h-4 w-56" />
+              <Skeleton className="h-4 w-28" />
             </div>
           </div>
+          <Skeleton className="h-10 w-44 rounded-lg" />
           <FolderGridSkeleton />
-          <MemeGridSkeleton />
         </div>
       }
     >
-      {({ user, folders, meme_count }) => (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
+      {({ user, folder_count, meme_count }) => (
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
           <header className="flex items-center gap-4">
             <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-brand text-2xl font-semibold text-brand-foreground uppercase" aria-hidden>
               {user.username.slice(0, 1)}
             </span>
-            <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <h1 className="truncate text-2xl font-semibold tracking-tight">@{user.username}</h1>
-              <p className="text-sm text-muted-foreground">
-                <span className="whitespace-nowrap">{formatDate(user.created_at)} 加入</span> · <span className="whitespace-nowrap">{folders.length} 个公开合集</span> ·{' '}
-                <span className="whitespace-nowrap">{meme_count} 个公开表情包</span>
-              </p>
+              <p className="text-sm text-muted-foreground">{formatDate(user.created_at)} 加入</p>
             </div>
+            {user.id === viewer?.id && (
+              <Button variant="outline" nativeButton={false} render={<Link href="/library" />} className="shrink-0">
+                <Library data-icon="inline-start" />
+                管理我的库
+              </Button>
+            )}
           </header>
-          <section className="flex flex-col gap-4" aria-labelledby="pf-folders">
-            <h2 id="pf-folders" className="text-lg font-semibold">
-              公开合集
-            </h2>
-            {folders.length ? <FolderGrid folders={folders} showOwner={false} /> : <p className="text-sm text-muted-foreground">暂无公开合集</p>}
-          </section>
-          <section className="flex flex-col gap-4" aria-labelledby="pf-memes">
-            <h2 id="pf-memes" className="text-lg font-semibold">
-              公开表情包
-            </h2>
-            <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<p className="text-sm text-muted-foreground">暂无单独公开的表情包</p>} />
-          </section>
+          <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['folders', '合集', folder_count], ['memes', '表情包', meme_count]] as const} />
+          <div role="tabpanel">
+            <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
+              <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
+                {(list) => <FolderGrid folders={list} showOwner={false} />}
+              </FeedList>
+            </Activity>
+            <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
+              <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无公开表情包" />} />
+            </Activity>
+          </div>
         </div>
       )}
     </Loadable>

@@ -1,4 +1,13 @@
+import { useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
+
+/** A page's tab kept in the URL's ?tab=, so going back to the page shows the one left; the first is the default, left out. */
+export function useTabParam<T extends string>(tabs: readonly T[]) {
+  const params = useSearchParams()
+  const tab = tabs.find((t) => t === params.get('tab')) ?? tabs[0]
+  const setTab = (t: T) => window.history.replaceState(null, '', t === tabs[0] ? location.pathname : `?tab=${t}`)
+  return [tab, setTab] as const
+}
 
 export function TabSwitch<T extends string>({
   label,
