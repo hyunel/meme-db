@@ -1,12 +1,27 @@
 import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
 import { UserProfileView } from '@/components/public-views'
+import { serverApi } from '@/lib/server-api'
+import { pageMetadata } from '@/lib/site'
+import type { Profile } from '@/lib/types'
 
-export async function generateMetadata({ params }: { params: Promise<{ username: string }> }): Promise<Metadata> {
-  const { username } = await params
-  return { title: `@${decodeURIComponent(username)}` }
+type Props = { params: Promise<{ username: string }> }
+
+async function load({ params }: Props) {
+  const { username } = await params // Still percent-encoded
+  return (await serverApi<Profile>(`/users/${username}`)) ?? notFound()
 }
 
-export default async function UserPage({ params }: { params: Promise<{ username: string }> }) {
-  const { username } = await params
-  return <UserProfileView username={decodeURIComponent(username)} />
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const { user, folder_count, meme_count } = await load(props)
+  return pageMetadata({
+    title: `@${user.username}`,
+    description: `@${user.username} 公开的 ${folder_count} 个合集与 ${meme_count} 个表情包`,
+    path: `/u/${encodeURIComponent(user.username)}`,
+    index: true,
+  })
+}
+
+export default async function UserPage(props: Props) {
+  return <UserProfileView profile={await load(props)} />
 }

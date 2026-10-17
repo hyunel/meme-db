@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/labstack/echo/v4"
@@ -11,9 +12,14 @@ import (
 
 const identityKey = "rbac_identity"
 
+// SessionCookie holds the secret of a web sign-in.
+const SessionCookie = "memedb_session"
+
 type Authenticator interface {
-	// Authenticate resolves a bearer credential; an error rejects the request.
-	Authenticate(ctx context.Context, credential string) (*Identity, error)
+	// Authenticate resolves an API token; an error rejects the request.
+	Authenticate(ctx context.Context, token string) (*Identity, error)
+	// Session resolves a session cookie; nil for one that has expired or been revoked.
+	Session(ctx context.Context, secret string) (*Identity, error)
 }
 
 func GetIdentity(c echo.Context) *Identity {
@@ -26,12 +32,22 @@ func GetIdentity(c echo.Context) *Identity {
 func IdentityMiddleware(auth Authenticator) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			req := c.Request()
 			identity := &Identity{Role: RoleGuest}
-			if credential, ok := strings.CutPrefix(c.Request().Header.Get("Authorization"), "Bearer "); ok {
-				var err error
-				if identity, err = auth.Authenticate(c.Request().Context(), credential); err != nil {
-					return err
+			var err error
+			if token, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer "); ok {
+				identity, err = auth.Authenticate(req.Context(), token)
+			} else if cookie, cerr := c.Cookie(SessionCookie); cerr == nil {
+				// SameSite keeps the cookie off other sites' requests; this turns away the site's other origins, like a sibling subdomain.
+				if site := req.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && req.Method != http.MethodGet && req.Method != http.MethodHead {
+					return apperror.Forbidden("cross_site_request", "only this site's own pages may act with its session")
 				}
+				if identity, err = auth.Session(req.Context(), cookie.Value); identity == nil && err == nil {
+					identity = &Identity{Role: RoleGuest, Lapsed: true}
+				}
+			}
+			if err != nil {
+				return err
 			}
 
 			c.Set(identityKey, identity)
@@ -40,12 +56,26 @@ func IdentityMiddleware(auth Authenticator) echo.MiddlewareFunc {
 	}
 }
 
+// SetSessionCookie keeps a session's secret out of reach of scripts, lapsing with the session; a zero expiry clears it.
+func SetSessionCookie(c echo.Context, secret string, expires time.Time) {
+	cookie := &http.Cookie{Name: SessionCookie, Value: secret, Path: "/", Expires: expires, HttpOnly: true, Secure: c.Scheme() == "https", SameSite: http.SameSiteLaxMode}
+	if expires.IsZero() {
+		cookie.MaxAge = -1
+	}
+	c.SetCookie(cookie)
+}
+
 func RequireAuth() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			identity := GetIdentity(c)
 			switch method := c.Request().Method; {
 			case identity == nil || identity.UserID == "":
+				if identity != nil && identity.Lapsed {
+					// Told once: the dead cookie goes, and later requests are a plain guest's.
+					SetSessionCookie(c, "", time.Time{})
+					return apperror.Unauthorized("session_expired", "the session has expired or been revoked; sign in again")
+				}
 				return apperror.Unauthorized("unauthenticated", "sign in first")
 			case identity.Scope == ScopeRead && method != http.MethodGet && method != http.MethodHead:
 				return apperror.Forbidden("token_read_only", "this API token is read-only")
@@ -55,11 +85,11 @@ func RequireAuth() echo.MiddlewareFunc {
 	}
 }
 
-// RequireSession keeps account security, such as the password and the API tokens themselves, out of reach of API tokens.
+// RequireSession keeps account security, such as the password, sign-ins and the API tokens themselves, out of reach of API tokens.
 func RequireSession() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if GetIdentity(c).Scope != "" {
+			if GetIdentity(c).SessionID == "" {
 				return apperror.Forbidden("session_required", "API tokens cannot do this; sign in on the web")
 			}
 			return next(c)

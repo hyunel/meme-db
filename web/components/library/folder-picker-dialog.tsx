@@ -6,9 +6,9 @@ import { ChevronLeft, ChevronRight, Folder as FolderIcon, FolderPlus, Home, Load
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { api, qs } from '@/lib/api'
+import { api } from '@/lib/api'
 import type { Folder, LibraryView } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 export type PickerMode = 'move' | 'copy' | 'save' // save copies another user's folder in
 

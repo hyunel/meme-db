@@ -1,4 +1,4 @@
-import { qs } from './api'
+import { qs } from './utils'
 import type { MediaKind, Meme } from './types'
 
 export function kindOf(mime: string): MediaKind {

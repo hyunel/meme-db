@@ -32,6 +32,19 @@ export interface ApiToken {
   created_at: string
 }
 
+/** A sign-in on the web, held by a browser's cookie */
+export interface Session {
+  id: string
+  user_agent: string
+  /** Signed in from */
+  ip: string
+  /** Recorded to the minute */
+  last_used_at: string
+  created_at: string
+  /** The viewer's own */
+  current: boolean
+}
+
 export interface CreatedToken extends ApiToken {
   /** Only ever returned on creation */
   secret: string
@@ -219,6 +232,7 @@ export interface AdminUser extends User, UserStats {}
 export interface UserDetail extends AdminUser {
   /** The user's latest uploads. */
   recent: Meme[]
+  sessions: Session[]
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed'

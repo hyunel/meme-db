@@ -16,6 +16,7 @@ var defaultConfig []byte
 
 type Config struct {
 	Server    ServerConfig    `yaml:"server" validate:"required"`
+	Auth      AuthConfig      `yaml:"auth" validate:"required"`
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
 	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
@@ -69,8 +70,12 @@ type TagsConfig struct {
 
 type ServerConfig struct {
 	Port        int    `yaml:"port" validate:"required,gt=0"`
-	JWTSecret   string `yaml:"jwt_secret" validate:"required"`
+	AssetSecret string `yaml:"asset_secret" validate:"required"`
 	StoragePath string `yaml:"storage_path" validate:"required"`
+}
+
+type AuthConfig struct {
+	SessionTTL time.Duration `yaml:"session_ttl" validate:"required,gt=0"`
 }
 
 type DatabaseConfig struct {

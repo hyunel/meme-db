@@ -2,7 +2,8 @@
 
 import { useSyncExternalStore } from 'react'
 import { mutate } from 'swr'
-import { api, getToken, setToken, setUnauthorizedHandler } from './api'
+import { toast } from 'sonner'
+import { api, setUnauthorizedHandler } from './api'
 import { THEME_KEY } from './theme'
 import type { User } from './types'
 
@@ -46,11 +47,12 @@ function clearLocal() {
       .filter((k) => k.startsWith('memedb:') && k !== THEME_KEY)
       .forEach((k) => localStorage.removeItem(k))
   } catch {}
-  setToken(null)
   void mutate(() => true, undefined, { revalidate: false })
 }
 
-setUnauthorizedHandler(() => {
+// The session ended under a signed-in page, or the server says a lapsed cookie came with the check-in.
+setUnauthorizedHandler((code) => {
+  if (!session.user && code !== 'session_expired') return
   clearLocal()
   update({ user: null, ready: true, expired: true })
 })
@@ -60,36 +62,34 @@ let booted = false
 export async function bootSession() {
   if (booted) return
   booted = true
-  if (!getToken()) return update({ ready: true })
   try {
     update({ user: await api<User>('/auth/me'), ready: true })
   } catch {
-    update({ ready: true }) // A rejected token is cleared by the unauthorized handler
+    update({ ready: true }) // A guest, or a lapsed session, which the unauthorized handler marks
   }
 }
 
-interface AuthResponse {
-  token: string
-  user: User
-}
-
-function signIn({ token, user }: AuthResponse) {
-  setToken(token)
+function signIn(user: User) {
   void mutate(() => true, undefined, { revalidate: false }) // Guest views of shared data are stale now
   update({ user, ready: true, expired: false })
   return user
 }
 
 export async function login(email: string, password: string) {
-  return signIn(await api<AuthResponse>('/auth/login', { method: 'POST', json: { email, password } }))
+  return signIn(await api<User>('/auth/login', { method: 'POST', json: { email, password } }))
 }
 
 export async function register(input: { username: string; email: string; password: string }) {
-  return signIn(await api<AuthResponse>('/auth/register', { method: 'POST', json: input }))
+  return signIn(await api<User>('/auth/register', { method: 'POST', json: input }))
 }
 
 /** Signs out and reloads the home page, so no state of the session survives in memory. */
-export function logout() {
+export async function logout() {
+  try {
+    await api('/auth/logout', { method: 'POST' })
+  } catch (err) {
+    return void toast.error((err as Error).message) // The cookie, out of the page's reach, would sign it in again
+  }
   clearLocal()
   window.location.replace('/')
 }

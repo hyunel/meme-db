@@ -62,12 +62,12 @@ func main() {
 	taskWorker := worker.NewWorker(cfg.Worker, repo.Task)
 
 	authService := service.NewAuthService(service.AuthServiceConfig{
-		JWTSecret: cfg.Server.JWTSecret,
+		SessionTTL: cfg.Auth.SessionTTL,
 	}, repo)
 
 	assetService := service.NewAssetService(service.AssetServiceConfig{
 		StoragePath:  cfg.Server.StoragePath,
-		JWTSecret:    cfg.Server.JWTSecret,
+		Secret:       cfg.Server.AssetSecret,
 		MaxSizeMB:    cfg.Upload.MaxSizeMB,
 		AllowedTypes: cfg.Upload.AllowedTypes,
 	}, repo, taskWorker)
@@ -162,9 +162,7 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	e.Use(rbac.IdentityMiddleware(authService))
-
-	setupRoutes(e, h)
+	setupRoutes(e, h, rbac.IdentityMiddleware(authService))
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	go func() {
@@ -199,8 +197,12 @@ type handlers struct {
 	task     *handler.TaskHandler
 }
 
-func setupRoutes(e *echo.Echo, h handlers) {
-	api := e.Group("/api")
+func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
+	// Files open by their signed links, so these skip finding out who asks, which every image would pay for.
+	e.GET("/api/assets/:id", h.asset.GetAssetContent)
+	e.HEAD("/api/assets/:id", h.asset.GetAssetContent) // Its ETag, the SHA-256 of the file, tells clients what they already uploaded
+
+	api := e.Group("/api", identity)
 
 	// Guest-readable
 	api.GET("/health", func(c echo.Context) error {
@@ -208,11 +210,10 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	})
 	api.GET("/config", h.asset.GetConfig)
 	api.GET("/stats", h.meme.Stats)
-	api.GET("/assets/:id", h.asset.GetAssetContent)
-	api.HEAD("/assets/:id", h.asset.GetAssetContent) // Its ETag, the SHA-256 of the file, tells clients what they already uploaded
 
 	api.POST("/auth/register", h.auth.Register)
 	api.POST("/auth/login", h.auth.Login)
+	api.POST("/auth/logout", h.auth.Logout)
 
 	api.POST("/search", h.meme.Search)
 	api.GET("/search", h.meme.SearchPage)
@@ -239,6 +240,9 @@ func setupRoutes(e *echo.Echo, h handlers) {
 
 	session := priv.Group("/auth", rbac.RequireSession())
 	session.PUT("/password", h.auth.ChangePassword)
+	session.GET("/sessions", h.auth.ListSessions)
+	session.DELETE("/sessions", h.auth.DeleteSessions)
+	session.DELETE("/sessions/:id", h.auth.DeleteSessions)
 	session.GET("/tokens", h.auth.ListTokens)
 	session.POST("/tokens", h.auth.CreateToken)
 	session.DELETE("/tokens/:id", h.auth.DeleteToken)
@@ -285,6 +289,8 @@ func setupRoutes(e *echo.Echo, h handlers) {
 	admin.GET("/users/:id", h.admin.GetUser)
 	admin.PATCH("/users/:id", h.admin.UpdateUser)
 	admin.PUT("/users/:id/password", h.admin.ResetPassword)
+	admin.DELETE("/users/:id/sessions", h.admin.DeleteUserSessions)
+	admin.DELETE("/users/:id/sessions/:sid", h.admin.DeleteUserSessions)
 	admin.DELETE("/users/:id", h.admin.DeleteUser)
 
 	admin.GET("/memes", h.admin.ListMemes)

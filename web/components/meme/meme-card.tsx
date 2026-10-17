@@ -3,13 +3,12 @@
 import { memo, useMemo, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { mutate } from 'swr'
-import { qs } from '@/lib/api'
 import type { Entry, Meme } from '@/lib/types'
 import { kindOf, memeHref } from '@/lib/media'
 import { MemeMedia } from './meme-media'
 import { FavoriteButton, MemeMoreMenu } from './meme-actions'
 import { ProcessBadge } from '@/components/status-badges'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 // Height over width, bounded so panoramas and long screenshots keep a usable card.
 const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)

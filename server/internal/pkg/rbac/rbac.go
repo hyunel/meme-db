@@ -15,9 +15,11 @@ const (
 )
 
 type Identity struct {
-	UserID string // Empty for guests
-	Role   string
-	Scope  string // Of the API token in use; empty for a signed-in session
+	UserID    string // Empty for guests
+	Role      string
+	Scope     string // Of the API token in use; empty for a signed-in session
+	SessionID string // Of the signed-in session; empty for API tokens
+	Lapsed    bool   // A guest whose session cookie has expired or been revoked
 }
 
 // IsAdmin reports whether the identity may act as an admin, which an API token needs the admin scope for.

@@ -53,6 +53,17 @@ type APIToken struct {
 	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
 }
 
+type Session struct {
+	ID         string    `json:"id" db:"id"`
+	UserID     string    `json:"-" db:"user_id"`
+	UserAgent  string    `json:"user_agent" db:"user_agent"`
+	IP         string    `json:"ip" db:"ip"` // Signed in from
+	ExpiresAt  time.Time `json:"-" db:"expires_at"`
+	LastUsedAt time.Time `json:"last_used_at" db:"last_used_at"` // Recorded to the minute
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+	Current    bool      `json:"current" db:"-"` // The viewer's own
+}
+
 type Node struct {
 	ID        string    `db:"id"`
 	OwnerID   string    `db:"owner_id"`

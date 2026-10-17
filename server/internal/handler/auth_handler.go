@@ -27,22 +27,18 @@ type RegisterRequest struct {
 	Password string `json:"password" validate:"required,min=6"`
 }
 
-type AuthResponse struct {
-	Token string      `json:"token"`
-	User  *model.User `json:"user"`
-}
-
 func (h *AuthHandler) Register(c echo.Context) error {
 	var req RegisterRequest
 	if err := BindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	token, user, err := h.authService.Register(c.Request().Context(), req.Username, req.Email, req.Password)
+	signIn, err := h.authService.Register(c.Request().Context(), req.Username, req.Email, req.Password, c.Request().UserAgent(), c.RealIP())
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, AuthResponse{Token: token, User: user})
+	rbac.SetSessionCookie(c, signIn.Secret, signIn.Expires)
+	return c.JSON(http.StatusCreated, signIn.User)
 }
 
 type LoginRequest struct {
@@ -56,17 +52,30 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return err
 	}
 
-	token, user, err := h.authService.Login(c.Request().Context(), req.Email, req.Password)
+	signIn, err := h.authService.Login(c.Request().Context(), req.Email, req.Password, c.Request().UserAgent(), c.RealIP())
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, AuthResponse{Token: token, User: user})
+	rbac.SetSessionCookie(c, signIn.Secret, signIn.Expires)
+	return c.JSON(http.StatusOK, signIn.User)
+}
+
+func (h *AuthHandler) Logout(c echo.Context) error {
+	if err := h.authService.Logout(c.Request().Context(), rbac.GetIdentity(c)); err != nil {
+		return err
+	}
+	rbac.SetSessionCookie(c, "", time.Time{})
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *AuthHandler) GetMe(c echo.Context) error {
-	user, err := h.authService.GetUser(c.Request().Context(), rbac.GetIdentity(c).UserID)
+	user, expires, err := h.authService.Me(c.Request().Context(), rbac.GetIdentity(c))
 	if err != nil {
 		return err
+	}
+	// The web app checks in here on each page load, so its cookie lapses with the session, which use keeps alive.
+	if cookie, err := c.Cookie(rbac.SessionCookie); err == nil && !expires.IsZero() {
+		rbac.SetSessionCookie(c, cookie.Value, expires)
 	}
 	return c.JSON(http.StatusOK, user)
 }
@@ -90,8 +99,32 @@ func (h *AuthHandler) ChangePassword(c echo.Context) error {
 		return err
 	}
 
-	err := h.authService.ChangePassword(c.Request().Context(), rbac.GetIdentity(c).UserID, req.CurrentPassword, req.NewPassword)
+	err := h.authService.ChangePassword(c.Request().Context(), rbac.GetIdentity(c), req.CurrentPassword, req.NewPassword)
 	if err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *AuthHandler) ListSessions(c echo.Context) error {
+	sessions, err := h.authService.Sessions(c.Request().Context(), rbac.GetIdentity(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, sessions)
+}
+
+type DeleteSessionsRequest struct {
+	ID string `param:"id" validate:"omitempty,uuid"` // Omitted = all but the current one
+}
+
+func (h *AuthHandler) DeleteSessions(c echo.Context) error {
+	var req DeleteSessionsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.authService.DeleteSessions(c.Request().Context(), rbac.GetIdentity(c), req.ID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)

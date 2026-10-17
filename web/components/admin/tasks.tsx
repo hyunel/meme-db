@@ -32,10 +32,10 @@ import {
 } from './admin-ui'
 import { TaskStatusBadge, jobLabel, taskState, taskStateLabel } from './labels'
 import { ConfirmDialog, rangeOptions, rangeStart, useSelection, type RangeKey } from './shared'
-import { api, qs, refresh } from '@/lib/api'
+import { api, refresh } from '@/lib/api'
 import { formatDateTime, formatDuration, formatRelative, toMs } from '@/lib/format'
 import type { Page, Task, TaskBatchCounts, TaskDetail, TaskState, TaskTypeCounts } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 import { TabSwitch } from '@/components/tab-switch'
 
 const activeStates: TaskState[] = ['pending', 'retrying', 'running']

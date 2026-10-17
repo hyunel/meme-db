@@ -53,6 +53,20 @@ CREATE TABLE IF NOT EXISTS iam.api_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON iam.api_tokens(user_id);
 
+-- Web sign-ins, each held by a browser's cookie.
+CREATE TABLE IF NOT EXISTS iam.sessions (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL REFERENCES iam.users(id) ON DELETE CASCADE,
+    token_hash CHAR(64) UNIQUE NOT NULL,      -- SHA-256 of the cookie's secret
+    user_agent TEXT NOT NULL,
+    ip TEXT NOT NULL,                         -- Signed in from
+    expires_at TIMESTAMPTZ NOT NULL,          -- Pushed back as the session is used
+    last_used_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON iam.sessions(user_id);
+
 -- ============================================================================
 -- TABLES: Core
 -- ============================================================================

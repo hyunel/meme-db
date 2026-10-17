@@ -24,7 +24,7 @@ import (
 
 type AssetServiceConfig struct {
 	StoragePath  string
-	JWTSecret    string
+	Secret       string // Signs file links
 	MaxSizeMB    float64
 	AllowedTypes []string
 }
@@ -201,7 +201,7 @@ func (s *AssetService) URL(assetID string) string {
 }
 
 func (s *AssetService) sign(assetID string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
+	h := hmac.New(sha256.New, []byte(s.cfg.Secret))
 	h.Write([]byte(assetID))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:8])
 }

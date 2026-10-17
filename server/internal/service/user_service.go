@@ -28,7 +28,8 @@ func (s *UserService) List(ctx context.Context, f repository.UserFilter, page re
 
 type UserDetail struct {
 	model.AdminUser
-	Recent []*model.Meme `json:"recent"` // The user's latest uploads
+	Recent   []*model.Meme    `json:"recent"` // The user's latest uploads
+	Sessions []*model.Session `json:"sessions"`
 }
 
 func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string) (*UserDetail, error) {
@@ -51,7 +52,11 @@ func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	if err != nil {
 		return nil, err
 	}
-	return &UserDetail{AdminUser: model.AdminUser{User: *user, UserStats: *stats}, Recent: recent}, nil
+	sessions, err := listSessions(ctx, s.repo.Repos, viewer, id)
+	if err != nil {
+		return nil, err
+	}
+	return &UserDetail{AdminUser: model.AdminUser{User: *user, UserStats: *stats}, Recent: recent, Sessions: sessions}, nil
 }
 
 func (s *UserService) Stats(ctx context.Context, id string) (*model.UserStats, error) {
@@ -79,11 +84,25 @@ func (s *UserService) Update(ctx context.Context, actor *rbac.Identity, id strin
 	})
 }
 
-func (s *UserService) ResetPassword(ctx context.Context, id, password string) error {
-	if _, err := find(ctx, s.repo.Repos, id); err != nil {
+// ResetPassword signs the user out everywhere, but for the viewer's own session.
+func (s *UserService) ResetPassword(ctx context.Context, viewer *rbac.Identity, id, password string) error {
+	return s.repo.Tx(ctx, func(r *repository.Repos) error {
+		if _, err := find(ctx, r, id); err != nil {
+			return err
+		}
+		if err := setPassword(ctx, r, id, password); err != nil {
+			return err
+		}
+		return r.Session.DeleteAll(ctx, id, viewer.SessionID)
+	})
+}
+
+// DeleteSessions ends one of the user's sessions, or without an id all of them but the viewer's own.
+func (s *UserService) DeleteSessions(ctx context.Context, viewer *rbac.Identity, userID, id string) error {
+	if _, err := find(ctx, s.repo.Repos, userID); err != nil {
 		return err
 	}
-	return setPassword(ctx, s.repo.Repos, id, password)
+	return deleteSessions(ctx, s.repo.Repos, viewer, userID, id)
 }
 
 func (s *UserService) Delete(ctx context.Context, actor *rbac.Identity, id string) error {

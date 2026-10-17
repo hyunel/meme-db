@@ -13,10 +13,10 @@ import { EmptyState } from '@/components/states'
 import { TabSwitch } from '@/components/tab-switch'
 import { AdminPageHeader, BulkBar, DataList, FilterSelect, Pagination, SearchInput, Toolbar, useDebounced, usePaging, type Column } from './admin-ui'
 import { ConfirmDialog, useSelection } from './shared'
-import { api, qs, refresh } from '@/lib/api'
+import { api, refresh } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import type { Page, TagUsage } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 type SortKey = 'usage' | 'name' | 'created'
 const sortOptions = [

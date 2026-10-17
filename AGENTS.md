@@ -69,7 +69,7 @@ MemeDB/
   - For simple queries, use the default repositories provided by the `Provider` (e.g., `s.repo.User.Get`).
   - For multiple operations requiring atomicity, use the `Transaction` helper (`Provider.Tx`).
 - **Access Control**: Enforced explicitly in repository queries (owner / visibility filters); there is no row-level security. A node is public if it or an ancestor folder is public (`library.public_files`).
-- **API Tokens**: Requests authenticate with a session JWT or a personal API token (`mdb_…`), whose scope `rbac` enforces: `read` tokens may only GET signed-in routes, the admin API needs the `admin` scope, and routes under `rbac.RequireSession()` (password, tokens) refuse tokens altogether.
+- **Sign-ins**: The web signs in with a session cookie (`iam.sessions`, HttpOnly, revocable), scripts with a personal API token (`mdb_…`), whose scope `rbac` enforces: `read` tokens may only GET signed-in routes, the admin API needs the `admin` scope, and routes under `rbac.RequireSession()` (password, sign-ins, tokens) refuse tokens altogether.
 - **Schema**: `server/sql/init.sql` creates the database.
 
 ### Protobuf Workflow
@@ -85,6 +85,7 @@ MemeDB/
 ### Web
 - Read `web/AGENTS.md` first: this Next.js version differs from what you may know.
 - Build UI from `components/ui` and the theme tokens in `app/globals.css`; fetch with SWR through `lib/api`, calling `refresh()` after mutations.
+- The public pages (meme, folder, profile, tag) fetch their record on the server through `lib/server-api`, as the visitor by their cookie, for their metadata and first paint, and hand it to SWR as `fallbackData`.
 - Keep `lib/types.ts` in sync with the server's JSON, and the API reference in `components/api-docs.tsx` with the routes.
 
 ### Inference Service

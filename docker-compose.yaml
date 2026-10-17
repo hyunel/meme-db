@@ -1,16 +1,18 @@
-# Secrets come from ./.env: JWT_SECRET, POSTGRES_PASSWORD and the VLM API key used in
+# Secrets come from ./.env: ASSET_SECRET, POSTGRES_PASSWORD and the VLM API key used in
 # inference/models.yaml (e.g. DEEPSEEK_API_KEY).
 services:
   web:
     build: ./web
     ports: ["3000:3000"]
+    environment:
+      SITE_URL: ${SITE_URL:-http://localhost:3000} # Where visitors reach the site, as share cards link it
     depends_on: [server]
 
   server:
     build: ./server
     ports: ["8080:8080"]
     environment:
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ASSET_SECRET: ${ASSET_SECRET:?set ASSET_SECRET in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - ./server/config.docker.yaml:/etc/memedb/config.yaml:ro

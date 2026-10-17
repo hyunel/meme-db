@@ -12,11 +12,10 @@ import { Loadable } from '@/components/loadable'
 import { AdminPageHeader, FilterSelect, RefreshControls, StatCard, toneText, useNow } from './admin-ui'
 import { jobLabel, taskStateLabel } from './labels'
 import { useInference } from '@/hooks/use-inference'
-import { qs } from '@/lib/api'
 import { fmtLatency, fmtPct, gpuUtil, inferenceAlerts } from '@/lib/inference'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import type { Overview, TaskState, TaskTypeCounts } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 const DAY = 86_400_000
 type Range = '1d' | '7d' | '30d' | 'custom'

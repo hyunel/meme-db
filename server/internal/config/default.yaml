@@ -2,6 +2,9 @@ server:
   port: 8080
   storage_path: "./assets"
 
+auth:
+  session_ttl: 720h   # A web sign-in lapses after this long unused
+
 database:
   url: "postgres://postgres:postgres@localhost:5432/postgres"
 

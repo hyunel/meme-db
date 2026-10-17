@@ -7,7 +7,6 @@ import useSWR from 'swr'
 import { Check, ChevronRight, FolderOpen, FolderPlus, Hash, ImageOff, Library, Link2, Share2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { MemeFeed } from '@/components/meme/meme-feed'
 import { FeedList } from '@/components/feed-list'
 import { SearchBar } from '@/components/search/search-bar'
@@ -16,10 +15,10 @@ import { FavoriteButton } from '@/components/meme/meme-actions'
 import { PrivateLinkDialog, shareFolder } from '@/components/meme/share-dialog'
 import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
 import { useRequireLogin } from '@/components/app-providers'
-import { EmptyState, MemeGridSkeleton } from '@/components/states'
-import { Loadable } from '@/components/loadable'
+import { EmptyState } from '@/components/states'
 import { useFeed } from '@/hooks/use-feed'
-import { api, qs, refresh } from '@/lib/api'
+import { api, refresh } from '@/lib/api'
+import { qs } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { Entry, Feed, Folder, FolderPage, Meme, Profile } from '@/lib/types'
@@ -38,10 +37,10 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.R
   )
 }
 
-export function TagView({ tag }: { tag: string }) {
+export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }) {
   const memes = useFeed(['tag', tag], (cursor) => api<Feed<Meme>>(`/memes${qs({ tag, cursor })}`))
-  const { data: hot } = useSWR<string[]>('/tags/hot?limit=12')
-  const others = hot?.filter((t) => t !== tag) ?? []
+  const { data: hot = initialHot } = useSWR<string[]>('/tags/hot?limit=12', { fallbackData: initialHot })
+  const others = hot.filter((t) => t !== tag)
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
@@ -94,64 +93,45 @@ export function DiscoverView() {
   )
 }
 
-export function UserProfileView({ username }: { username: string }) {
+export function UserProfileView({ profile: initial }: { profile: Profile }) {
   const { user: viewer } = useSession()
+  const username = initial.user.username
   const path = `/users/${encodeURIComponent(username)}`
-  const profile = useSWR<Profile>(path)
+  const { data: { user, folder_count, meme_count } = initial } = useSWR<Profile>(path, { fallbackData: initial })
   // Opens on the collections, or on the memes of a profile with only those
-  const memesFirst = Boolean(profile.data && !profile.data.folder_count && profile.data.meme_count)
+  const memesFirst = Boolean(!folder_count && meme_count)
   const [tab, setTab] = useTabParam(memesFirst ? (['memes', 'folders'] as const) : (['folders', 'memes'] as const))
   const folders = useFeed(['profile-folders', username], (cursor) => api<Feed<Folder>>(`${path}/folders${qs({ cursor })}`), { live: true })
   const memes = useFeed(['profile-memes', username], (cursor) => api<Feed<Meme>>(`${path}/memes${qs({ cursor })}`), { live: true })
   return (
-    <Loadable
-      result={profile}
-      notFound={{ title: '用户不存在', description: '该用户不存在或已被停用。' }}
-      loading={
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
-          <div className="flex items-center gap-4">
-            <Skeleton className="size-16 rounded-full" />
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-7 w-40" />
-              <Skeleton className="h-4 w-28" />
-            </div>
-          </div>
-          <Skeleton className="h-10 w-44 rounded-lg" />
-          <FolderGridSkeleton />
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      <header className="flex items-center gap-4">
+        <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-brand text-2xl font-semibold text-brand-foreground uppercase" aria-hidden>
+          {user.username.slice(0, 1)}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h1 className="truncate text-2xl font-semibold tracking-tight">@{user.username}</h1>
+          <p className="text-sm text-muted-foreground">{formatDate(user.created_at)} 加入</p>
         </div>
-      }
-    >
-      {({ user, folder_count, meme_count }) => (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-          <header className="flex items-center gap-4">
-            <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-brand text-2xl font-semibold text-brand-foreground uppercase" aria-hidden>
-              {user.username.slice(0, 1)}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">@{user.username}</h1>
-              <p className="text-sm text-muted-foreground">{formatDate(user.created_at)} 加入</p>
-            </div>
-            {user.id === viewer?.id && (
-              <Button variant="outline" nativeButton={false} render={<Link href="/library" />} className="shrink-0">
-                <Library data-icon="inline-start" />
-                管理我的库
-              </Button>
-            )}
-          </header>
-          <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['folders', '合集', folder_count], ['memes', '表情包', meme_count]] as const} />
-          <div role="tabpanel">
-            <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
-              <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
-                {(list) => <FolderGrid folders={list} showOwner={false} />}
-              </FeedList>
-            </Activity>
-            <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
-              <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无公开表情包" />} />
-            </Activity>
-          </div>
-        </div>
-      )}
-    </Loadable>
+        {user.id === viewer?.id && (
+          <Button variant="outline" nativeButton={false} render={<Link href="/library" />} className="shrink-0">
+            <Library data-icon="inline-start" />
+            管理我的库
+          </Button>
+        )}
+      </header>
+      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['folders', '合集', folder_count], ['memes', '表情包', meme_count]] as const} />
+      <div role="tabpanel">
+        <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
+          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
+            {(list) => <FolderGrid folders={list} showOwner={false} />}
+          </FeedList>
+        </Activity>
+        <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
+          <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无公开表情包" />} />
+        </Activity>
+      </div>
+    </div>
   )
 }
 
@@ -193,92 +173,70 @@ function FolderActions({ folder, own, viaLink, share }: { folder: Folder; own: b
 }
 
 /** A folder opened by its link, public or opened by a private link (share), which its pages pass on. */
-export function PublicFolderView({ id, share }: { id: string; share?: string }) {
+export function PublicFolderView({ page: initial, share }: { page: FolderPage; share?: string }) {
   const { user } = useSession()
-  const page = useSWR<FolderPage>(`/folders/${id}${qs({ share })}`)
+  const id = initial.folder.id
+  const { data: { folder, ancestors, folders } = initial } = useSWR<FolderPage>(`/folders/${id}${qs({ share })}`, { fallbackData: initial })
   const entries = useFeed(['folder-entries', id, share], (cursor) => api<Feed<Entry>>(`/folders/${id}/entries${qs({ share, cursor })}`), { live: true })
   // Counts one view per page load for the link's stats, as a meme's page does.
   const viewed = useRef(false)
   useEffect(() => {
-    if (!share || !page.data || viewed.current) return
+    if (!share || viewed.current) return
     viewed.current = true
     api(`/folders/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
-  }, [id, share, page.data])
+  }, [id, share])
 
+  const own = folder.owner.id === user?.id
+  const viaLink = Boolean(share) && folder.visibility === 'private' && !own
   return (
-    <Loadable
-      result={page}
-      notFound={
-        share
-          ? { title: '链接已失效', description: '分享者可能停用了这个链接，或删除了这个文件夹。' }
-          : { title: '合集不存在', description: '它可能已被删除，或已设为私有。' }
-      }
-      loading={
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
-          <Skeleton className="h-5 w-40" />
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-8 w-56" />
-            <Skeleton className="h-4 w-44" />
-          </div>
-          <MemeGridSkeleton />
-        </div>
-      }
-    >
-      {({ folder, ancestors, folders }) => {
-        const own = folder.owner.id === user?.id
-        const viaLink = Boolean(share) && folder.visibility === 'private' && !own
-        return (
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-            <nav aria-label="合集路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
-              <ol className="flex w-max items-center gap-1 text-sm text-muted-foreground">
-                <li>
-                  <Link href={`/u/${folder.owner.username}`} className="inline-flex items-center gap-1 hover:text-foreground">
-                    <UserRound className="size-3.5" aria-hidden />@{folder.owner.username}
-                  </Link>
-                </li>
-                {ancestors.map((f) => (
-                  <li key={f.id} className="flex items-center gap-1">
-                    <ChevronRight className="size-3.5" aria-hidden />
-                    <Link href={`/f/${f.id}${qs({ share })}`} className="hover:text-foreground">
-                      {f.name}
-                    </Link>
-                  </li>
-                ))}
-                <li className="flex items-center gap-1">
-                  <ChevronRight className="size-3.5" aria-hidden />
-                  <span aria-current="page" className="font-medium text-foreground">
-                    {folder.name}
-                  </span>
-                </li>
-              </ol>
-            </nav>
-            <PageHeader
-              title={folder.name}
-              description={
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {folders.length} 个子文件夹 · 共 {folder.item_count} 个表情包
-                  {viaLink && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Link2 className="size-4 shrink-0" aria-hidden />
-                      通过私密链接查看
-                    </span>
-                  )}
-                </span>
-              }
-              action={<FolderActions folder={folder} own={own} viaLink={viaLink} share={share} />}
-            />
-            <SearchBar folderId={folder.id} share={share} className="max-w-md" />
-            {folders.length > 0 && <FolderGrid folders={folders} showOwner={false} share={share} />}
-            <MemeFeed
-              memes={entries.items}
-              feed={entries}
-              share={share}
-              allowAdd
-              empty={folders.length === 0 && <EmptyState icon={FolderOpen} title="这个合集还是空的" />}
-            />
-          </div>
-        )
-      }}
-    </Loadable>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      <nav aria-label="合集路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
+        <ol className="flex w-max items-center gap-1 text-sm text-muted-foreground">
+          <li>
+            <Link href={`/u/${folder.owner.username}`} className="inline-flex items-center gap-1 hover:text-foreground">
+              <UserRound className="size-3.5" aria-hidden />@{folder.owner.username}
+            </Link>
+          </li>
+          {ancestors.map((f) => (
+            <li key={f.id} className="flex items-center gap-1">
+              <ChevronRight className="size-3.5" aria-hidden />
+              <Link href={`/f/${f.id}${qs({ share })}`} className="hover:text-foreground">
+                {f.name}
+              </Link>
+            </li>
+          ))}
+          <li className="flex items-center gap-1">
+            <ChevronRight className="size-3.5" aria-hidden />
+            <span aria-current="page" className="font-medium text-foreground">
+              {folder.name}
+            </span>
+          </li>
+        </ol>
+      </nav>
+      <PageHeader
+        title={folder.name}
+        description={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {folders.length} 个子文件夹 · 共 {folder.item_count} 个表情包
+            {viaLink && (
+              <span className="inline-flex items-center gap-1.5">
+                <Link2 className="size-4 shrink-0" aria-hidden />
+                通过私密链接查看
+              </span>
+            )}
+          </span>
+        }
+        action={<FolderActions folder={folder} own={own} viaLink={viaLink} share={share} />}
+      />
+      <SearchBar folderId={folder.id} share={share} className="max-w-md" />
+      {folders.length > 0 && <FolderGrid folders={folders} showOwner={false} share={share} />}
+      <MemeFeed
+        memes={entries.items}
+        feed={entries}
+        share={share}
+        allowAdd
+        empty={folders.length === 0 && <EmptyState icon={FolderOpen} title="这个合集还是空的" />}
+      />
+    </div>
   )
 }

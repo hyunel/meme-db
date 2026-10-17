@@ -1,23 +1,6 @@
 import { mutate } from 'swr'
 import { errorMessage } from './errors'
 
-const TOKEN_KEY = 'memedb:token'
-
-export function getToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-export function setToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token)
-    else localStorage.removeItem(TOKEN_KEY)
-  } catch {}
-}
-
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -30,23 +13,10 @@ export class ApiError extends Error {
   }
 }
 
-let onUnauthorized = () => {}
+let onUnauthorized: (code?: string) => void = () => {}
 
-export function setUnauthorizedHandler(handler: () => void) {
+export function setUnauthorizedHandler(handler: (code?: string) => void) {
   onUnauthorized = handler
-}
-
-type QueryValue = string | number | boolean | string[] | null | undefined
-
-/** Builds a query string, skipping empty values and repeating array values. */
-export function qs(query: Record<string, QueryValue>) {
-  const p = new URLSearchParams()
-  for (const [k, v] of Object.entries(query)) {
-    if (Array.isArray(v)) v.forEach((x) => p.append(k, x))
-    else if (v !== undefined && v !== null && v !== '' && v !== false) p.set(k, String(v))
-  }
-  const s = p.toString()
-  return s ? `?${s}` : ''
 }
 
 interface Options {
@@ -56,8 +26,7 @@ interface Options {
 }
 
 export async function api<T = void>(path: string, { method = 'GET', json, form }: Options = {}): Promise<T> {
-  const token = getToken()
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+  const headers: Record<string, string> = {}
   let body: BodyInit | undefined = form
   if (json !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -72,7 +41,7 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
   }
   if (!res.ok) {
     const data = await res.json().catch(() => null)
-    if (res.status === 401 && token) onUnauthorized()
+    if (res.status === 401) onUnauthorized(data?.code)
     throw new ApiError(res.status, errorMessage(data) ?? data?.error ?? `请求失败（${res.status}）`, data?.field, data?.code)
   }
   return res.status === 204 ? (undefined as T) : res.json()

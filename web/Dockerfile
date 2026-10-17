@@ -7,14 +7,15 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# API requests are proxied to this address; it is fixed at build time.
+# The API's address: browsers' requests are proxied to it as fixed at build time, and pages fetch from it as they render.
 ARG BACKEND_BASE=http://server:8080
 ENV BACKEND_BASE=$BACKEND_BASE NEXT_TELEMETRY_DISABLED=1
 RUN node_modules/.bin/next build
 
 FROM node:22-slim
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+ARG BACKEND_BASE=http://server:8080
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 BACKEND_BASE=$BACKEND_BASE
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public

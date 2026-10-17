@@ -134,7 +134,24 @@ func (h *AdminHandler) ResetPassword(c echo.Context) error {
 		return err
 	}
 
-	if err := h.userService.ResetPassword(c.Request().Context(), req.ID, req.Password); err != nil {
+	if err := h.userService.ResetPassword(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Password); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+type DeleteUserSessionsRequest struct {
+	ID        string `param:"id" validate:"required,uuid"`
+	SessionID string `param:"sid" validate:"omitempty,uuid"` // Omitted = all of them
+}
+
+func (h *AdminHandler) DeleteUserSessions(c echo.Context) error {
+	var req DeleteUserSessionsRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.userService.DeleteSessions(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.SessionID); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)

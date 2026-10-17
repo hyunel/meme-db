@@ -15,13 +15,14 @@ import { FormField, validateEmail, validatePassword, validateUsername } from '@/
 import { EmptyState } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { MemeMedia } from '@/components/meme/meme-media'
+import { SessionList } from '@/components/sessions'
 import { AdminPageHeader, DataList, FilterSelect, Pagination, RefreshControls, SearchInput, Toolbar, useDebounced, usePaging, type Column } from './admin-ui'
 import { RoleBadge, UserStatusBadge, roleLabel } from './labels'
-import { ApiError, api, qs, refresh } from '@/lib/api'
+import { ApiError, api, refresh } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { AdminUser, Page, Role, User, UserDetail } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 type DialogKind = 'role' | 'disable' | 'password' | 'delete'
 
@@ -279,6 +280,19 @@ export function AdminUserDetail({ id }: { id: string }) {
                 {block && <p className="text-xs text-muted-foreground">部分操作不可用：{block}</p>}
               </section>
 
+              <section aria-labelledby="sessions" className="flex flex-col gap-3">
+                <SessionList
+                  heading={
+                    <h2 id="sessions" className="text-sm font-medium text-muted-foreground">
+                      登录会话
+                    </h2>
+                  }
+                  sessions={user.sessions}
+                  path={`/admin/users/${user.id}/sessions`}
+                  onChange={() => detail.mutate()}
+                />
+              </section>
+
               <section aria-labelledby="recent" className="flex flex-col gap-3">
                 <h2 id="recent" className="text-sm font-medium text-muted-foreground">
                   最近上传
@@ -441,6 +455,7 @@ function PasswordDialog({ user, onClose }: { user: User; onClose: () => void }) 
     if (errs.pw || errs.confirm) return
     run(async () => {
       await api(`/admin/users/${user.id}/password`, { method: 'PUT', json: { password: pw } })
+      void refresh()
       toast.success(`已重置 @${user.username} 的密码`, { description: '弹窗关闭后将无法再查看该密码。' })
       onClose()
     })
@@ -452,7 +467,7 @@ function PasswordDialog({ user, onClose }: { user: User; onClose: () => void }) 
         <form onSubmit={submit} noValidate className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>重置密码</DialogTitle>
-            <DialogDescription>为 @{user.username} 设置新密码。关闭弹窗后将无法再查看。</DialogDescription>
+            <DialogDescription>为 @{user.username} 设置新密码，其已登录的设备都会退出。关闭弹窗后将无法再查看。</DialogDescription>
           </DialogHeader>
           <FormField label="新密码" type={visible ? 'text' : 'password'} autoComplete="new-password" value={pw} error={errors.pw} onChange={(e) => setPw(e.target.value)} />
           <FormField label="确认新密码" type={visible ? 'text' : 'password'} autoComplete="new-password" value={confirm} error={errors.confirm} onChange={(e) => setConfirm(e.target.value)} />

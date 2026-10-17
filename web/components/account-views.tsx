@@ -11,12 +11,14 @@ import { EmptyState } from '@/components/states'
 import { Loadable } from '@/components/loadable'
 import { useFeed } from '@/hooks/use-feed'
 import { FormField, validatePassword } from '@/components/form-field'
-import { ApiError, api, qs } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
+import { qs } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { logout, useSession } from '@/lib/session'
-import type { Favorites, Feed, Meme, UserStats } from '@/lib/types'
+import type { Favorites, Feed, Meme, Session, UserStats } from '@/lib/types'
 import { TabSwitch } from '@/components/tab-switch'
 import { ApiTokens } from '@/components/api-tokens'
+import { SessionList } from '@/components/sessions'
 
 export function FavoritesView() {
   const [tab, setTab] = useState<'meme' | 'folder'>('meme')
@@ -78,6 +80,7 @@ export function FavoritesView() {
 export function SettingsView() {
   const user = useSession().user!
   const { data: stats } = useSWR<UserStats>('/auth/me/stats')
+  const sessions = useSWR<Session[]>('/auth/sessions')
   const [form, setForm] = useState({ current: '', next: '', confirm: '' })
   const [errors, setErrors] = useState<Partial<typeof form>>({})
   const [pending, setPending] = useState(false)
@@ -95,7 +98,8 @@ export function SettingsView() {
     setPending(true)
     try {
       await api('/auth/password', { method: 'PUT', json: { current_password: form.current, new_password: form.next } })
-      toast.success('密码已更新')
+      toast.success('密码已更新，其他设备已退出登录')
+      void sessions.mutate()
       setForm({ current: '', next: '', confirm: '' })
     } catch (err) {
       if (err instanceof ApiError && err.field === 'current_password') setErrors({ current: err.message })
@@ -153,6 +157,19 @@ export function SettingsView() {
             更新密码
           </Button>
         </form>
+      </section>
+
+      <section aria-labelledby="sessions-h" className="flex flex-col gap-4 rounded-2xl border bg-card p-5">
+        <SessionList
+          heading={
+            <h2 id="sessions-h" className="font-semibold">
+              登录设备
+            </h2>
+          }
+          sessions={sessions.data}
+          path="/auth/sessions"
+          onChange={() => sessions.mutate()}
+        />
       </section>
 
       <ApiTokens />

@@ -3,12 +3,11 @@
 import Link from 'next/link'
 import { Folder as FolderIcon } from 'lucide-react'
 import type { Folder, MemeThumb } from '@/lib/types'
-import { qs } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { MemeMedia } from '@/components/meme/meme-media'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 /** Up to four memes of a folder, or a folder icon while it has none. */
 export function FolderMosaic({ previews, className }: { previews: MemeThumb[]; className?: string }) {

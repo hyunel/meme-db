@@ -16,13 +16,12 @@ import { DownloadDialog } from './download-dialog'
 import { ShareButton } from './share-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { useFeed } from '@/hooks/use-feed'
-import { ErrorState, NotFoundState } from '@/components/states'
-import { ApiError, api, qs } from '@/lib/api'
+import { api } from '@/lib/api'
 import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { EntryDetail, Feed, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, qs } from '@/lib/utils'
 
 type Place = { key: string; href: string; name: string; meta: string; icon: LucideIcon; cover?: MemeThumb; current?: boolean }
 
@@ -116,72 +115,26 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
 }
 
 /** Opened from an entry, the meme goes by the entry's name and links back to where it lives; share is a private link that opens it. */
-export function MemeDetail({ id, entryId, share }: { id: string; entryId?: string; share?: string }) {
+export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?: EntryDetail; share?: string }) {
   const router = useRouter()
   const { user } = useSession()
-  const { data: meme, error, mutate } = useSWR<Meme>(`/memes/${id}${qs({ share })}`, {
+  const id = initial.id
+  const { data: meme = initial, mutate } = useSWR<Meme>(`/memes/${id}${qs({ share })}`, {
+    fallbackData: initial,
     refreshInterval: (m) => (isProcessing(m) ? 3000 : 0),
   })
-  const similar = useFeed(meme?.status === 'success' ? ['similar', id, share] : null, (cursor) => api<Feed<Meme>>(`/memes/${id}/similar${qs({ share, cursor })}`))
-  const { data: opened, isLoading: openingEntry } = useSWR<EntryDetail>(entryId ? `/entries/${entryId}${qs({ share })}` : null)
-  const entry = opened?.meme.id === id ? opened : undefined // A hand-edited link may pair an entry with another meme
+  const similar = useFeed(meme.status === 'success' ? ['similar', id, share] : null, (cursor) => api<Feed<Meme>>(`/memes/${id}/similar${qs({ share, cursor })}`))
   const mine = Boolean(entry && entry.owner.id === user?.id)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   // Counts one view per page load for the link's stats; refetches of the meme must not.
   const viewed = useRef(false)
   useEffect(() => {
-    if (!share || !meme || viewed.current) return
+    if (!share || viewed.current) return
     viewed.current = true
     api(`/memes/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
-  }, [id, share, meme])
+  }, [id, share])
   const [tagPending, setTagPending] = useState(false)
-
-  const back = (
-    <Button variant="ghost" className="-ml-2 self-start" onClick={() => (window.history.length > 1 ? router.back() : router.push('/'))}>
-      <ArrowLeft data-icon="inline-start" />
-      返回
-    </Button>
-  )
-
-  if (error) {
-    return error instanceof ApiError && error.status === 404 ? (
-      share ? (
-        <NotFoundState title="链接已失效" description="分享者可能停用了这个链接，或把表情包移出了自己的库。" />
-      ) : (
-        <NotFoundState title="表情包不存在" description="它可能已被删除，或尚未公开。" />
-      )
-    ) : (
-      <div className="mx-auto max-w-lg px-4 py-24">
-        <ErrorState onRetry={() => mutate()} />
-      </div>
-    )
-  }
-  if (!meme || openingEntry) {
-    return (
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
-        {back}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
-          <Skeleton className="aspect-square rounded-2xl md:aspect-auto md:h-[28rem]" />
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              <Skeleton className="h-8 w-3/4" />
-              <Skeleton className="h-4" />
-              <Skeleton className="h-4 w-2/3" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-11 md:h-9" />
-              <div className="grid grid-cols-3 gap-2">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton key={i} className="h-11 md:h-9" />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // Opened only by a private link: the viewer may look and save it, but not favorite or tag it.
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0
@@ -239,7 +192,10 @@ export function MemeDetail({ id, entryId, share }: { id: string; entryId?: strin
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-4 sm:px-6 sm:py-8">
       <div className="flex flex-col gap-4">
-        {back}
+        <Button variant="ghost" className="-ml-2 self-start" onClick={() => (window.history.length > 1 ? router.back() : router.push('/'))}>
+          <ArrowLeft data-icon="inline-start" />
+          返回
+        </Button>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
           <div className="flex items-center justify-center rounded-2xl bg-muted/50 p-4 md:min-h-[28rem] md:self-start md:p-8">
