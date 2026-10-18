@@ -33,8 +33,20 @@ tags:
   min_usage: 2              # Tags on fewer memes stay off hot lists and meme cards
   common_share: 0.3         # Tags on a larger share of memes are flagged as candidates to hide
 
-log:
-  retention: 720h     # Stored logs older than this are deleted
+# Each makes a task of its type on its cron, but not while its last is unfinished; without a cron, only when run from
+# the admin console. A list in config.yaml replaces this one.
+tasks:
+  - name: refresh_tags
+    type: refresh_tags    # Recounts tag usage for hot lists and meme cards, and finds duplicates
+    cron: "0 * * * *"
+  - name: purge_logs
+    type: purge_logs
+    params:
+      retention: 720h     # Stored logs older than this are deleted
+  - name: purge_tasks
+    type: purge_tasks
+    params:
+      retention: 720h     # Finished tasks older than this are deleted, a batch once all of it is
 
 # A search recalls every page at once and reranks a page when it is fetched; its pages are kept in memory meanwhile.
 search:

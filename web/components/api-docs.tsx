@@ -22,7 +22,7 @@ const reference: { title: string; endpoints: [method: string, path: string, acce
       ['GET', '/memes/{id}/similar', 'public', '相似表情包，分页同搜索：cursor 为上一页的 next；可带 share'],
       ['GET', '/memes/{id}/folders', 'public', '收录该表情包的文件夹：自己的与公开合集'],
       ['POST', '/memes/{id}/share/views', 'public', '记录一次通过私密链接打开：{ share }'],
-      ['GET', '/tags/hot', 'public', '热门标签'],
+      ['GET', '/tags/hot', 'public', '热门标签，按公开表情包定期统计'],
       ['GET', '/folders', 'public', '公开合集，收藏多的在前；分页，带 cursor 取下一页'],
       ['GET', '/folders/{id}', 'public', '合集信息与其中的子文件夹；share 为它或上层文件夹的私密链接令牌'],
       ['GET', '/folders/{id}/entries', 'public', '合集中的条目；分页，带 cursor 取下一页；可带 share'],

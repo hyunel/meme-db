@@ -1,12 +1,17 @@
 package service
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/repository"
+	"github.com/hyunel/MemeDB/internal/worker"
 )
 
 func orderByID[T any](items []T, ids []string, id func(T) string) []T {
@@ -64,3 +69,18 @@ type (
 	UserFilter = repository.UserFilter
 	TaskFilter = repository.TaskFilter
 )
+
+// purgeCutoff is the time before which a purge task deletes records, as its retention param, such as "720h", sets.
+func purgeCutoff(task *model.Task) (time.Time, error) {
+	var p struct {
+		Retention string `json:"retention"`
+	}
+	if err := json.Unmarshal(task.Payload, &p); err != nil {
+		return time.Time{}, worker.Permanent(fmt.Errorf("invalid params: %w", err))
+	}
+	retention, err := time.ParseDuration(p.Retention)
+	if err != nil || retention <= 0 {
+		return time.Time{}, worker.Permanent(fmt.Errorf("retention must be a positive duration such as 720h, not %q", p.Retention))
+	}
+	return time.Now().Add(-retention), nil
+}

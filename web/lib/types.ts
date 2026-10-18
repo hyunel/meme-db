@@ -241,7 +241,8 @@ export type TaskState = 'pending' | 'retrying' | 'running' | 'completed' | 'fail
 
 export interface Task {
   id: string
-  parent_task_id: string | null
+  /** Of the configured task that made it. */
+  name: string | null
   /** Shared by the tasks an admin queued together. */
   batch_id: string | null
   job_type: string
@@ -249,7 +250,6 @@ export interface Task {
   status: TaskStatus
   error_message: string | null
   priority: number
-  cron: string | null
   attempts: number
   max_attempts: number
   /** Deadline of each attempt. */
@@ -271,8 +271,16 @@ export interface TaskAttempt {
   error: string | null
 }
 
-export interface TaskDetail extends Task {
-  runs: Task[]
+/** A task configured on the server, which makes a task of its type on its cron or when run by hand. */
+export interface Schedule {
+  name: string
+  type: string
+  /** Empty for one run only by hand. */
+  cron: string
+  params: Record<string, unknown> | null
+  next_run: string | null
+  /** The latest task it made. */
+  last: Task | null
 }
 
 /** A batch's tasks counted by status. */

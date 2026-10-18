@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -16,19 +17,16 @@ type LogFilter = repository.LogFilter
 const logBatchSize = 500
 
 type LogService struct {
-	repo      *repository.Provider
-	retention time.Duration
+	repo *repository.Provider
 }
 
-func NewLogService(repo *repository.Provider, retention time.Duration) *LogService {
-	return &LogService{repo: repo, retention: retention}
+func NewLogService(repo *repository.Provider) *LogService {
+	return &LogService{repo: repo}
 }
 
 func (s *LogService) Run(ctx context.Context, entries <-chan logger.Entry) {
 	flushTicker := time.NewTicker(time.Second)
 	defer flushTicker.Stop()
-	purgeTicker := time.NewTicker(time.Hour)
-	defer purgeTicker.Stop()
 
 	var batch []*model.LogEntry
 	add := func(e logger.Entry) {
@@ -47,7 +45,6 @@ func (s *LogService) Run(ctx context.Context, entries <-chan logger.Entry) {
 		batch = batch[:0]
 	}
 
-	s.purge(ctx)
 	for {
 		select {
 		case e := <-entries:
@@ -57,8 +54,6 @@ func (s *LogService) Run(ctx context.Context, entries <-chan logger.Entry) {
 			}
 		case <-flushTicker.C:
 			flush()
-		case <-purgeTicker.C:
-			s.purge(ctx)
 		case <-ctx.Done():
 			for {
 				select {
@@ -73,10 +68,16 @@ func (s *LogService) Run(ctx context.Context, entries <-chan logger.Entry) {
 	}
 }
 
-func (s *LogService) purge(ctx context.Context) {
-	if err := s.repo.Log.DeleteBefore(ctx, time.Now().Add(-s.retention)); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "failed to delete expired logs: %v\n", err)
+func (s *LogService) Purge(ctx context.Context, task *model.Task) error {
+	before, err := purgeCutoff(task)
+	if err != nil {
+		return err
 	}
+	n, err := s.repo.Log.DeleteBefore(ctx, before)
+	if err == nil {
+		slog.Info("Purged logs", "count", n, "before", before)
+	}
+	return err
 }
 
 func (s *LogService) List(ctx context.Context, f LogFilter, afterID, beforeID int64, limit int) ([]*model.LogEntry, error) {

@@ -21,7 +21,7 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
 	Worker    WorkerConfig    `yaml:"worker" validate:"required"`
-	Log       LogConfig       `yaml:"log" validate:"required"`
+	Tasks     []TaskConfig    `yaml:"tasks" validate:"unique=Name,dive"`
 	Prompt    PromptConfig    `yaml:"prompt" validate:"required"`
 	Tags      TagsConfig      `yaml:"tags" validate:"required"`
 	Upload    UploadConfig    `yaml:"upload" validate:"required"`
@@ -100,10 +100,6 @@ type DatabaseConfig struct {
 	URL string `yaml:"url" validate:"required,url"`
 }
 
-type LogConfig struct {
-	Retention time.Duration `yaml:"retention" validate:"required,gt=0"`
-}
-
 type InferenceConfig struct {
 	GRPCAddr string `yaml:"grpc_addr" validate:"required"`
 }
@@ -111,6 +107,13 @@ type InferenceConfig struct {
 type WorkerConfig struct {
 	Concurrency  int           `yaml:"concurrency" validate:"required,gt=0"`
 	PollInterval time.Duration `yaml:"poll_interval" validate:"required,gt=0"`
+}
+
+type TaskConfig struct {
+	Name   string         `yaml:"name" validate:"required,max=50" json:"name"`
+	Type   string         `yaml:"type" validate:"required" json:"type"` // The job it runs
+	Cron   string         `yaml:"cron" validate:"omitempty,cron" json:"cron"`
+	Params map[string]any `yaml:"params" json:"params"`
 }
 
 var envPlaceholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)

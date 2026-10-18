@@ -137,7 +137,7 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
             <Images />
             内容管理
           </Button>
-          <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/tasks?view=history&meme=${encodeURIComponent(memeId)}`} />}>
+          <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/tasks?meme=${encodeURIComponent(memeId)}`} />}>
             <ListChecks />
             相关任务
           </Button>

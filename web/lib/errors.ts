@@ -64,6 +64,8 @@ const messages: Record<string, string | ((p: Params, field?: string) => string)>
   batch_not_found: '批次不存在',
   task_run_not_queued: '只有排队中的任务可以立即执行',
   task_cancel_not_queued: '只有排队中的任务可以取消',
+  schedule_not_found: '计划任务不存在，可能已从配置中移除',
+  schedule_unfinished: '上一次执行还没有结束',
   batch_none_queued: '批次中没有排队中的任务',
   no_tasks_given: '请指定要重试的任务',
   no_memes_given: '请指定要重新处理的表情包',

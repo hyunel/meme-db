@@ -233,6 +233,12 @@ CREATE TABLE IF NOT EXISTS library.asset_tags (
 CREATE INDEX IF NOT EXISTS idx_asset_tags_asset_user ON library.asset_tags(asset_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_asset_tags_label ON library.asset_tags(label_id);
 
+-- Tags suggested to admins as duplicates of the others in their cluster, grouped by the refresh_tags job.
+CREATE TABLE IF NOT EXISTS library.tag_clusters (
+    tag_id UUID PRIMARY KEY REFERENCES library.tags(id) ON DELETE CASCADE,
+    cluster INT NOT NULL
+);
+
 -- Files of active users that are public themselves or through a public ancestor folder.
 CREATE OR REPLACE VIEW library.public_files AS
 SELECT n.* FROM library.nodes n
@@ -240,20 +246,36 @@ JOIN iam.users u ON u.id = n.owner_id AND u.status = 'active'
 WHERE n.type = 'FILE'
   AND EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> n.path);
 
+-- Memes bearing each tag, recounted by the refresh_tags job rather than on every view of hot tags and meme cards:
+-- usage with any user's tags too, public_usage only as the VLM tagged analyzed public memes.
+CREATE MATERIALIZED VIEW IF NOT EXISTS library.tag_usage AS
+SELECT l.tag_id,
+    count(DISTINCT at.asset_id) AS usage,
+    count(DISTINCT at.asset_id) FILTER (WHERE at.user_id IS NULL AND p.asset_id IS NOT NULL) AS public_usage
+FROM library.asset_tags at
+JOIN library.labels l ON l.id = at.label_id
+LEFT JOIN (
+    SELECT DISTINCT pf.asset_id FROM library.public_files pf
+    JOIN core.meme_info m ON m.asset_id = pf.asset_id
+    WHERE m.analyzed_at IS NOT NULL
+) p ON p.asset_id = at.asset_id
+GROUP BY l.tag_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_usage ON library.tag_usage(tag_id); -- Lets it refresh concurrently
+
 -- ============================================================================
 -- TABLES: Jobs (Partitioned Task Queue)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS jobs.tasks (
     id UUID DEFAULT uuidv7(),
     owner_id UUID REFERENCES iam.users(id) ON DELETE CASCADE,
-    parent_task_id UUID,
+    name VARCHAR(50),                         -- Of the configured task (config tasks) that made it
     batch_id UUID,                            -- Tasks an admin queued together, whose progress is the batch's
     job_type VARCHAR(50) NOT NULL,
     payload JSONB NOT NULL,
     status VARCHAR(20) DEFAULT 'pending',     -- pending -> running -> completed | failed
     error_message TEXT,
     priority INT DEFAULT 0,
-    cron VARCHAR(50),
     attempts INT NOT NULL DEFAULT 0,          -- Incremented on each claim; doubles as fencing token
     max_attempts INT NOT NULL,                -- Claims before the task fails for good, set by its job type
     timeout_secs INT NOT NULL,                -- Deadline of an attempt; its claim's lease lasts twice this
@@ -273,6 +295,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_queue ON jobs.tasks_active(priority DESC, r
 CREATE INDEX IF NOT EXISTS idx_tasks_history ON jobs.tasks_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_asset ON jobs.tasks ((payload->>'asset_id'));
 CREATE INDEX IF NOT EXISTS idx_tasks_batch ON jobs.tasks (batch_id) WHERE batch_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_name ON jobs.tasks (name, created_at) WHERE name IS NOT NULL;
+-- A configured task has one unfinished task at a time, however many servers fire it.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_unfinished ON jobs.tasks_active (name) WHERE name IS NOT NULL;
 
 -- ============================================================================
 -- TABLES: Ops

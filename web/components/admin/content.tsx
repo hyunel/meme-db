@@ -162,7 +162,7 @@ export function AdminContent() {
               <Eye />
               查看详情
             </DropdownMenuItem>
-            <DropdownMenuItem render={<Link href={`/admin/tasks?view=history&meme=${m.id}`} />}>
+            <DropdownMenuItem render={<Link href={`/admin/tasks?meme=${m.id}`} />}>
               <ListChecks />
               查看相关任务
             </DropdownMenuItem>

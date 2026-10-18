@@ -285,7 +285,7 @@ function TagDuplicates({ tabs, groups }: { tabs: React.ReactNode; groups?: TagUs
     <>
       <div className="flex flex-col gap-3">
         {tabs}
-        <p className="text-sm text-muted-foreground">名称语义相近的标签按组列出。点击标签可将其排出本组，其余会并入组内最常用的标签。</p>
+        <p className="text-sm text-muted-foreground">名称语义相近的标签按组列出，定期更新。点击标签可将其排出本组，其余会并入组内最常用的标签。</p>
       </div>
 
       {!groups ? (

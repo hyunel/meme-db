@@ -11,7 +11,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
-const taskSelectColumns = `id, owner_id, parent_task_id, batch_id, job_type, payload, status, error_message, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
+const taskSelectColumns = `id, owner_id, name, batch_id, job_type, payload, status, error_message, priority, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, created_at, updated_at,
 	COALESCE(context->'attempts', '[]') AS history, NULL::jsonb AS batch`
 
 // tasksByBatch lists the tasks outside batches beside a row for each batch, whose status is its tasks' most pressing:
@@ -22,7 +22,7 @@ var tasksByBatch = fmt.Sprintf(`
 	SELECT batch_id, NULL, NULL, batch_id, min(job_type), '{}'::jsonb,
 		CASE WHEN bool_or(status = 'running') THEN 'running' WHEN bool_or(status = 'pending') THEN 'pending'
 			WHEN bool_or(status = 'failed') THEN 'failed' ELSE 'completed' END,
-		NULL, max(priority), NULL, CASE WHEN bool_or(status = 'pending' AND attempts = 0) THEN 0 ELSE 1 END,
+		NULL, max(priority), CASE WHEN bool_or(status = 'pending' AND attempts = 0) THEN 0 ELSE 1 END,
 		max(max_attempts), max(timeout_secs),
 		COALESCE(min(run_at) FILTER (WHERE status IN ('pending', 'running')), min(run_at)), min(started_at),
 		CASE WHEN bool_and(status IN ('completed', 'failed')) THEN max(finished_at) END, min(created_at), max(updated_at),
@@ -47,7 +47,6 @@ type TaskOpts struct {
 	OwnerID  *string
 	Priority int
 	RunAt    *time.Time // Defaults to now
-	Cron     *string
 	BatchID  *string
 }
 
@@ -69,15 +68,39 @@ func (r *TaskRepository) Enqueue(ctx context.Context, jobType string, payloads [
 	}
 
 	query := `
-		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, cron, max_attempts, timeout_secs, batch_id)
-		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $5, $7, $8, $9::uuid
-		FROM unnest($6::jsonb[]) p
+		INSERT INTO jobs.tasks (owner_id, job_type, payload, status, priority, run_at, max_attempts, timeout_secs, batch_id)
+		SELECT $1::uuid, $2, p, 'pending', $3, COALESCE($4, CURRENT_TIMESTAMP), $6, $7, $8::uuid
+		FROM unnest($5::jsonb[]) p
 	`
-	_, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, opts.Cron, encoded, policy.MaxAttempts, int(policy.Timeout.Seconds()), opts.BatchID)
+	_, err := r.db.Exec(ctx, query, opts.OwnerID, jobType, opts.Priority, opts.RunAt, encoded, policy.MaxAttempts, int(policy.Timeout.Seconds()), opts.BatchID)
 	if err != nil {
 		return fmt.Errorf("failed to create tasks: %w", err)
 	}
 	return nil
+}
+
+// EnqueueScheduled makes a task of a configured one, unless its last is unfinished.
+func (r *TaskRepository) EnqueueScheduled(ctx context.Context, name, jobType string, payload []byte) (bool, error) {
+	policy, ok := model.JobPolicies[jobType]
+	if !ok {
+		return false, fmt.Errorf("no policy for job type %s", jobType)
+	}
+	query := `
+		INSERT INTO jobs.tasks (name, job_type, payload, status, priority, max_attempts, timeout_secs)
+		VALUES ($1, $2, $3, 'pending', $4, $5, $6)
+		ON CONFLICT DO NOTHING
+	`
+	tag, err := r.db.Exec(ctx, query, name, jobType, payload, model.PriorityNormal, policy.MaxAttempts, int(policy.Timeout.Seconds()))
+	if err != nil {
+		return false, fmt.Errorf("failed to enqueue %s: %w", name, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// LatestScheduled returns the latest task each configured one of names made.
+func (r *TaskRepository) LatestScheduled(ctx context.Context, names []string) ([]*model.Task, error) {
+	query := fmt.Sprintf(`SELECT DISTINCT ON (name) %s FROM jobs.tasks WHERE name = ANY($1) ORDER BY name, created_at DESC`, taskSelectColumns)
+	return collectAll[model.Task](r.db.Query(ctx, query, names))
 }
 
 // Claim leases due tasks, and running ones whose lease ran out: twice their timeout, so a live attempt is never reclaimed.
@@ -141,34 +164,12 @@ func (r *TaskRepository) Release(ctx context.Context, id string, attempts int) e
 	return nil
 }
 
-func (r *TaskRepository) Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error {
-	query := fmt.Sprintf(`
-		WITH run AS (
-			SELECT context FROM jobs.tasks WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
-		), reset AS (
-			UPDATE jobs.tasks
-			SET status = 'pending', run_at = $3, attempts = 0, started_at = NULL, error_message = NULL,
-				context = context - 'attempts', updated_at = CURRENT_TIMESTAMP
-			WHERE id = $1::uuid AND attempts = $2 AND status = 'running'
-			RETURNING id, owner_id, job_type, payload, priority, cron, max_attempts, timeout_secs
-		)
-		INSERT INTO jobs.tasks (owner_id, parent_task_id, job_type, payload, status, priority, cron, attempts, max_attempts, timeout_secs, run_at, started_at, finished_at, error_message, context)
-		SELECT owner_id, id, job_type, payload, $4::varchar, priority, cron, $2::int, max_attempts, timeout_secs, $5::timestamptz, $6::timestamptz, CURRENT_TIMESTAMP, $7::text, %s
-		FROM reset
-	`, withAttempt("(SELECT context FROM run)", "$4::varchar = 'completed'", "$7::text"))
-	_, err := r.db.Exec(ctx, query, task.ID, task.Attempts, next, status, task.RunAt, task.StartedAt, errorMessage)
-	if err != nil {
-		return fmt.Errorf("failed to reschedule task: %w", err)
-	}
-	return nil
-}
-
 func (r *TaskRepository) Requeue(ctx context.Context, ids []string) ([]*model.Task, error) {
 	query := fmt.Sprintf(`
 		UPDATE jobs.tasks
 		SET status = 'pending', attempts = 0, run_at = CURRENT_TIMESTAMP, started_at = NULL, finished_at = NULL,
 			error_message = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ANY($1::uuid[]) AND status = 'failed' AND parent_task_id IS NULL
+		WHERE id = ANY($1::uuid[]) AND status = 'failed' AND name IS NULL -- One a configured task made is retried by running that again
 		RETURNING %s
 	`, taskSelectColumns)
 	return collectAll[model.Task](r.db.Query(ctx, query, ids))
@@ -213,11 +214,6 @@ func (r *TaskRepository) Get(ctx context.Context, id string) (*model.Task, error
 	return collectOne[model.Task](r.db.Query(ctx, query, id))
 }
 
-func (r *TaskRepository) Runs(ctx context.Context, parentID string, limit int) ([]*model.Task, error) {
-	query := fmt.Sprintf(`SELECT %s FROM jobs.tasks WHERE parent_task_id = $1::uuid ORDER BY created_at DESC LIMIT $2`, taskSelectColumns)
-	return collectAll[model.Task](r.db.Query(ctx, query, parentID, limit))
-}
-
 var taskStates = map[string]string{
 	"pending":   "(status = 'pending' AND attempts = 0)",
 	"retrying":  "(status = 'pending' AND attempts > 0)",
@@ -231,10 +227,10 @@ type TaskFilter struct {
 	JobType   string
 	Batch     string
 	Group     bool   // Rolls each batch up into one row, unless the filter picks out a batch or a task
-	Query     string // Matches the task ID or the asset it works on
+	Query     string // Matches the task ID, the asset it works on or the configured task that made it
 	Created   TimeRange
-	Recurring bool
-	Sort      string // due (default: running, retrying, then by run_at) | created | finished
+	Scheduled bool   // Made by configured tasks
+	Sort      string // due (default: running, retrying, pending by run_at, then the latest finished) | created | finished
 }
 
 func (f TaskFilter) where() filter {
@@ -256,10 +252,10 @@ func (f TaskFilter) where() filter {
 	}
 	if f.Query != "" {
 		p := w.arg(f.Query)
-		w.where(fmt.Sprintf("(id::text = %[1]s OR payload->>'asset_id' = %[1]s)", p))
+		w.where(fmt.Sprintf("(id::text = %[1]s OR payload->>'asset_id' = %[1]s OR name = %[1]s)", p))
 	}
-	if f.Recurring {
-		w.where("cron IS NOT NULL")
+	if f.Scheduled {
+		w.where("name IS NOT NULL")
 	}
 	w.timeRange("created_at", f.Created)
 	return w
@@ -278,7 +274,8 @@ func (r *TaskRepository) List(ctx context.Context, f TaskFilter, page Page) ([]*
 
 	order := map[string]string{"created": "created_at DESC", "finished": "finished_at DESC NULLS LAST"}[f.Sort]
 	if order == "" {
-		order = "CASE WHEN status = 'running' THEN 0 WHEN attempts > 0 THEN 1 ELSE 2 END, run_at"
+		order = `CASE WHEN status = 'running' THEN 0 WHEN status = 'pending' AND attempts > 0 THEN 1 WHEN status = 'pending' THEN 2 ELSE 3 END,
+			CASE WHEN status IN ('pending', 'running') THEN run_at END, finished_at DESC`
 	}
 	query := fmt.Sprintf(`SELECT %s FROM %s %s ORDER BY %s %s`, columns, from, w.clause(), order, page.clause())
 	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, w.args...))
@@ -308,4 +305,15 @@ func (r *TaskRepository) Summary(ctx context.Context, finished TimeRange) ([]*mo
 		FROM jobs.tasks GROUP BY job_type ORDER BY job_type
 	`, taskStates["pending"], taskStates["retrying"], inRange)
 	return collectAll[model.TaskTypeCounts](r.db.Query(ctx, query, w.args...))
+}
+
+// DeleteFinishedBefore deletes the tasks finished before t, those of a batch once all of it has, returning how many.
+func (r *TaskRepository) DeleteFinishedBefore(ctx context.Context, t time.Time) (int64, error) {
+	query := `
+		DELETE FROM jobs.tasks_history WHERE finished_at < $1
+			AND (batch_id IS NULL OR batch_id NOT IN (
+				SELECT batch_id FROM jobs.tasks WHERE batch_id IS NOT NULL AND (status IN ('pending', 'running') OR finished_at >= $1)))
+	`
+	tag, err := r.db.Exec(ctx, query, t)
+	return tag.RowsAffected(), err
 }

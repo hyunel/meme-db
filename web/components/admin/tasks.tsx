@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, Ban, Eye, ListChecks, Play, RotateCw } from 'lucide-react'
+import { ArrowLeft, Ban, CalendarClock, Eye, History, ListChecks, Play, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -34,21 +34,27 @@ import { TaskStatusBadge, jobLabel, taskState, taskStateLabel } from './labels'
 import { ConfirmDialog, rangeOptions, rangeStart, useSelection, type RangeKey } from './shared'
 import { api, refresh } from '@/lib/api'
 import { formatDateTime, formatDuration, formatRelative, toMs } from '@/lib/format'
-import type { Page, Task, TaskBatchCounts, TaskDetail, TaskState, TaskTypeCounts } from '@/lib/types'
+import type { Page, Schedule, Task, TaskBatchCounts, TaskState, TaskTypeCounts } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
 import { TabSwitch } from '@/components/tab-switch'
 
-const activeStates: TaskState[] = ['pending', 'retrying', 'running']
-const historyStates: TaskState[] = ['completed', 'failed']
-const allStates = [...activeStates, ...historyStates]
+const allStates: TaskState[] = ['pending', 'retrying', 'running', 'completed', 'failed']
 type SortKey = 'due' | 'created' | 'finished'
+type TaskView = 'tasks' | 'schedules'
 const sortOptions = [
-  ['due', '按计划执行时间'],
+  ['due', '进行中在前'],
   ['created', '按创建时间'],
   ['finished', '按结束时间'],
 ] as const
 
 const canRunNow = (t: Task, now: number) => t.status === 'pending' && toMs(t.run_at) > now
+/** One a configured task made is retried by running that again. */
+const canRetry = (t: Task) => t.status === 'failed' && !t.name
+/** Params on one line, such as retention=720h. */
+const formatParams = (params: Record<string, unknown> | null) =>
+  Object.entries(params ?? {})
+    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join(' ')
 
 type RetryTarget = { ids: string[] } | { filter: Record<string, unknown> }
 type Pending = { kind: 'retry'; target: RetryTarget; count: number; scope: string } | { kind: 'cancel'; task: Task } | { kind: 'cancelBatch'; task: Task } | null
@@ -209,9 +215,9 @@ function taskColumns(now: number): Column<Task>[] {
         ),
     },
     {
-      key: 'recurring',
-      header: '周期',
-      cell: (t) => (t.cron ? <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{t.cron}</span> : <span className="text-muted-foreground">—</span>),
+      key: 'schedule',
+      header: '计划',
+      cell: (t) => (t.name ? <span className="font-mono text-xs">{t.name}</span> : <span className="text-muted-foreground">—</span>),
     },
   ]
 }
@@ -251,7 +257,7 @@ function TaskActionItems({ task, now, actions }: { task: Task; now: number; acti
         <Eye />
         查看详情
       </DropdownMenuItem>
-      {task.status === 'failed' && !task.parent_task_id && (
+      {canRetry(task) && (
         <DropdownMenuItem onClick={() => actions.retry([task])}>
           <RotateCw />
           重试
@@ -269,7 +275,6 @@ function TaskActionItems({ task, now, actions }: { task: Task; now: number; acti
           取消
         </DropdownMenuItem>
       )}
-      {(task.status === 'running' || task.status === 'completed') && <p className="px-2 py-1.5 text-xs text-muted-foreground">执行中和已完成的任务不提供操作</p>}
     </>
   )
 }
@@ -278,52 +283,42 @@ function TaskActionItems({ task, now, actions }: { task: Task; now: number; acti
 
 export function AdminTasks() {
   const params = useSearchParams()
-  const [view, setView] = useState<'active' | 'history'>(params.get('view') === 'history' ? 'history' : 'active')
-  const [states, setStates] = useState<TaskState[]>(() => {
-    const st = params.get('status') as TaskState | null
-    return st && allStates.includes(st) ? [st] : []
-  })
+  const [view, setView] = useState<TaskView>(params.get('view') === 'schedules' ? 'schedules' : 'tasks')
+  const [states, setStates] = useState<TaskState[]>(() => allStates.filter((st) => params.getAll('status').includes(st)))
   const [type, setType] = useState('all')
   const [range, setRange] = useState<RangeKey>('all')
   const from = useMemo(() => rangeStart(range), [range])
-  const [recurringOnly, setRecurringOnly] = useState(false)
+  const [scheduledOnly, setScheduledOnly] = useState(false)
   const [q, setQ] = useState(params.get('meme') ?? '')
   const dq = useDebounced(q.trim())
-  const [sort, setSort] = useState<SortKey>(view === 'history' ? 'finished' : 'due')
-  const [autoByView, setAutoByView] = useState({ active: true, history: false })
-  const auto = autoByView[view]
+  const [sort, setSort] = useState<SortKey>('due')
+  const [auto, setAuto] = useState(true)
   const now = useNow(auto, 1000)
   const actions = useTaskActions()
-
-  const viewStates = view === 'active' ? activeStates : historyStates
-  const effectiveStates = states.filter((st) => viewStates.includes(st))
   const refreshInterval = auto ? 3000 : 0
 
-  const switchView = (v: 'active' | 'history') => {
-    setView(v)
-    setStates([])
-    setSort(v === 'history' ? 'finished' : 'due')
-  }
-
   const filter = {
-    state: effectiveStates.length ? effectiveStates : viewStates,
+    state: states,
     type: type === 'all' ? '' : type,
     q: dq,
     from,
-    recurring: recurringOnly,
+    scheduled: scheduledOnly,
     sort,
   }
   const paging = usePaging(JSON.stringify(filter))
   // Each batch shows as one row.
-  const tasks = useSWR<Page<Task>>(`/admin/tasks${qs({ ...filter, group: true, ...paging.query })}`, { refreshInterval, keepPreviousData: true })
+  const tasks = useSWR<Page<Task>>(view === 'schedules' ? null : `/admin/tasks${qs({ ...filter, group: true, ...paging.query })}`, {
+    refreshInterval,
+    keepPreviousData: true,
+  })
   const { data: summary = [] } = useSWR<TaskTypeCounts[]>('/admin/tasks/summary', { refreshInterval })
 
   const rows = tasks.data?.items ?? []
   const sel = useSelection(paging.pageKey)
-  const selectedFailed = rows.filter((t) => sel.ids.has(t.id) && t.status === 'failed' && !t.batch)
+  const selectedFailed = rows.filter((t) => sel.ids.has(t.id) && canRetry(t) && !t.batch)
   // Failed tasks anywhere in the current filter, for retrying them all at once.
   const failedFilter = { ...filter, state: ['failed'] }
-  const canRetryAll = view === 'history' && filter.state.includes('failed')
+  const canRetryAll = !states.length || states.includes('failed')
   const { data: failedInFilter } = useSWR<Page<Task>>(canRetryAll ? `/admin/tasks${qs({ ...failedFilter, page_size: 1 })}` : null, { refreshInterval })
 
   const count = (st: TaskState) => summary.reduce((n, r) => n + r[st], 0)
@@ -333,6 +328,18 @@ export function AdminTasks() {
   const toggleState = (st: TaskState) => setStates((cur) => (cur.includes(st) ? cur.filter((x) => x !== st) : [...cur, st]))
 
   const columns = taskColumns(now)
+  const tabs = (
+    <TabSwitch
+      fill
+      label="任务视图"
+      value={view}
+      onChange={setView}
+      tabs={[
+        ['tasks', '任务'],
+        ['schedules', '计划'],
+      ]}
+    />
+  )
 
   return (
     <>
@@ -342,9 +349,9 @@ export function AdminTasks() {
         actions={
           <RefreshControls
             auto={auto}
-            onAutoChange={(v) => setAutoByView((cur) => ({ ...cur, [view]: v }))}
+            onAutoChange={setAuto}
             onRefresh={() => {
-              void tasks.mutate()
+              void refresh()
               toast.success('已刷新')
             }}
           />
@@ -366,68 +373,201 @@ export function AdminTasks() {
         ))}
       </section>
 
-      <div className="flex flex-col gap-3">
-        <TabSwitch
-          fill
-          label="任务视图"
-          value={view}
-          onChange={switchView}
-          tabs={[
-            ['active', '活跃'],
-            ['history', '历史'],
-          ]}
+      {view === 'schedules' ? (
+        <ScheduleList
+          tabs={tabs}
+          refreshInterval={refreshInterval}
+          onShowTasks={(name) => {
+            setView('tasks')
+            setQ(name)
+          }}
         />
+      ) : (
+        <>
+          <div className="flex flex-col gap-3">
+            {tabs}
+            <Toolbar>
+              <SearchInput value={q} onChange={setQ} placeholder="任务标识、表情包标识或计划名称" className="basis-full sm:basis-auto" />
+              <FilterSelect value={type} onChange={setType} options={typeOptions} label="任务类型" />
+              <FilterSelect value={range} onChange={setRange} options={rangeOptions} label="创建时间" />
+              <FilterSelect value={sort} onChange={setSort} options={sortOptions} label="排序" />
+              <div className="flex h-10 items-center gap-2 md:h-9">
+                <Switch id="scheduled-only" checked={scheduledOnly} onCheckedChange={setScheduledOnly} />
+                <Label htmlFor="scheduled-only" className="font-normal whitespace-nowrap">
+                  只看计划任务
+                </Label>
+              </div>
+            </Toolbar>
 
-        <Toolbar>
-          <SearchInput value={q} onChange={setQ} placeholder="任务标识或表情包标识" className="basis-full sm:basis-auto" />
-          <FilterSelect value={type} onChange={setType} options={typeOptions} label="任务类型" />
-          <FilterSelect value={range} onChange={setRange} options={rangeOptions} label="创建时间" />
-          <FilterSelect value={sort} onChange={setSort} options={sortOptions} label="排序" />
-          <div className="flex h-10 items-center gap-2 md:h-9">
-            <Switch id="recurring-only" checked={recurringOnly} onCheckedChange={setRecurringOnly} />
-            <Label htmlFor="recurring-only" className="font-normal whitespace-nowrap">
-              只看周期任务
-            </Label>
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按状态筛选（可多选）">
+              <StateChips states={allStates} selected={states} onToggle={toggleState} />
+              {canRetryAll && !!failedInFilter?.total && (
+                <Button variant="outline" className="ml-auto h-9" onClick={() => actions.retryAll(failedFilter, failedInFilter.total)}>
+                  <RotateCw aria-hidden />
+                  重试全部失败（{failedInFilter.total}）
+                </Button>
+              )}
+            </div>
           </div>
-        </Toolbar>
 
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按状态筛选（可多选）">
-          <StateChips states={viewStates} selected={effectiveStates} onToggle={toggleState} />
-          {canRetryAll && !!failedInFilter?.total && (
-            <Button variant="outline" className="ml-auto h-9" onClick={() => actions.retryAll(failedFilter, failedInFilter.total)}>
+          <DataList
+            rows={rows}
+            loading={!tasks.data}
+            columns={columns}
+            getId={(t) => t.id}
+            rowLabel={(t) => t.id}
+            selected={sel.ids}
+            onSelectedChange={sel.set}
+            empty={<EmptyState icon={ListChecks} title="没有符合条件的任务" description="试试调整筛选条件。" className="border-0" />}
+            actions={(t) => <TaskActionItems task={t} now={now} actions={actions} />}
+          />
+          <Pagination paging={paging} total={tasks.data?.total ?? 0} />
+
+          <BulkBar count={sel.ids.size} onClear={sel.clear}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!selectedFailed.length}
+              title={selectedFailed.length ? undefined : '所选任务中没有失败的任务'}
+              onClick={() => actions.retry(selectedFailed, '所选的')}
+            >
               <RotateCw aria-hidden />
-              重试全部失败（{failedInFilter.total}）
+              重试失败（{selectedFailed.length}）
             </Button>
-          )}
+          </BulkBar>
+        </>
+      )}
+      {actions.dialogs}
+    </>
+  )
+}
+
+function ScheduleList({ tabs, refreshInterval, onShowTasks }: { tabs: React.ReactNode; refreshInterval: number; onShowTasks: (name: string) => void }) {
+  const { data } = useSWR<Schedule[]>('/admin/tasks/schedules', { refreshInterval })
+  const [q, setQ] = useState('')
+  const [type, setType] = useState('all')
+  const paging = usePaging(`${q}|${type}`)
+  const [pending, setPending] = useState<Schedule | null>(null)
+  const unfinished = (s: Schedule) => s.last?.status === 'pending' || s.last?.status === 'running'
+
+  const columns: Column<Schedule>[] = [
+    {
+      key: 'name',
+      header: '任务',
+      mobile: 'title',
+      cell: (s) => (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-medium">{jobLabel(s.type)}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground">{s.name}</span>
         </div>
+      ),
+    },
+    {
+      key: 'cron',
+      header: '周期',
+      cell: (s) => (s.cron ? <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{s.cron}</span> : <span className="text-muted-foreground">仅手动</span>),
+    },
+    {
+      key: 'params',
+      header: '参数',
+      className: 'max-w-56',
+      cell: (s) => {
+        const p = formatParams(s.params)
+        return p ? (
+          <span className="block truncate font-mono text-xs" title={p}>
+            {p}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
+    },
+    {
+      key: 'next',
+      header: '下次执行',
+      cell: (s) =>
+        s.next_run ? (
+          <span className="flex flex-wrap gap-x-1 tabular-nums">
+            <span className="whitespace-nowrap">{formatDateTime(s.next_run)}</span>
+            <span className="whitespace-nowrap text-muted-foreground">· {formatRelative(s.next_run)}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: 'last',
+      header: '最近一次',
+      cell: (s) =>
+        s.last ? (
+          <Link href={`/admin/tasks/${s.last.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:underline">
+            <TaskStatusBadge status={taskState(s.last)} />
+            <span className="tabular-nums whitespace-nowrap text-muted-foreground">{formatDateTime(s.last.finished_at ?? s.last.started_at ?? s.last.created_at)}</span>
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+  ]
+
+  const needle = q.trim().toLowerCase()
+  const matched = (data ?? []).filter(
+    (s) => (type === 'all' || s.type === type) && (!needle || [s.name, s.type, jobLabel(s.type)].some((v) => v.toLowerCase().includes(needle))),
+  )
+  const typeOptions = [['all', '全部类型'] as const, ...[...new Set((data ?? []).map((s) => s.type))].map((t) => [t, jobLabel(t)] as const)]
+
+  return (
+    <>
+      <div className="flex flex-col gap-3">
+        {tabs}
+        <Toolbar>
+          <SearchInput value={q} onChange={setQ} placeholder="计划名称或类型" className="basis-full sm:basis-auto" />
+          <FilterSelect value={type} onChange={setType} options={typeOptions} label="任务类型" />
+        </Toolbar>
       </div>
 
       <DataList
-        rows={rows}
-        loading={!tasks.data}
+        rows={matched.slice((paging.page - 1) * paging.pageSize, paging.page * paging.pageSize)}
+        loading={!data}
         columns={columns}
-        getId={(t) => t.id}
-        rowLabel={(t) => t.id}
-        selected={sel.ids}
-        onSelectedChange={sel.set}
-        empty={<EmptyState icon={ListChecks} title="没有符合条件的任务" description="试试调整筛选条件或切换视图。" className="border-0" />}
-        actions={(t) => <TaskActionItems task={t} now={now} actions={actions} />}
+        getId={(s) => s.name}
+        rowLabel={(s) => s.name}
+        empty={
+          data?.length ? (
+            <EmptyState icon={CalendarClock} title="没有符合条件的计划" description="试试调整筛选条件。" className="border-0" />
+          ) : (
+            <EmptyState icon={CalendarClock} title="没有计划任务" description="在服务端配置文件的 tasks 中添加。" className="border-0" />
+          )
+        }
+        actions={(s) => (
+          <>
+            {!unfinished(s) && (
+              <DropdownMenuItem onClick={() => setPending(s)}>
+                <Play />
+                立即执行
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => onShowTasks(s.name)}>
+              <History />
+              查看执行记录
+            </DropdownMenuItem>
+          </>
+        )}
       />
-      <Pagination paging={paging} total={tasks.data?.total ?? 0} />
-
-      <BulkBar count={sel.ids.size} onClear={sel.clear}>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!selectedFailed.length}
-          title={selectedFailed.length ? undefined : '所选任务中没有失败的任务'}
-          onClick={() => actions.retry(selectedFailed, '所选的')}
-        >
-          <RotateCw aria-hidden />
-          重试失败（{selectedFailed.length}）
-        </Button>
-      </BulkBar>
-      {actions.dialogs}
+      <Pagination paging={paging} total={matched.length} />
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={pending ? `立即执行「${jobLabel(pending.type)}」` : ''}
+        description={pending && formatParams(pending.params) ? `按配置的参数运行一次：${formatParams(pending.params)}` : '按配置运行一次。'}
+        confirmLabel="执行"
+        onConfirm={async () => {
+          if (!pending) return
+          await api(`/admin/tasks/schedules/${encodeURIComponent(pending.name)}/run`, { method: 'POST' })
+          await refresh()
+          toast.success('已创建任务')
+        }}
+      />
     </>
   )
 }
@@ -435,9 +575,11 @@ export function AdminTasks() {
 /* -------------------------------- detail --------------------------------- */
 
 export function AdminTaskDetail({ id }: { id: string }) {
-  const detail = useSWR<TaskDetail>(`/admin/tasks/${id}`, {
+  const detail = useSWR<Task>(`/admin/tasks/${id}`, {
     refreshInterval: (t) => (t && (t.status === 'running' || t.status === 'pending') ? 3000 : 0),
   })
+  // A task's source links to the schedules while the config still has it.
+  const schedules = useSWR<Schedule[]>(detail.data?.name ? '/admin/tasks/schedules' : null)
   const now = useNow(detail.data?.status === 'running', 1000)
   const actions = useTaskActions()
 
@@ -475,8 +617,23 @@ export function AdminTaskDetail({ id }: { id: string }) {
             ['开始时间', task.started_at ? formatDateTime(task.started_at) : '—'],
             ['结束时间', task.finished_at ? formatDateTime(task.finished_at) : '—'],
             ['耗时 / 进度', <TimeCell key="t" task={task} now={now} />],
-            ['周期任务', task.cron ? <span className="font-mono">{task.cron}</span> : '否'],
           ]
+          if (task.name)
+            info.push(
+              [
+                '来源',
+                schedules.data?.some((s) => s.name === task.name) ? (
+                  <Link key="src" href="/admin/tasks?view=schedules" className="font-mono underline-offset-2 hover:underline">
+                    {task.name}
+                  </Link>
+                ) : (
+                  <span key="src" className="font-mono">
+                    {task.name}
+                  </span>
+                ),
+              ],
+              ['参数', <span key="params" className="font-mono break-all">{formatParams(task.payload) || '—'}</span>],
+            )
 
           return (
             <>
@@ -485,7 +642,7 @@ export function AdminTaskDetail({ id }: { id: string }) {
                 description={task.id}
                 actions={
                   <>
-                    {task.status === 'failed' && !task.parent_task_id && (
+                    {canRetry(task) && (
                       <Button className="h-10 md:h-9" onClick={() => actions.retry([task])}>
                         <RotateCw aria-hidden />
                         重试
@@ -533,40 +690,9 @@ export function AdminTaskDetail({ id }: { id: string }) {
                     <Timeline events={timeline} />
                   </section>
 
-                  {task.runs.length > 0 && (
-                    <section className="rounded-xl border bg-card p-4 sm:p-5">
-                      <h2 className="mb-4 text-sm font-medium">历次执行记录</h2>
-                      <Timeline
-                        events={task.runs.map((r) => ({
-                          at: r.finished_at ?? r.created_at,
-                          label: r.status === 'completed' ? '执行成功' : '执行失败',
-                          tone: r.status === 'completed' ? ('ok' as const) : ('fail' as const),
-                          message: r.error_message ?? undefined,
-                        }))}
-                      />
-                    </section>
-                  )}
                 </div>
 
                 <aside className="flex flex-col gap-4">
-                  {task.cron && (
-                    <section className="rounded-xl border bg-card p-4 sm:p-5">
-                      <h2 className="mb-3 text-sm font-medium">执行计划</h2>
-                      <dl className="flex flex-col gap-3 text-sm">
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-muted-foreground">计划</dt>
-                          <dd className="font-mono">{task.cron}</dd>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-muted-foreground">下一次执行</dt>
-                          <dd className="text-right tabular-nums">
-                            {formatDateTime(task.run_at)}
-                            <span className="block text-xs text-muted-foreground">{formatRelative(task.run_at)}</span>
-                          </dd>
-                        </div>
-                      </dl>
-                    </section>
-                  )}
                   {asset && (
                     <section className="rounded-xl border bg-card p-4 sm:p-5">
                       <h2 className="mb-3 text-sm font-medium">关联对象</h2>

@@ -37,9 +37,9 @@ func (r *LogRepository) Insert(ctx context.Context, entries []*model.LogEntry) e
 	return err
 }
 
-func (r *LogRepository) DeleteBefore(ctx context.Context, t time.Time) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM ops.logs WHERE time < $1`, t)
-	return err
+func (r *LogRepository) DeleteBefore(ctx context.Context, t time.Time) (int64, error) {
+	tag, err := r.db.Exec(ctx, `DELETE FROM ops.logs WHERE time < $1`, t)
+	return tag.RowsAffected(), err
 }
 
 type LogFilter struct {

@@ -16,6 +16,9 @@ const jobTypeLabel: Record<string, string> = {
   analyze_meme: '分析表情包',
   embed_clip: '重建 CLIP 向量',
   embed_text: '重建文本向量',
+  refresh_tags: '刷新标签统计',
+  purge_logs: '清理日志',
+  purge_tasks: '清理任务记录',
 }
 
 export const jobLabel = (type: string) => jobTypeLabel[type] ?? type

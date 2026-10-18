@@ -104,12 +104,19 @@ func main() {
 	userService := service.NewUserService(repo, memeService)
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, inferClient, files)
-	logService := service.NewLogService(repo, cfg.Log.Retention)
+	logService := service.NewLogService(repo)
 	embeddingService := service.NewEmbeddingService(cfg.Prompt.Tag, repo, memeService, inferClient.WithPriority(inference.PriorityBackground))
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 	taskWorker.RegisterHandler(model.JobEmbedClip, worker.HandlerFunc(ingestService.EmbedClip))
 	taskWorker.RegisterHandler(model.JobEmbedText, worker.HandlerFunc(ingestService.EmbedText))
+	taskWorker.RegisterHandler(model.JobRefreshTags, worker.HandlerFunc(tagService.Refresh))
+	taskWorker.RegisterHandler(model.JobPurgeLogs, worker.HandlerFunc(logService.Purge))
+	taskWorker.RegisterHandler(model.JobPurgeTasks, worker.HandlerFunc(taskService.Purge))
+	if err := taskWorker.Schedule(cfg.Tasks); err != nil {
+		slog.Error("Failed to schedule the configured tasks", "error", err)
+		os.Exit(1)
+	}
 
 	workerDone := make(chan struct{})
 	go func() {
@@ -306,6 +313,8 @@ func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
 
 	admin.GET("/tasks", h.task.List)
 	admin.GET("/tasks/summary", h.task.Summary)
+	admin.GET("/tasks/schedules", h.task.Schedules)
+	admin.POST("/tasks/schedules/:name/run", h.task.RunSchedule)
 	admin.GET("/tasks/batches/:id", h.task.GetBatch)
 	admin.POST("/tasks/batches/:id/cancel", h.task.CancelBatch)
 	admin.GET("/tasks/:id", h.task.Get)

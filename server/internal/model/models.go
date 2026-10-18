@@ -90,7 +90,7 @@ type TagUsage struct {
 type Task struct {
 	ID           string          `json:"id" db:"id"`
 	OwnerID      *string         `json:"owner_id" db:"owner_id"`
-	ParentTaskID *string         `json:"parent_task_id" db:"parent_task_id"`
+	Name         *string         `json:"name" db:"name"` // Of the configured task that made it
 	BatchID      *string         `json:"batch_id" db:"batch_id"`
 	JobType      string          `json:"job_type" db:"job_type"`
 	Payload      json.RawMessage `json:"payload" db:"payload"`
@@ -98,7 +98,6 @@ type Task struct {
 	ErrorMessage *string         `json:"error_message" db:"error_message"`
 
 	Priority    int        `json:"priority" db:"priority"`
-	Cron        *string    `json:"cron" db:"cron"`
 	Attempts    int        `json:"attempts" db:"attempts"`
 	MaxAttempts int        `json:"max_attempts" db:"max_attempts"`
 	TimeoutSecs int        `json:"timeout_secs" db:"timeout_secs"` // Of each attempt

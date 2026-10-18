@@ -117,20 +117,19 @@ func (r *TagRepository) RemoveUserTag(ctx context.Context, assetID, tagID, userI
 	return err
 }
 
-func (r *TagRepository) Hot(ctx context.Context, viewerID string, admin bool, minUsage, limit int) ([]string, error) {
-	var w filter
-	w.where("at.user_id IS NULL AND NOT t.hidden")
-	w.where(memeListed(&w, viewerID, admin))
-	query := fmt.Sprintf(`
-		SELECT t.name FROM library.asset_tags at
-		JOIN library.labels l ON l.id = at.label_id
-		JOIN library.tags t ON t.id = l.tag_id
-		JOIN core.meme_info m ON m.asset_id = at.asset_id
-		%s
-		GROUP BY t.id HAVING count(DISTINCT at.asset_id) >= %d
-		ORDER BY count(DISTINCT at.asset_id) DESC, t.name LIMIT %d
-	`, w.clause(), minUsage, limit)
-	return collectScalars[string](r.db.Query(ctx, query, w.args...))
+// Hot lists the tags on the most public memes, as last counted.
+func (r *TagRepository) Hot(ctx context.Context, minUsage, limit int) ([]string, error) {
+	query := `
+		SELECT t.name FROM library.tag_usage u JOIN library.tags t ON t.id = u.tag_id
+		WHERE NOT t.hidden AND u.public_usage >= $1
+		ORDER BY u.public_usage DESC, t.name LIMIT $2
+	`
+	return collectScalars[string](r.db.Query(ctx, query, minUsage, limit))
+}
+
+func (r *TagRepository) RefreshUsage(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY library.tag_usage`)
+	return err
 }
 
 func (r *TagRepository) List(ctx context.Context, query, sort string, page Page, commonShare float64) ([]*model.TagUsage, int, error) {
@@ -193,6 +192,39 @@ func (r *TagRepository) SimilarPairs(ctx context.Context, minSimilarity float64)
 		return nil
 	})
 	return pairs, err
+}
+
+// SetClusters replaces the clusters of tags suggested as duplicates.
+func (r *TagRepository) SetClusters(ctx context.Context, clusters [][]string) error {
+	if _, err := r.db.Exec(ctx, `DELETE FROM library.tag_clusters`); err != nil {
+		return err
+	}
+	var ids []string
+	var nums []int
+	for i, c := range clusters {
+		for _, id := range c {
+			ids = append(ids, id)
+			nums = append(nums, i)
+		}
+	}
+	_, err := r.db.Exec(ctx, `INSERT INTO library.tag_clusters (tag_id, cluster) SELECT * FROM unnest($1::uuid[], $2::int[])`, ids, nums)
+	return err
+}
+
+// Clusters maps each tag suggested as a duplicate to its cluster.
+func (r *TagRepository) Clusters(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.Query(ctx, `SELECT tag_id::text, cluster FROM library.tag_clusters`)
+	if err != nil {
+		return nil, err
+	}
+	var id string
+	var cluster int
+	clusters := map[string]int{}
+	_, err = pgx.ForEachRow(rows, []any{&id, &cluster}, func() error {
+		clusters[id] = cluster
+		return nil
+	})
+	return clusters, err
 }
 
 func (r *TagRepository) Embeddings(ctx context.Context, ids []string) (map[string][]float32, error) {

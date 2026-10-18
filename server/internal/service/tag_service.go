@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 
@@ -91,8 +92,8 @@ func (s *TagService) RemoveFromMeme(ctx context.Context, viewer *rbac.Identity, 
 	return s.repo.Tag.RemoveUserTag(ctx, memeID, tagID, viewer.UserID)
 }
 
-func (s *TagService) Hot(ctx context.Context, viewer *rbac.Identity, limit int) ([]string, error) {
-	tags, err := s.repo.Tag.Hot(ctx, viewer.UserID, viewer.IsAdmin(), s.cfg.MinUsage, limit)
+func (s *TagService) Hot(ctx context.Context, limit int) ([]string, error) {
+	tags, err := s.repo.Tag.Hot(ctx, s.cfg.MinUsage, limit)
 	if tags == nil {
 		tags = []string{}
 	}
@@ -107,11 +108,23 @@ func (s *TagService) List(ctx context.Context, query, sort string, page reposito
 	return &model.Page[*model.TagUsage]{Items: tags, Total: total}, nil
 }
 
-// Duplicates groups similar tags by average linkage, most used first within and across groups.
-func (s *TagService) Duplicates(ctx context.Context) ([][]*model.TagUsage, error) {
+// Refresh recounts the tags' usage and clusters the similar tags that Duplicates lists.
+func (s *TagService) Refresh(ctx context.Context, _ *model.Task) error {
+	if err := s.repo.Tag.RefreshUsage(ctx); err != nil {
+		return fmt.Errorf("failed to count tag usage: %w", err)
+	}
+	clusters, err := s.clusterSimilar(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to cluster similar tags: %w", err)
+	}
+	return s.repo.Tx(ctx, func(r *repository.Repos) error { return r.Tag.SetClusters(ctx, clusters) })
+}
+
+// clusterSimilar groups similar tags by average linkage into clusters of two or more.
+func (s *TagService) clusterSimilar(ctx context.Context) ([][]string, error) {
 	pairs, err := s.repo.Tag.SimilarPairs(ctx, s.cfg.SuggestSimilarity)
 	if err != nil || len(pairs) == 0 {
-		return [][]*model.TagUsage{}, err
+		return nil, err
 	}
 
 	// Average linkage never joins tags without a close pair between them, so each connected component clusters alone.
@@ -145,22 +158,28 @@ func (s *TagService) Duplicates(ctx context.Context) ([][]*model.TagUsage, error
 	if err != nil {
 		return nil, err
 	}
-	cluster := map[string]int{}
-	n := 0
+	var clusters [][]string
 	for _, component := range components {
 		for _, c := range averageLinkage(component, embeddings, s.cfg.SuggestSimilarity) {
-			for _, id := range c {
-				cluster[id] = n
+			if len(c) > 1 {
+				clusters = append(clusters, c)
 			}
-			n++
 		}
 	}
+	return clusters, nil
+}
 
-	tags, err := s.repo.Tag.Get(ctx, ids, s.cfg.CommonShare)
+// Duplicates lists the clusters of similar tags, most used first within and across groups.
+func (s *TagService) Duplicates(ctx context.Context) ([][]*model.TagUsage, error) {
+	cluster, err := s.repo.Tag.Clusters(ctx)
+	if err != nil || len(cluster) == 0 {
+		return [][]*model.TagUsage{}, err
+	}
+	tags, err := s.repo.Tag.Get(ctx, slices.Collect(maps.Keys(cluster)), s.cfg.CommonShare)
 	if err != nil {
 		return nil, err
 	}
-	grouped := make([][]*model.TagUsage, n)
+	grouped := map[int][]*model.TagUsage{}
 	var order []int
 	for _, t := range tags { // Most used first
 		c := cluster[t.ID]
@@ -171,7 +190,7 @@ func (s *TagService) Duplicates(ctx context.Context) ([][]*model.TagUsage, error
 	}
 	groups := [][]*model.TagUsage{}
 	for _, c := range order {
-		if len(grouped[c]) > 1 {
+		if len(grouped[c]) > 1 { // Merges may have left one
 			groups = append(groups, grouped[c])
 		}
 	}

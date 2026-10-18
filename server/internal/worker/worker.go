@@ -2,10 +2,12 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,11 +22,11 @@ type Store interface {
 	Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error
 	Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error
 	Release(ctx context.Context, id string, attempts int) error
-	Reschedule(ctx context.Context, task *model.Task, status string, errorMessage *string, next time.Time) error
 	Requeue(ctx context.Context, ids []string) ([]*model.Task, error)
 	Cancel(ctx context.Context, id, reason string) (*model.Task, error)
 	CancelBatch(ctx context.Context, batchID, reason string) ([]*model.Task, error)
 	RunNow(ctx context.Context, id string) (bool, error)
+	EnqueueScheduled(ctx context.Context, name, jobType string, payload []byte) (bool, error)
 }
 
 var (
@@ -33,10 +35,11 @@ var (
 )
 
 type Worker struct {
-	cfg      config.WorkerConfig
-	store    Store
-	handlers map[string]TaskHandler
-	wake     chan struct{}
+	cfg       config.WorkerConfig
+	store     Store
+	handlers  map[string]TaskHandler
+	schedules []config.TaskConfig
+	wake      chan struct{}
 }
 
 func NewWorker(cfg config.WorkerConfig, store Store) *Worker {
@@ -50,6 +53,100 @@ func NewWorker(cfg config.WorkerConfig, store Store) *Worker {
 
 func (w *Worker) RegisterHandler(jobType string, handler TaskHandler) {
 	w.handlers[jobType] = handler
+}
+
+// Schedule sets the configured tasks, each made a task of on its cron, or by hand with RunSchedule.
+func (w *Worker) Schedule(tasks []config.TaskConfig) error {
+	for _, t := range tasks {
+		if _, ok := w.handlers[t.Type]; !ok {
+			return fmt.Errorf("task %s: no job type %s", t.Name, t.Type)
+		}
+	}
+	w.schedules = tasks
+	return nil
+}
+
+func (w *Worker) Schedules() []config.TaskConfig {
+	return w.schedules
+}
+
+// RunSchedule makes a task of the configured one now; false when its last is unfinished.
+func (w *Worker) RunSchedule(ctx context.Context, name string) (bool, error) {
+	i := slices.IndexFunc(w.schedules, func(t config.TaskConfig) bool { return t.Name == name })
+	if i < 0 {
+		return false, fmt.Errorf("no configured task named %s", name)
+	}
+	return w.start(ctx, w.schedules[i])
+}
+
+// start makes a task of a configured one, unless its last is unfinished.
+func (w *Worker) start(ctx context.Context, t config.TaskConfig) (bool, error) {
+	params := t.Params
+	if params == nil {
+		params = map[string]any{}
+	}
+	payload, err := json.Marshal(params)
+	if err != nil {
+		return false, fmt.Errorf("invalid params for %s: %w", t.Name, err)
+	}
+	ok, err := w.store.EnqueueScheduled(ctx, t.Name, t.Type, payload)
+	if ok {
+		w.Notify()
+	}
+	return ok, err
+}
+
+// NextRun is when a cron next fires; nil without one.
+func NextRun(cron string) *time.Time {
+	if cron == "" {
+		return nil
+	}
+	next, err := gronx.NextTick(cron, false)
+	if err != nil {
+		return nil // Checked as the config loads
+	}
+	return &next
+}
+
+// runSchedules makes a task of each configured one as its cron fires. Ticks while its last is unfinished are skipped,
+// as are those missed while the server was down.
+func (w *Worker) runSchedules(ctx context.Context) {
+	next := make([]*time.Time, len(w.schedules))
+	for i, t := range w.schedules {
+		next[i] = NextRun(t.Cron)
+	}
+	for {
+		var due *time.Time
+		for _, n := range next {
+			if n != nil && (due == nil || n.Before(*due)) {
+				due = n
+			}
+		}
+		if due == nil {
+			return
+		}
+		select {
+		case <-time.After(time.Until(*due)):
+		case <-ctx.Done():
+			return
+		}
+
+		for i, t := range w.schedules {
+			if next[i] == nil || next[i].After(time.Now()) {
+				continue
+			}
+			ok, err := w.start(ctx, t)
+			switch {
+			case err != nil:
+				if ctx.Err() == nil {
+					slog.Error("Failed to start a configured task", "name", t.Name, "error", err)
+				}
+			case !ok:
+				slog.Info("Skipped a configured task, as its last is unfinished", "name", t.Name)
+			}
+			next[i] = NextRun(t.Cron)
+		}
+	}
 }
 
 func (w *Worker) Notify() {
@@ -124,6 +221,12 @@ func (w *Worker) Run(ctx context.Context) {
 
 	slog.Info("Worker started", "concurrency", w.cfg.Concurrency)
 	defer slog.Info("Worker stopped")
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		w.runSchedules(ctx)
+	}()
 
 	for {
 		// Claim only once at least one slot is free.
@@ -227,14 +330,6 @@ func (w *Worker) finish(ctx context.Context, task *model.Task, status string, ca
 	if cause != nil {
 		msg := cause.Error()
 		errMsg = &msg
-	}
-
-	if task.Cron != nil && *task.Cron != "" {
-		next, err := gronx.NextTick(*task.Cron, false)
-		if err == nil {
-			return w.store.Reschedule(ctx, task, status, errMsg, next)
-		}
-		slog.Error("Invalid cron expression", "id", task.ID, "cron", *task.Cron, "error", err)
 	}
 	return w.store.Finish(ctx, task.ID, task.Attempts, status, errMsg)
 }

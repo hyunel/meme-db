@@ -142,17 +142,12 @@ func (row *memeRow) toModel() *model.Meme {
 	}
 }
 
-// minUsage marks the tags on fewer memes as rare.
+// minUsage marks the tags on fewer memes, as last counted, as rare.
 func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool, ids []string, minUsage int) ([]*model.Meme, error) {
 	if len(ids) == 0 {
 		return []*model.Meme{}, nil
 	}
 	query := fmt.Sprintf(`
-		WITH usage AS MATERIALIZED ( -- Counted once per tag rather than once per meme bearing it
-			SELECT l.tag_id, count(DISTINCT u.asset_id) AS n FROM library.asset_tags u JOIN library.labels l ON l.id = u.label_id
-			WHERE l.tag_id IN (SELECT tl.tag_id FROM library.asset_tags t JOIN library.labels tl ON tl.id = t.label_id WHERE t.asset_id = ANY($1::uuid[]))
-			GROUP BY l.tag_id
-		)
 		SELECT a.id, %[3]s AS url, a.mime_type, a.file_size, a.created_at,
 			COALESCE(m.width, 0) AS width, COALESCE(m.height, 0) AS height,
 			m.processing_status AS status, m.fail_reason, COALESCE(m.ocr_text, '') AS ocr_text,
@@ -164,14 +159,15 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			COALESCE((SELECT jsonb_agg(jsonb_build_object('id', n.id, 'folder_id', n.parent_id) ORDER BY n.created_at)
 			 FROM library.nodes n WHERE n.asset_id = a.id AND n.owner_id = $2::uuid), '[]') AS entries,
 			COALESCE((
-				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', x.usage < $4)
-					ORDER BY x.mine, x.usage DESC, t.name)
+				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', COALESCE(u.usage, 0) < $4)
+					ORDER BY x.mine, u.usage DESC NULLS LAST, t.name)
 				FROM (
-					SELECT l.tag_id, at.user_id IS NOT NULL AS mine, (SELECT n FROM usage WHERE usage.tag_id = l.tag_id) AS usage
+					SELECT l.tag_id, at.user_id IS NOT NULL AS mine
 					FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
 					WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
 					GROUP BY l.tag_id, mine
 				) x JOIN library.tags t ON t.id = x.tag_id
+				LEFT JOIN library.tag_usage u ON u.tag_id = x.tag_id -- None for a tag new since the last count
 				WHERE x.mine OR NOT t.hidden
 			), '[]') AS tags
 		FROM core.assets a

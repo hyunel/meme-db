@@ -96,8 +96,8 @@ export function AdminOverview() {
   const alerts = inf.data ? inferenceAlerts(inf.data) : []
   const attention = [
     failedMemes > 0 && { text: '表情包处理失败', count: `${failedMemes} 个`, href: '/admin/content?status=failed', level: 'danger' as const },
-    backlog > 5 && { text: '任务积压（排队中 + 等待重试）', count: `${backlog} 个`, href: '/admin/tasks?view=active', level: 'warn' as const },
-    rate > 20 && { text: '所选时间内任务失败率过高', count: `${rate}%`, href: '/admin/tasks?view=history&status=failed', level: 'danger' as const },
+    backlog > 5 && { text: '任务积压（排队中 + 等待重试）', count: `${backlog} 个`, href: '/admin/tasks?status=pending&status=retrying', level: 'warn' as const },
+    rate > 20 && { text: '所选时间内任务失败率过高', count: `${rate}%`, href: '/admin/tasks?status=failed', level: 'danger' as const },
     alerts.length > 0 && {
       text: `推理服务预警：${alerts.map((a) => a.text).join('、')}`,
       count: `${alerts.length} 项`,
@@ -223,12 +223,12 @@ export function AdminOverview() {
                     label={taskStateLabel[st]}
                     value={sum(t, st)}
                     tone={st === 'failed' && sum(t, st) ? 'danger' : undefined}
-                    href={`/admin/tasks?view=${st === 'completed' || st === 'failed' ? 'history' : 'active'}&status=${st}`}
+                    href={`/admin/tasks?status=${st}`}
                   />
                 ))}
-                <StatCard label="积压" value={backlog} tone={backlog > 5 ? 'warn' : undefined} hint="排队中 + 等待重试" href="/admin/tasks?view=active" />
-                <StatCard label="区间完成" value={doneN} href="/admin/tasks?view=history&status=completed" />
-                <StatCard label="区间失败率" value={`${rate}%`} hint={`失败 ${failN} 个`} tone={rate > 20 ? 'danger' : undefined} href="/admin/tasks?view=history&status=failed" />
+                <StatCard label="积压" value={backlog} tone={backlog > 5 ? 'warn' : undefined} hint="排队中 + 等待重试" href="/admin/tasks?status=pending&status=retrying" />
+                <StatCard label="区间完成" value={doneN} href="/admin/tasks?status=completed" />
+                <StatCard label="区间失败率" value={`${rate}%`} hint={`失败 ${failN} 个`} tone={rate > 20 ? 'danger' : undefined} href="/admin/tasks?status=failed" />
               </Section>
 
               <section aria-labelledby="by-type" className="flex flex-col gap-3">

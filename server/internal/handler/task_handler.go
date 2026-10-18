@@ -24,7 +24,7 @@ type TaskFilterParams struct {
 	Batch     string   `query:"batch" json:"batch" validate:"omitempty,uuid"`
 	Group     bool     `query:"group" json:"group"` // One row for each batch
 	Query     string   `query:"q" json:"q" validate:"max=100"`
-	Recurring bool     `query:"recurring" json:"recurring"`
+	Scheduled bool     `query:"scheduled" json:"scheduled"` // Made by configured tasks
 	Sort      string   `query:"sort" json:"sort" validate:"omitempty,oneof=due created finished"`
 }
 
@@ -36,7 +36,7 @@ func (p TaskFilterParams) filter() service.TaskFilter {
 		Group:     p.Group,
 		Query:     strings.TrimSpace(p.Query),
 		Created:   p.timeRange(),
-		Recurring: p.Recurring,
+		Scheduled: p.Scheduled,
 		Sort:      p.Sort,
 	}
 }
@@ -167,4 +167,28 @@ func (h *TaskHandler) CancelBatch(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, CountResponse{Count: n})
+}
+
+func (h *TaskHandler) Schedules(c echo.Context) error {
+	schedules, err := h.taskService.Schedules(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, schedules)
+}
+
+type ScheduleRequest struct {
+	Name string `param:"name" validate:"required,max=50"`
+}
+
+func (h *TaskHandler) RunSchedule(c echo.Context) error {
+	var req ScheduleRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	if err := h.taskService.RunSchedule(c.Request().Context(), req.Name); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }

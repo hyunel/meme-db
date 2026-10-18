@@ -246,7 +246,7 @@ func (h *MemeHandler) HotTags(c echo.Context) error {
 		return err
 	}
 
-	tags, err := h.tagService.Hot(c.Request().Context(), rbac.GetIdentity(c), limitOr(req.Limit, 10))
+	tags, err := h.tagService.Hot(c.Request().Context(), limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}

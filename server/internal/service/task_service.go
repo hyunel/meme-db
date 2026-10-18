@@ -2,10 +2,15 @@ package service
 
 import (
 	"context"
+	"log/slog"
+	"slices"
+	"time"
 
+	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/repository"
+	"github.com/hyunel/MemeDB/internal/worker"
 )
 
 type TaskQueue interface {
@@ -13,6 +18,8 @@ type TaskQueue interface {
 	Cancel(ctx context.Context, id string) (bool, error)
 	CancelBatch(ctx context.Context, batchID string) (int, error)
 	RunNow(ctx context.Context, id string) (bool, error)
+	Schedules() []config.TaskConfig
+	RunSchedule(ctx context.Context, name string) (bool, error)
 }
 
 type TaskService struct {
@@ -36,24 +43,50 @@ func (s *TaskService) Summary(ctx context.Context, finished repository.TimeRange
 	return s.repo.Task.Summary(ctx, finished)
 }
 
-type TaskDetail struct {
-	*model.Task
-	Runs []*model.Task `json:"runs"` // Latest runs of a recurring task
+func (s *TaskService) Get(ctx context.Context, id string) (*model.Task, error) {
+	task, err := s.repo.Task.Get(ctx, id)
+	if err == nil && task == nil {
+		err = apperror.NotFound("task_not_found", "task not found")
+	}
+	return task, err
 }
 
-func (s *TaskService) Get(ctx context.Context, id string) (*TaskDetail, error) {
-	task, err := s.repo.Task.Get(ctx, id)
+// Schedule is a configured task, as the admin console lists them.
+type Schedule struct {
+	config.TaskConfig
+	NextRun *time.Time  `json:"next_run"` // Nil for one run only by hand
+	Last    *model.Task `json:"last"`     // The latest task it made
+}
+
+func (s *TaskService) Schedules(ctx context.Context) ([]*Schedule, error) {
+	configured := s.queue.Schedules()
+	names := make([]string, len(configured))
+	for i, t := range configured {
+		names[i] = t.Name
+	}
+	latest, err := s.repo.Task.LatestScheduled(ctx, names)
 	if err != nil {
 		return nil, err
 	}
-	if task == nil {
-		return nil, apperror.NotFound("task_not_found", "task not found")
+	schedules := make([]*Schedule, len(configured))
+	for i, t := range configured {
+		schedules[i] = &Schedule{TaskConfig: t, NextRun: worker.NextRun(t.Cron)}
+		if j := slices.IndexFunc(latest, func(l *model.Task) bool { return *l.Name == t.Name }); j >= 0 {
+			schedules[i].Last = latest[j]
+		}
 	}
-	runs, err := s.repo.Task.Runs(ctx, id, 50)
-	if err != nil {
-		return nil, err
+	return schedules, nil
+}
+
+func (s *TaskService) RunSchedule(ctx context.Context, name string) error {
+	if !slices.ContainsFunc(s.queue.Schedules(), func(t config.TaskConfig) bool { return t.Name == name }) {
+		return apperror.NotFound("schedule_not_found", "no configured task of that name")
 	}
-	return &TaskDetail{Task: task, Runs: runs}, nil
+	ok, err := s.queue.RunSchedule(ctx, name)
+	if err == nil && !ok {
+		err = apperror.Conflict("schedule_unfinished", "the last task it made is yet to finish")
+	}
+	return err
 }
 
 func (s *TaskService) Retry(ctx context.Context, ids []string) (int, error) {
@@ -99,4 +132,16 @@ func (s *TaskService) CancelBatch(ctx context.Context, id string) (int, error) {
 		err = apperror.BadRequest("batch_none_queued", "the batch has no queued task")
 	}
 	return n, err
+}
+
+func (s *TaskService) Purge(ctx context.Context, task *model.Task) error {
+	before, err := purgeCutoff(task)
+	if err != nil {
+		return err
+	}
+	n, err := s.repo.Task.DeleteFinishedBefore(ctx, before)
+	if err == nil {
+		slog.Info("Purged finished tasks", "count", n, "before", before)
+	}
+	return err
 }
