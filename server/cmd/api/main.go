@@ -149,19 +149,27 @@ func main() {
 	e.HidePort = true
 	e.HideBanner = true
 	e.HTTPErrorHandler = handler.HTTPErrorHandler
+	// Browsers come through the web's proxy, whose X-Forwarded-For is trusted from internal addresses only.
+	e.IPExtractor = echo.ExtractIPFromXFFHeader()
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		// Pages that poll; logging their requests would bury everything else (and feed the log viewer its own traffic).
 		Skipper:     func(c echo.Context) bool { return c.Path() == "/api/admin/logs" || c.Path() == "/api/admin/inference" },
 		LogStatus:   true,
 		LogURI:      true,
 		LogMethod:   true,
+		LogLatency:  true,
+		LogRemoteIP: true,
 		LogError:    true,
 		HandleError: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			attrs := []any{"method", v.Method, "uri", v.URI, "status", v.Status, "latency_ms", v.Latency.Milliseconds(), "ip", v.RemoteIP}
+			if id := rbac.GetIdentity(c); id != nil && id.UserID != "" { // Files are served without one
+				attrs = append(attrs, "user_id", id.UserID)
+			}
 			if v.Error != nil {
-				slog.Error("Request error", "method", v.Method, "uri", v.URI, "status", v.Status, "error", v.Error)
+				slog.Error("Request error", append(attrs, "error", v.Error)...)
 			} else {
-				slog.Info("Request", "method", v.Method, "uri", v.URI, "status", v.Status)
+				slog.Info("Request", attrs...)
 			}
 			return nil
 		},
