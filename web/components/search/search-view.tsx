@@ -213,7 +213,7 @@ export function SearchView() {
             onChange={(e) => setInput(e.target.value)}
             onPaste={imageInput.onPaste}
             autoComplete="off"
-            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词（可选）' : '关键词，或粘贴图片'}
+            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词…' : '关键词，或粘贴图片…'}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base text-ellipsis outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           <input {...imageInput.inputProps} />
@@ -250,7 +250,6 @@ export function SearchView() {
             >
               <o.icon className="size-4" aria-hidden />
               {o.label}
-              {o.id === 'mine' && !user && <span className="text-xs opacity-70">（需登录）</span>}
             </button>
           ))}
         </div>
