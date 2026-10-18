@@ -296,7 +296,8 @@ export function DataList<T>({
     )
   if (!rows.length) return <div className="rounded-xl border bg-card">{empty}</div>
 
-  const RowMenu = ({ row }: { row: T }) =>
+  // A function, not a component: one made per render would remount, closing an open menu whenever the list re-renders.
+  const rowMenu = (row: T) =>
     actions ? (
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={`${rowLabel(row)} 的操作`} className="size-10 md:size-8" />}>
@@ -373,7 +374,7 @@ export function DataList<T>({
                   ))}
                   {actions && (
                     <TableCell>
-                      <RowMenu row={r} />
+                      {rowMenu(r)}
                     </TableCell>
                   )}
                 </TableRow>
@@ -403,7 +404,7 @@ export function DataList<T>({
                   {selectable && <Checkbox aria-label={`选择 ${rowLabel(r)}`} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
                   <div className="min-w-0 flex-1">{title?.cell(r)}</div>
                   <div className="-mt-1 -mr-1">
-                    <RowMenu row={r} />
+                    {rowMenu(r)}
                   </div>
                 </div>
                 {fields.length > 0 && (
