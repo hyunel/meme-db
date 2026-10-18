@@ -425,7 +425,12 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                     </span>
                   </button>
                 ) : (
-                  <ContextMenu>
+                  <ContextMenu
+                    // On touch screens a long press opens it, with a tap where the phone can vibrate
+                    onOpenChange={(open, { event }) => {
+                      if (open && (event.type.startsWith('touch') || (event as PointerEvent).pointerType === 'touch')) navigator.vibrate?.(10)
+                    }}
+                  >
                     <ContextMenuTrigger
                       render={<Link href={href} />}
                       className={cn(
