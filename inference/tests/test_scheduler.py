@@ -2,7 +2,7 @@ import asyncio
 import pytest
 import threading
 import time
-from app.schedulers import BatchScheduler, SimpleScheduler, ResourceManager
+from app.schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
 
 class MockContext:
     def __init__(self):
@@ -300,6 +300,32 @@ async def test_scheduler_shutdown_handling():
     assert t1.done()
     assert t1.cancelled()
     await rm.stop()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scheduler_class, options", [
+    (BatchScheduler, {"batch_size": 2, "max_latency": 0.01}),
+    (SimpleScheduler, {}),
+])
+async def test_scheduler_prepare(scheduler_class, options):
+    rm = ResourceManager()
+
+    def prepare(items):
+        return {"items": [f"prepared_{item}" for item in items]}
+
+    def process(prepared):
+        return [f"processed_{item}" for item in prepared["items"]]
+
+    scheduler: Scheduler[str, str] = scheduler_class(rm, process, prepare_func=prepare, **options)
+    await rm.start()
+    await scheduler.start()
+    try:
+        results = await asyncio.gather(scheduler.submit("item1"), scheduler.submit("item2"))
+        assert results == ["processed_prepared_item1", "processed_prepared_item2"]
+        assert scheduler.queued() == 0
+        assert scheduler.metrics.window.requests == 2
+    finally:
+        await scheduler.stop()
+        await rm.stop()
 
 @pytest.mark.asyncio
 async def test_simple_scheduler_basic():

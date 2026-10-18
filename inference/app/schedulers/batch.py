@@ -2,16 +2,15 @@ import asyncio
 import time
 import logging
 import uuid
-from typing import Any, List, Callable, Optional, Generic, TypeVar, Dict
+from typing import Any, List, Callable, Optional, Dict
+from .base import Scheduler, T, R
 from .resource import Task, ResourceManager
 from ..metrics import TaskMetrics
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")  # Input type
-R = TypeVar("R")  # Result type
 
-class BatchScheduler(Generic[T, R]):
+class BatchScheduler(Scheduler[T, R]):
     def __init__(
         self,
         resource_manager: ResourceManager,
@@ -20,13 +19,9 @@ class BatchScheduler(Generic[T, R]):
         max_latency: float,
         prepare_func: Optional[Callable[[List[T]], Any]] = None,
     ):
-        self.resource_manager = resource_manager
-        self.process_func = process_func
-        self.prepare_func = prepare_func
+        super().__init__(resource_manager, process_func, prepare_func, metrics=TaskMetrics('batch', batch_size))
         self.batch_size = batch_size
         self.max_latency = max_latency
-
-        self.metrics = TaskMetrics('batch', batch_size)
 
         self.queue: asyncio.PriorityQueue[Task[T]] = asyncio.PriorityQueue()
         self.active_tasks: Dict[str, Task[T]] = {}

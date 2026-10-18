@@ -1,31 +1,21 @@
 import threading
 import time
-from typing import Any, List, Callable, Generic, Optional, TypeVar
+from typing import Any, List, Callable, Optional
+from .base import Scheduler, T, R
 from .resource import ResourceManager
 from ..metrics import TaskMetrics
 
-T = TypeVar("T")  # Input type
-R = TypeVar("R")  # Result type
 
-class SimpleScheduler(Generic[T, R]):
+class SimpleScheduler(Scheduler[T, R]):
     def __init__(
         self,
         resource_manager: ResourceManager,
         process_func: Callable[[Any], List[R]],
         prepare_func: Optional[Callable[[List[T]], Any]] = None,
     ):
-        self.resource_manager = resource_manager
-        self.process_func = process_func
-        self.prepare_func = prepare_func
+        super().__init__(resource_manager, process_func, prepare_func, metrics=TaskMetrics('concurrent', resource_manager.concurrency))
         self.prepare_lock = threading.Lock()  # Tokenizers aren't thread-safe
-        self.metrics = TaskMetrics('concurrent', resource_manager.concurrency)
         self.waiting = 0
-
-    async def start(self):
-        pass
-
-    async def stop(self):
-        pass
 
     def queued(self) -> int:
         return self.waiting

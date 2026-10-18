@@ -9,7 +9,7 @@ from .models.base import BaseModel
 from .config import ModelType, ModelConfig
 from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
-from .schedulers import BatchScheduler, SimpleScheduler, ResourceManager
+from .schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
 from .metrics import Monitor
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
     def __init__(self, model_manager: ModelManager, config: ModelConfig):
         self.model_manager = model_manager
         self.config = config
-        self.schedulers = {}
+        self.schedulers: dict[ModelType, Scheduler] = {}
         self.resources: dict[str, ResourceManager] = {}  # Each GPU, each model on the CPU, and the API
 
         if any(m.cpu for _, m in self.model_manager):
