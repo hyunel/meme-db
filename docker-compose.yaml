@@ -35,14 +35,15 @@ services:
       interval: 2s
       retries: 30
 
-  # Without a GPU, remove deploy: the models then run on the CPU (see inference/models.yaml); TORCH=cpu in .env makes
-  # a smaller image.
+  # Set TORCH=cpu in .env and remove deploy for a CPU, or TORCH=xpu and devices: [/dev/dri] for Intel.
   inference:
     build:
       context: ./inference
       args:
-        TORCH: ${TORCH:-cuda}
+        BASE_IMAGE: ${INFERENCE_BASE_IMAGE:-ghcr.io/astral-sh/uv:python3.12-trixie-slim}
     env_file: .env
+    environment:
+      TORCH: ${TORCH:-cuda}
     volumes:
       - models:/cache
     deploy:

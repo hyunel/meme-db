@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The torch build, picked by the Docker image: the default from PyPI ships the CUDA libraries, cpu leaves them out.
-# uv resolves the two apart only as conflicting extras.
+# start.sh selects the backend and overrides its index from TORCH_INDEX_URL.
 cuda = ["torch", "torchvision"]
 cpu = ["torch", "torchvision"]
+xpu = ["torch", "torchvision", "triton-xpu"]  # torch.compile's, from the same index as torch
 
 [dependency-groups]
 dev = [
@@ -36,15 +36,34 @@ dev = [
 ]
 
 [tool.uv]
-conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cpu", extra = "cpu" }
-torchvision = { index = "pytorch-cpu", extra = "cpu" }
+torch = [
+    { index = "pytorch-cuda", extra = "cuda" },
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+torchvision = [
+    { index = "pytorch-cuda", extra = "cuda" },
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+triton-xpu = { index = "pytorch-xpu", extra = "xpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://pypi.org/simple"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [tool.pytest.ini_options]

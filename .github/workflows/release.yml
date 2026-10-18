@@ -17,16 +17,8 @@ jobs:
           - image: server
           - image: web
           - image: inference
-            build-args: TORCH=cuda
-          - image: inference
-            build-args: TORCH=cpu
-            suffix: -cpu
     steps:
       - uses: actions/checkout@v7
-
-      # The CUDA image outgrows the runner's free disk
-      - if: matrix.image == 'inference'
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
 
       - uses: docker/login-action@v4
         with:
@@ -38,7 +30,6 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
-          flavor: suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -48,7 +39,6 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image }}
-          build-args: ${{ matrix.build-args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -72,7 +62,6 @@ jobs:
             echo "## Images"
             echo
             for name in server web inference; do echo "- \`$image/$name:${tag#v}\`"; done
-            echo "- \`$image/inference:${tag#v}-cpu\`, without CUDA"
             echo
             echo "## Changes"
             echo
