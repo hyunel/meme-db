@@ -56,7 +56,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
                 on_cpu = sum(1 for _, m in self.model_manager if m.cpu)
                 self.resources[name] = ResourceManager(concurrency=model.cpu.threads or max(1, psutil.cpu_count() // on_cpu))
             else:  # Models on one GPU take turns, a batch at a time
-                self.resources[name] = ResourceManager(concurrency=1, post_execution_callback=torch.cuda.empty_cache if model.device.type == 'cuda' else None)
+                self.resources[name] = ResourceManager(concurrency=1, post_execution_callback=torch.accelerator.empty_cache)
         return self.resources[name]
 
     async def start(self):

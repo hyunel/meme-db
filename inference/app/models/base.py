@@ -7,11 +7,11 @@ DEFAULT_TASK = "Given a web search query, retrieve relevant passages that answer
 
 
 def resolve_device(name: str) -> torch.device:
-    if name == 'auto':
-        name = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    if name == 'auto':  # The GPU this torch build runs on (CUDA, Intel XPU, Apple MPS), if the machine has one
+        name = torch.accelerator.current_accelerator(check_available=True) or 'cpu'
     device = torch.device(name)
     # Models on cuda and cuda:0 share that GPU
-    return torch.device('cuda', torch.cuda.current_device()) if device.type == 'cuda' and device.index is None else device
+    return torch.device(device.type, torch.accelerator.current_device_index()) if device.type != 'cpu' and device.index is None else device
 
 
 class BaseModel(ABC):

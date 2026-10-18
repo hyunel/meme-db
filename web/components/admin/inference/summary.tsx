@@ -34,7 +34,9 @@ const tone = (l: Level) => (l === 'ok' ? undefined : l)
 
 export function StatusStrip({ data, connection, now }: { data?: InferenceSnapshot; connection: Connection; now: number }) {
   const meta = connection ? connectionMeta[connection] : null
-  const devices = data ? [...data.gpus.map((g) => [g.id, g.name]), ...(data.models.some((m) => m.device === 'cpu') ? [['CPU']] : [])] : []
+  // NVIDIA GPUs come with their names; other devices models run on (the CPU, an Intel or Apple GPU) only by id
+  const others = data ? [...new Set(data.models.map((m) => m.device))].filter((d) => d !== 'API' && !data.gpus.some((g) => g.id === d)) : []
+  const devices = [...(data?.gpus.map((g) => [g.id, g.name]) ?? []), ...others.map((d) => [d === 'cpu' ? 'CPU' : d])]
   return (
     <section aria-label="服务状态" className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4 lg:flex-row lg:items-center lg:gap-6">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:flex sm:flex-wrap sm:gap-x-8">

@@ -26,7 +26,7 @@ class CPUConfig(BaseModel):
     threads: Optional[int] = None  # Requests run at once; by default the models on the CPU split its threads
 
 class LocalModelConfig(BaseModel):
-    device: str = "auto"  # The first GPU, or the CPU without one; or cpu, cuda:1, mps, ...
+    device: str = "auto"  # The first GPU, or the CPU without one; or cpu, cuda:1, xpu, mps, ...
     gpu: GPUConfig = Field(default_factory=GPUConfig)
     cpu: CPUConfig = Field(default_factory=CPUConfig)
 
