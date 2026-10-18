@@ -70,7 +70,6 @@ func (s *MemeService) load(ctx context.Context, viewer *rbac.Identity, ids []str
 	if err != nil {
 		return nil, err
 	}
-	s.assets.signMemes(memes)
 	return orderByID(memes, ids, func(m *model.Meme) string { return m.ID }), nil
 }
 
@@ -258,7 +257,6 @@ func (s *MemeService) collections(ctx context.Context, viewer *rbac.Identity, hi
 	for _, f := range folders {
 		f.Previews = previews[f.ID]
 	}
-	s.assets.signFolders(folders)
 	return orderByID(folders, ids, func(f *model.Folder) string { return f.ID }), nil
 }
 
@@ -513,6 +511,6 @@ func (s *MemeService) Delete(ctx context.Context, ids []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	s.assets.RemoveFiles(paths)
+	s.assets.RemoveFiles(ctx, paths)
 	return len(paths), nil
 }

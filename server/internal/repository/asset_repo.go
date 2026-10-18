@@ -10,6 +10,9 @@ import (
 
 const assetSelectColumns = `id, file_hash, file_size, mime_type, extension, storage_path, uploaded_by, created_at`
 
+// assetURL links the file of the asset aliased a by its hash, which only someone already holding the file can work out.
+const assetURL = `'/api/assets/' || a.file_hash`
+
 type AssetRepository struct {
 	db db.DBTX
 }

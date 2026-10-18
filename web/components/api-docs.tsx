@@ -247,7 +247,7 @@ for path in sorted(p for p in root.rglob("*") if p.is_file()):
   "parent_id": "0199d2b0-…",
   "name": "doge.gif",
   "visibility": "private",
-  "meme": { "id": "0199d2c3-…", "url": "/api/assets/0199d2c3-…?token=…", "status": "pending", … },
+  "meme": { "id": "0199d2c3-…", "url": "/api/assets/9f86d081…", "status": "pending", … },
   "created_at": "2026-10-11T08:00:00Z",
   "owner": { "id": "…", "username": "you" },
   "ancestors": [{ "id": "0199d2b0-…", "name": "自动入库" }]
@@ -285,7 +285,7 @@ for path in sorted(p for p in root.rglob("*") if p.is_file()):
       <Section id="conventions" title="约定">
         <Notes>
           <li>请求体为 JSON；上传与搜索使用 multipart/form-data。ID 均为 UUID，时间为 ISO 8601 字符串。</li>
-          <li>表情包的 url 是带签名的相对地址，拼接站点地址即可直接下载，无需令牌；它也接受 HEAD 请求，ETag 为文件的 SHA-256，可用来判断文件是否已上传。</li>
+          <li>表情包的 url 是 /api/assets/ 加文件的 SHA-256，拼接站点地址即可直接下载，无需令牌；用本地文件的 SHA-256 拼出地址发 HEAD 请求，可判断文件是否已上传。</li>
           <li>列表接口的 limit 最大为 100。</li>
           <li>
             表情包列表（搜索、相似、热门、合集条目、主页与收藏）按页返回 <Code>{'{ "items": [...], "next": "游标" }'}</Code>，把 next 作为 cursor 取下一页，next 为 null 即没有下一页。搜索与相似表情包页内按相关度排序，越往后越不相关。

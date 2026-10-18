@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
+	"github.com/hyunel/MemeDB/internal/pkg/storage"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/hyunel/MemeDB/internal/worker"
 	"github.com/pgvector/pgvector-go"
@@ -60,7 +60,6 @@ func hopeless(err error) error {
 }
 
 type IngestServiceConfig struct {
-	StoragePath     string
 	CaptionPrompt   string
 	RetrievalPrompt string
 }
@@ -68,12 +67,13 @@ type IngestServiceConfig struct {
 type IngestService struct {
 	cfg         IngestServiceConfig
 	repo        *repository.Provider
+	files       storage.Storage
 	inferClient inference.InferenceService
 	tags        *TagService
 }
 
-func NewIngestService(cfg IngestServiceConfig, repo *repository.Provider, inferClient inference.InferenceService, tags *TagService) *IngestService {
-	return &IngestService{cfg: cfg, repo: repo, inferClient: inferClient, tags: tags}
+func NewIngestService(cfg IngestServiceConfig, repo *repository.Provider, files storage.Storage, inferClient inference.InferenceService, tags *TagService) *IngestService {
+	return &IngestService{cfg: cfg, repo: repo, files: files, inferClient: inferClient, tags: tags}
 }
 
 func (s *IngestService) Handle(ctx context.Context, task *model.Task) error {
@@ -137,7 +137,12 @@ func (s *IngestService) file(ctx context.Context, assetID string) (*model.Asset,
 	if asset == nil {
 		return nil, nil, worker.Permanent(fmt.Errorf("asset not found: %s", assetID))
 	}
-	data, err := os.ReadFile(filepath.Join(s.cfg.StoragePath, asset.StoragePath))
+	f, err := s.files.Open(ctx, asset.StoragePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read file: %w", err)
 	}

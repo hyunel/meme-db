@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/storage"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
@@ -18,13 +18,13 @@ type InferenceMonitor interface {
 }
 
 type StatsService struct {
-	repo        *repository.Provider
-	inference   InferenceMonitor
-	storagePath string
+	repo      *repository.Provider
+	inference InferenceMonitor
+	files     storage.Storage
 }
 
-func NewStatsService(repo *repository.Provider, inference InferenceMonitor, storagePath string) *StatsService {
-	return &StatsService{repo: repo, inference: inference, storagePath: storagePath}
+func NewStatsService(repo *repository.Provider, inference InferenceMonitor, files storage.Storage) *StatsService {
+	return &StatsService{repo: repo, inference: inference, files: files}
 }
 
 const maxTrendDays = 366
@@ -56,13 +56,11 @@ func (s *StatsService) services(ctx context.Context) []model.ServiceStatus {
 		db.Detail = fmt.Sprintf("%dms", time.Since(start).Milliseconds()) // Round trip
 	}
 
-	storage := model.ServiceStatus{Name: "storage", OK: true, Detail: s.storagePath}
-	if info, err := os.Stat(s.storagePath); err != nil {
-		storage.OK, storage.Detail = false, err.Error()
-	} else if !info.IsDir() {
-		storage.OK, storage.Detail = false, s.storagePath+" is not a directory"
+	files := model.ServiceStatus{Name: "storage", OK: true, Detail: s.files.String()}
+	if err := s.files.Ping(ctx); err != nil {
+		files.OK, files.Detail = false, err.Error()
 	}
-	return []model.ServiceStatus{db, storage}
+	return []model.ServiceStatus{db, files}
 }
 
 // Spans of the inference dashboard's time ranges, and the steps they are bucketed in

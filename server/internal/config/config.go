@@ -16,6 +16,7 @@ var defaultConfig []byte
 
 type Config struct {
 	Server    ServerConfig    `yaml:"server" validate:"required"`
+	Storage   StorageConfig   `yaml:"storage" validate:"required"`
 	Auth      AuthConfig      `yaml:"auth" validate:"required"`
 	Database  DatabaseConfig  `yaml:"database" validate:"required"`
 	Inference InferenceConfig `yaml:"inference" validate:"required"`
@@ -69,9 +70,26 @@ type TagsConfig struct {
 }
 
 type ServerConfig struct {
-	Port        int    `yaml:"port" validate:"required,gt=0"`
-	AssetSecret string `yaml:"asset_secret" validate:"required"`
-	StoragePath string `yaml:"storage_path" validate:"required"`
+	Port int `yaml:"port" validate:"required,gt=0"`
+}
+
+type StorageConfig struct {
+	Backend string             `yaml:"backend" validate:"oneof=local s3"`
+	Local   LocalStorageConfig `yaml:"local"`
+	S3      *S3StorageConfig   `yaml:"s3" validate:"required_if=Backend s3"`
+}
+
+type LocalStorageConfig struct {
+	Path string `yaml:"path" validate:"required"`
+}
+
+type S3StorageConfig struct {
+	Endpoint        string `yaml:"endpoint" validate:"required,url"`
+	Region          string `yaml:"region" validate:"required"`
+	Bucket          string `yaml:"bucket" validate:"required"`
+	AccessKeyID     string `yaml:"access_key_id" validate:"required"`
+	SecretAccessKey string `yaml:"secret_access_key" validate:"required"`
+	PathStyle       bool   `yaml:"path_style"`
 }
 
 type AuthConfig struct {

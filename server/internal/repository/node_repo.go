@@ -200,9 +200,9 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 			u.id AS owner_id, u.username AS owner_username,
 			(SELECT count(*) FROM library.nodes c WHERE c.path <@ f.path AND c.type = 'FILE') AS item_count,
 			COALESCE((
-				SELECT jsonb_agg(jsonb_build_object('id', p.asset_id, 'mime_type', p.mime_type) ORDER BY p.created_at)
+				SELECT jsonb_agg(jsonb_build_object('id', p.asset_id, 'url', p.url, 'mime_type', p.mime_type) ORDER BY p.created_at)
 				FROM (
-					SELECT c.asset_id, a.mime_type, c.created_at
+					SELECT c.asset_id, %s AS url, a.mime_type, c.created_at
 					FROM library.nodes c
 					JOIN core.assets a ON a.id = c.asset_id
 					JOIN core.meme_info mi ON mi.asset_id = c.asset_id
@@ -215,7 +215,7 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 		FROM library.nodes f
 		JOIN iam.users u ON u.id = f.owner_id
 		WHERE f.id = ANY($1::uuid[]) AND f.type = 'FOLDER'
-	`, visibilityOf("f"))
+	`, visibilityOf("f"), assetURL)
 
 	rows, err := collectAll[folderRow](r.db.Query(ctx, query, ids, nullable(viewerID)))
 	if err != nil {
@@ -313,7 +313,7 @@ func (r *NodeRepository) Collections(ctx context.Context, assetIDs []string, ran
 		), ranked AS (
 			SELECT m.*, row_number() OVER (PARTITION BY m.id ORDER BY m.score DESC, m.asset_id) AS i FROM member m
 		)
-		SELECT r.id::text AS id, jsonb_agg(jsonb_build_object('id', r.asset_id, 'mime_type', a.mime_type) ORDER BY r.i) AS previews
+		SELECT r.id::text AS id, jsonb_agg(jsonb_build_object('id', r.asset_id, 'url', ` + assetURL + `, 'mime_type', a.mime_type) ORDER BY r.i) AS previews
 		FROM ranked r JOIN core.assets a ON a.id = r.asset_id
 		WHERE r.i <= 4
 		GROUP BY r.id

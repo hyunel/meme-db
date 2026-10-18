@@ -31,7 +31,6 @@ func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids
 	if err != nil {
 		return nil, err
 	}
-	s.assets.signFolders(folders)
 	return orderByID(folders, ids, func(f *model.Folder) string { return f.ID }), nil
 }
 

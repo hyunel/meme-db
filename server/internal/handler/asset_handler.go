@@ -16,8 +16,7 @@ func NewAssetHandler(assetService *service.AssetService) *AssetHandler {
 }
 
 type GetAssetContentRequest struct {
-	ID    string `param:"id" validate:"required,uuid"`
-	Token string `query:"token" validate:"required"`
+	Hash string `param:"hash" validate:"required,len=64,hexadecimal"`
 }
 
 func (h *AssetHandler) GetAssetContent(c echo.Context) error {
@@ -26,20 +25,18 @@ func (h *AssetHandler) GetAssetContent(c echo.Context) error {
 		return err
 	}
 
-	asset, path, err := h.assetService.Content(c.Request().Context(), req.ID, req.Token)
+	asset, content, err := h.assetService.Content(c.Request().Context(), req.Hash)
 	if err != nil {
 		return err
 	}
+	defer content.Close()
 
-	// Assets are immutable and content-addressed, so the hash is a strong ETag.
-	etag := `"` + asset.FileHash + `"`
-	if c.Request().Header.Get("If-None-Match") == etag {
-		return c.NoContent(http.StatusNotModified)
-	}
-	c.Response().Header().Set("ETag", etag)
+	// Assets are immutable and content-addressed, so the hash is a strong ETag; ServeContent answers If-None-Match and Range.
+	c.Response().Header().Set("ETag", `"`+asset.FileHash+`"`)
 	c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	c.Response().Header().Set("Content-Type", asset.MimeType)
-	return c.File(path)
+	http.ServeContent(c.Response(), c.Request(), "", asset.CreatedAt, content)
+	return nil
 }
 
 func (h *AssetHandler) GetConfig(c echo.Context) error {

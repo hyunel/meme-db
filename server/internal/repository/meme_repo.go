@@ -98,6 +98,7 @@ func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string
 
 type memeRow struct {
 	ID            string          `db:"id"`
+	URL           string          `db:"url"`
 	MimeType      string          `db:"mime_type"`
 	FileSize      int64           `db:"file_size"`
 	CreatedAt     time.Time       `db:"created_at"`
@@ -120,6 +121,7 @@ type memeRow struct {
 func (row *memeRow) toModel() *model.Meme {
 	return &model.Meme{
 		ID:            row.ID,
+		URL:           row.URL,
 		MimeType:      row.MimeType,
 		FileSize:      row.FileSize,
 		Width:         row.Width,
@@ -151,7 +153,7 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			WHERE l.tag_id IN (SELECT tl.tag_id FROM library.asset_tags t JOIN library.labels tl ON tl.id = t.label_id WHERE t.asset_id = ANY($1::uuid[]))
 			GROUP BY l.tag_id
 		)
-		SELECT a.id, a.mime_type, a.file_size, a.created_at,
+		SELECT a.id, %[3]s AS url, a.mime_type, a.file_size, a.created_at,
 			COALESCE(m.width, 0) AS width, COALESCE(m.height, 0) AS height,
 			m.processing_status AS status, m.fail_reason, COALESCE(m.ocr_text, '') AS ocr_text,
 			COALESCE(m.vlm_json->>'title', '') AS title, COALESCE(m.vlm_json->>'summary', '') AS summary, m.analyzed_at,
@@ -175,7 +177,7 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 		FROM core.assets a
 		JOIN core.meme_info m ON m.asset_id = a.id
 		WHERE a.id = ANY($1::uuid[]) AND %[2]s
-	`, memeInPublic, memeVisible("$2", "$3"))
+	`, memeInPublic, memeVisible("$2", "$3"), assetURL)
 
 	rows, err := collectAll[memeRow](r.db.Query(ctx, query, ids, nullable(viewerID), admin, minUsage))
 	if err != nil {

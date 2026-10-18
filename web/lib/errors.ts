@@ -42,7 +42,6 @@ const messages: Record<string, string | ((p: Params, field?: string) => string)>
   target_folder_not_found: '目标文件夹不存在',
   items_not_found: '部分项目不存在或已被删除',
   file_not_found: '文件不存在',
-  invalid_asset_token: '无效的访问令牌',
   invalid_name: (p) => `名称需为 1–${p.max} 个字符`,
   invalid_path: '路径中的文件夹名称需为 1–255 个字符',
   name_taken: '同一位置已存在同名项目',

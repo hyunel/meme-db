@@ -1,6 +1,17 @@
 server:
   port: 8080
-  storage_path: "./assets"
+
+storage:
+  backend: local      # local, or s3 for an S3-compatible object store such as:
+  local:
+    path: "./assets"
+  # s3:
+  #   endpoint: "https://s3.oss-cn-hangzhou.aliyuncs.com"   # On AWS, https://s3.<region>.amazonaws.com
+  #   region: "cn-hangzhou"
+  #   bucket: "memedb"
+  #   access_key_id: "${S3_ACCESS_KEY_ID}"
+  #   secret_access_key: "${S3_SECRET_ACCESS_KEY}"
+  #   path_style: false   # Only for self-hosted stores without wildcard DNS
 
 auth:
   session_ttl: 720h   # A web sign-in lapses after this long unused

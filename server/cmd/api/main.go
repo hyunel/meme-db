@@ -20,6 +20,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/pkg/logger"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
+	"github.com/hyunel/MemeDB/internal/pkg/storage"
 	"github.com/hyunel/MemeDB/internal/pkg/validator"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/hyunel/MemeDB/internal/service"
@@ -65,12 +66,12 @@ func main() {
 		SessionTTL: cfg.Auth.SessionTTL,
 	}, repo)
 
+	files := storage.New(cfg.Storage)
+
 	assetService := service.NewAssetService(service.AssetServiceConfig{
-		StoragePath:  cfg.Server.StoragePath,
-		Secret:       cfg.Server.AssetSecret,
 		MaxSizeMB:    cfg.Upload.MaxSizeMB,
 		AllowedTypes: cfg.Upload.AllowedTypes,
-	}, repo, taskWorker)
+	}, repo, files, taskWorker)
 
 	limits := cfg.Search.RecallLimits
 	memeService := service.NewMemeService(service.MemeServiceConfig{
@@ -93,17 +94,16 @@ func main() {
 	}, repo, memeService, inferClient.WithPriority(inference.PriorityInteractive))
 
 	ingestService := service.NewIngestService(service.IngestServiceConfig{
-		StoragePath:     cfg.Server.StoragePath,
 		CaptionPrompt:   strings.ReplaceAll(cfg.Prompt.Caption, "{language}", cfg.Prompt.Language),
 		RetrievalPrompt: cfg.Prompt.Retrieval,
-	}, repo, inferClient.WithPriority(inference.PriorityBackground), tagService)
+	}, repo, files, inferClient.WithPriority(inference.PriorityBackground), tagService)
 
 	libraryService := service.NewLibraryService(repo, memeService, assetService, tagService)
 	favService := service.NewFavoriteService(repo, memeService, libraryService)
 	shareService := service.NewShareService(repo, memeService, libraryService)
 	userService := service.NewUserService(repo, memeService)
 	taskService := service.NewTaskService(repo, taskWorker)
-	statsService := service.NewStatsService(repo, inferClient, cfg.Server.StoragePath)
+	statsService := service.NewStatsService(repo, inferClient, files)
 	logService := service.NewLogService(repo, cfg.Log.Retention)
 	embeddingService := service.NewEmbeddingService(cfg.Prompt.Tag, repo, memeService, inferClient.WithPriority(inference.PriorityBackground))
 
@@ -198,9 +198,9 @@ type handlers struct {
 }
 
 func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
-	// Files open by their signed links, so these skip finding out who asks, which every image would pay for.
-	e.GET("/api/assets/:id", h.asset.GetAssetContent)
-	e.HEAD("/api/assets/:id", h.asset.GetAssetContent) // Its ETag, the SHA-256 of the file, tells clients what they already uploaded
+	// Files open by their hash links, so these skip finding out who asks, which every image would pay for.
+	e.GET("/api/assets/:hash", h.asset.GetAssetContent)
+	e.HEAD("/api/assets/:hash", h.asset.GetAssetContent) // Tells clients whether a file, by its SHA-256, is already stored
 
 	api := e.Group("/api", identity)
 

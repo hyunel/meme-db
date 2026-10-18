@@ -3,28 +3,27 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
-	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
+	"github.com/hyunel/MemeDB/internal/pkg/storage"
 	"github.com/hyunel/MemeDB/internal/repository"
 )
 
 type AssetServiceConfig struct {
-	StoragePath  string
-	Secret       string // Signs file links
 	MaxSizeMB    float64
 	AllowedTypes []string
 }
@@ -32,11 +31,12 @@ type AssetServiceConfig struct {
 type AssetService struct {
 	cfg      AssetServiceConfig
 	repo     *repository.Provider
+	files    storage.Storage
 	notifier Notifier
 }
 
-func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider, notifier Notifier) *AssetService {
-	return &AssetService{cfg: cfg, repo: repo, notifier: notifier}
+func NewAssetService(cfg AssetServiceConfig, repo *repository.Provider, files storage.Storage, notifier Notifier) *AssetService {
+	return &AssetService{cfg: cfg, repo: repo, files: files, notifier: notifier}
 }
 
 type UploadConfig struct {
@@ -121,22 +121,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 	}
 	defer src.Close()
 
-	if err := os.MkdirAll(s.cfg.StoragePath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create storage directory: %w", err)
-	}
-	tmp, err := os.CreateTemp(s.cfg.StoragePath, "upload-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmp.Name()) // No-op once renamed into place
-
 	hasher := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmp, hasher), src)
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
+	size, err := io.Copy(hasher, src)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
@@ -144,15 +132,14 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 		return existing, err
 	}
 
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to rewind file: %w", err)
+	}
 	// Files are content-addressed, so replacing a concurrent upload of the same content is harmless.
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	relPath := filepath.Join(hash[:2], hash[2:4], hash[4:]+ext)
-	absPath := filepath.Join(s.cfg.StoragePath, relPath)
-	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), absPath); err != nil {
-		return nil, fmt.Errorf("failed to store file: %w", err)
+	key := path.Join(hash[:2], hash[2:4], hash[4:]+ext)
+	if err := s.files.Put(ctx, key, src, size, mimeType); err != nil {
+		return nil, err
 	}
 
 	var asset *model.Asset
@@ -163,7 +150,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 			FileSize:    size,
 			MimeType:    mimeType,
 			Extension:   ext,
-			StoragePath: relPath,
+			StoragePath: key,
 			UploadedBy:  &uploaderID,
 		})
 		if err != nil || !created {
@@ -188,48 +175,26 @@ func (s *AssetService) CreateAsset(ctx context.Context, uploaderID string, fileH
 	return asset, nil
 }
 
-func (s *AssetService) RemoveFiles(paths []string) {
-	for _, p := range paths {
-		if err := os.Remove(filepath.Join(s.cfg.StoragePath, p)); err != nil && !os.IsNotExist(err) {
-			slog.Error("Failed to remove asset file", "path", p, "error", err)
+func (s *AssetService) RemoveFiles(ctx context.Context, keys []string) {
+	ctx = context.WithoutCancel(ctx) // Their assets are already deleted
+	for _, k := range keys {
+		if err := s.files.Delete(ctx, k); err != nil {
+			slog.Error("Failed to remove asset file", "key", k, "error", err)
 		}
 	}
 }
 
-func (s *AssetService) URL(assetID string) string {
-	return fmt.Sprintf("/api/assets/%s?token=%s", assetID, s.sign(assetID))
-}
-
-func (s *AssetService) sign(assetID string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.Secret))
-	h.Write([]byte(assetID))
-	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:8])
-}
-
-func (s *AssetService) Content(ctx context.Context, assetID, token string) (*model.Asset, string, error) {
-	if !hmac.Equal([]byte(token), []byte(s.sign(assetID))) {
-		return nil, "", apperror.Unauthorized("invalid_asset_token", "invalid file access token")
-	}
-	asset, err := s.repo.Asset.Get(ctx, assetID)
+func (s *AssetService) Content(ctx context.Context, hash string) (*model.Asset, io.ReadSeekCloser, error) {
+	asset, err := s.repo.Asset.GetByHash(ctx, hash)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if asset == nil {
-		return nil, "", apperror.NotFound("file_not_found", "file not found")
+		return nil, nil, apperror.NotFound("file_not_found", "file not found")
 	}
-	return asset, filepath.Join(s.cfg.StoragePath, asset.StoragePath), nil
-}
-
-func (s *AssetService) signMemes(memes []*model.Meme) {
-	for _, m := range memes {
-		m.URL = s.URL(m.ID)
+	content, err := s.files.Open(ctx, asset.StoragePath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, apperror.NotFound("file_not_found", "the file is missing from storage")
 	}
-}
-
-func (s *AssetService) signFolders(folders []*model.Folder) {
-	for _, f := range folders {
-		for i := range f.Previews {
-			f.Previews[i].URL = s.URL(f.Previews[i].ID)
-		}
-	}
+	return asset, content, err
 }

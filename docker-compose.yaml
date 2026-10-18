@@ -1,4 +1,4 @@
-# Secrets come from ./.env: ASSET_SECRET, POSTGRES_PASSWORD and the VLM API key used in
+# Secrets come from ./.env: POSTGRES_PASSWORD and the VLM API key used in
 # inference/models.yaml (e.g. DEEPSEEK_API_KEY).
 services:
   web:
@@ -12,7 +12,6 @@ services:
     build: ./server
     ports: ["8080:8080"]
     environment:
-      ASSET_SECRET: ${ASSET_SECRET:?set ASSET_SECRET in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - ./server/config.docker.yaml:/etc/memedb/config.yaml:ro
