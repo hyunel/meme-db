@@ -17,7 +17,7 @@ services:
       db:
         condition: service_healthy
       inference:
-        condition: service_started
+        condition: service_healthy
 
   db:
     image: pgvector/pgvector:pg18-trixie
@@ -43,6 +43,12 @@ services:
       TORCH: ${TORCH:-cuda}
     volumes:
       - models:/cache
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30m # First boot may download dependencies and model weights
+      retries: 3
     deploy:
       resources:
         reservations:

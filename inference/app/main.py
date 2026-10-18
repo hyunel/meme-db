@@ -39,10 +39,10 @@ async def serve() -> None:
     )
 
     address = f'{args.host}:{args.port}'
+    await service.start()
     server.add_insecure_port(address)
     logger.info(f"Inference service starting on {address}...")
 
-    await service.start()
     await server.start()
 
     try:
