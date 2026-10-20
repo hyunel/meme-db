@@ -1,0 +1,12 @@
+# Runs inference on an NVIDIA GPU; .env adds this file.
+services:
+  inference:
+    environment:
+      TORCH: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

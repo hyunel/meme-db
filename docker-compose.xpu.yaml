@@ -1,0 +1,6 @@
+# Runs inference on an Intel GPU; .env adds this file.
+services:
+  inference:
+    environment:
+      TORCH: xpu
+    devices: [/dev/dri]
