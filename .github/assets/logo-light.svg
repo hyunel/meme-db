@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<title id="title">MemeDB — Pixel Smile Vision Logo</title>
+<desc id="desc">Black viewfinder brackets around a yellow, black-outline 10 by 10 pixel-art smiley with a staircase U-shaped grin.</desc>
+<g fill="none" stroke="#13161C" stroke-width="17" stroke-linejoin="round" stroke-linecap="round">
+<path d="M 68 27 H 43 Q 27 27 27 43 V 68"/>
+<path d="M 188 27 H 213 Q 229 27 229 43 V 68"/>
+<path d="M 27 188 V 213 Q 27 229 43 229 H 68"/>
+<path d="M 229 188 V 213 Q 229 229 213 229 H 188"/>
+</g>
+<g shape-rendering="crispEdges">
+<rect x="100" y="63" width="56" height="14" fill="#13161C"/>
+<rect x="86" y="77" width="84" height="14" fill="#13161C"/>
+<rect x="72" y="91" width="112" height="14" fill="#13161C"/>
+<rect x="58" y="105" width="140" height="14" fill="#13161C"/>
+<rect x="58" y="119" width="140" height="14" fill="#13161C"/>
+<rect x="58" y="133" width="140" height="14" fill="#13161C"/>
+<rect x="58" y="147" width="140" height="14" fill="#13161C"/>
+<rect x="72" y="161" width="112" height="14" fill="#13161C"/>
+<rect x="86" y="175" width="84" height="14" fill="#13161C"/>
+<rect x="100" y="189" width="56" height="14" fill="#13161C"/>
+<rect x="100" y="77" width="56" height="14" fill="#F6D732"/>
+<rect x="86" y="91" width="84" height="14" fill="#F6D732"/>
+<rect x="72" y="105" width="28" height="14" fill="#F6D732"/>
+<rect x="114" y="105" width="28" height="14" fill="#F6D732"/>
+<rect x="156" y="105" width="28" height="14" fill="#F6D732"/>
+<rect x="72" y="119" width="112" height="14" fill="#F6D732"/>
+<rect x="72" y="133" width="14" height="14" fill="#F6D732"/>
+<rect x="100" y="133" width="56" height="14" fill="#F6D732"/>
+<rect x="170" y="133" width="14" height="14" fill="#F6D732"/>
+<rect x="72" y="147" width="28" height="14" fill="#F6D732"/>
+<rect x="114" y="147" width="28" height="14" fill="#F6D732"/>
+<rect x="156" y="147" width="28" height="14" fill="#F6D732"/>
+<rect x="86" y="161" width="28" height="14" fill="#F6D732"/>
+<rect x="142" y="161" width="28" height="14" fill="#F6D732"/>
+<rect x="100" y="175" width="56" height="14" fill="#F6D732"/>
+</g>
+</svg>
