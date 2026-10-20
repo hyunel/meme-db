@@ -672,7 +672,8 @@ export const zh = {
     heroMark: '刚刚好',
     heroAfter: '的表情包',
     intro1: '输入一句话、一个情绪，或直接丢一张图进来。',
-    intro2: 'MemeDB 会识别图中的文字和角色，帮你秒找同款。',
+    // A no-break space keeps MemeDB with the words after it when the intro wraps on a phone
+    intro2: 'MemeDB\u00a0会识别图中的文字和角色，帮你秒找同款。',
     recent: '最近搜索',
     clearRecent: '清除最近搜索',
     hot: '热门',

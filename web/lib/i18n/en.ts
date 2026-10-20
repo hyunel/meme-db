@@ -672,7 +672,7 @@ export const en: Messages = {
     heroMark: 'just right',
     heroAfter: '',
     intro1: 'Type a phrase or a mood, or just drop in an image.',
-    intro2: 'MemeDB reads the text and characters in memes to find the one you mean.',
+    intro2: 'MemeDB reads the text and characters in every meme.',
     recent: 'Recent',
     clearRecent: 'Clear recent searches',
     hot: 'Trending',

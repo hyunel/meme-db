@@ -48,9 +48,10 @@ export function HomeView() {
             </span>
             {t.home.heroAfter}
           </h1>
-          <p className="max-w-xl text-pretty break-keep text-muted-foreground md:text-lg">
-            <span className="inline-block">{t.home.intro1}</span>
-            <span className="inline-block">{t.home.intro2}</span>
+          {/* A sentence a line where they fit; on phones they run on as one balanced paragraph */}
+          <p className="max-w-xl text-balance break-keep text-muted-foreground md:text-lg">
+            <span className="md:inline-block">{t.home.intro1}</span>{' '}
+            <span className="md:inline-block">{t.home.intro2}</span>
           </p>
           <SearchBar size="lg" className="max-w-2xl" />
           <div className="flex flex-col items-center gap-3">
