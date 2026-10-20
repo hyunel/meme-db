@@ -5,6 +5,7 @@ import { kindOf, memeAlt } from '@/lib/media'
 import { LottiePlayer } from './lottie-player'
 import type { MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 // As large as fits in the box, up to its own size, with the checkerboard behind the meme alone; size-full fills a box of its ratio.
 // Hidden until reveal marks it loaded (or failed, to show the broken image), then faded in.
@@ -86,7 +87,7 @@ export function MemeMedia({
   controls?: boolean
 }) {
   const kind = kindOf(meme.mime_type)
-  const alt = memeAlt(meme)
+  const alt = memeAlt(meme, useMessages())
   if (kind === 'video') {
     return <AutoVideo src={meme.url} className={className} controls={controls} label={alt} />
   }

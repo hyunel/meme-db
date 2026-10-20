@@ -12,28 +12,17 @@ import { kindOf } from '@/lib/media'
 import { defaultOptions, downloadConverted, downloadOriginal, type ConvertOptions, type DownloadFormat } from '@/lib/meme-transfer'
 import type { Meme } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import type { Messages } from '@/lib/i18n'
+import { useMessages } from '@/lib/i18n/client'
 
-const formats: { id: DownloadFormat; label: string; hint: string }[] = [
-  { id: 'original', label: '原格式', hint: '保留原始画质与动画' },
-  { id: 'png', label: 'PNG', hint: '静态图，支持透明' },
-  { id: 'jpg', label: 'JPG', hint: '静态图，白色背景' },
-  { id: 'gif', label: 'GIF', hint: '保留动画，兼容性最好' },
-]
+const formats: DownloadFormat[] = ['original', 'png', 'jpg', 'gif']
 
 type Setting = keyof ConvertOptions
 
-const choices: Record<Exclude<Setting, 'quality'>, { label: string; values: number[]; text: (v: number) => string }> = {
-  fps: { label: '帧率', values: [10, 15, 20, 25, 30], text: String },
-  speed: { label: '倍速', values: [0.5, 1, 2, 3, 5], text: (v) => `${v}×` },
-  scale: { label: '尺寸', values: [1, 0.75, 0.5, 0.25], text: (v) => (v === 1 ? '原始' : `${v * 100}%`) },
-}
-
-// How each setting reads, in the folded row, once changed
-const summaries: Record<Setting, (v: number) => string> = {
-  quality: (v) => `质量 ${v}`,
-  fps: (v) => `${v} 帧/秒`,
-  speed: (v) => `${v}×`,
-  scale: (v) => `尺寸 ${v * 100}%`,
+const choices: Record<Exclude<Setting, 'quality'>, { values: number[]; text: (v: number, t: Messages) => string }> = {
+  fps: { values: [10, 15, 20, 25, 30], text: String },
+  speed: { values: [0.5, 1, 2, 3, 5], text: (v) => `${v}×` },
+  scale: { values: [1, 0.75, 0.5, 0.25], text: (v, t) => (v === 1 ? t.download.fullSize : `${v * 100}%`) },
 }
 
 // Frame rate and speed only for an animation turned GIF
@@ -46,6 +35,7 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
   const [expanded, setExpanded] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   const busy = progress !== null
+  const t = useMessages()
   const abort = useRef<AbortController>(null)
   useEffect(() => () => abort.current?.abort(), []) // Closing stops a conversion under way
 
@@ -72,10 +62,10 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
       if (format === 'original') await downloadOriginal(meme)
       // Settings the format doesn't show apply as their defaults
       else await downloadConverted(meme, format, { ...defaultOptions, ...Object.fromEntries(shown.map((s) => [s, options[s]])) }, setProgress, ctrl.signal)
-      toast.success(format === 'original' ? '已开始下载' : `已转换为 ${format.toUpperCase()} 并开始下载`)
+      toast.success(format === 'original' ? t.download.started : t.download.converted(format.toUpperCase()))
       onOpenChange(false)
     } catch (err) {
-      if (!ctrl.signal.aborted) toast.error('下载失败', { description: (err as Error).message })
+      if (!ctrl.signal.aborted) toast.error(t.download.failed, { description: (err as Error).message })
     } finally {
       setProgress(null)
     }
@@ -85,25 +75,25 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>下载表情包</DialogTitle>
-          <DialogDescription>选择下载格式，转换在你的设备上完成。</DialogDescription>
+          <DialogTitle>{t.download.title}</DialogTitle>
+          <DialogDescription>{t.download.description}</DialogDescription>
         </DialogHeader>
-        <div role="radiogroup" aria-label="下载格式" className="grid grid-cols-2 gap-2">
+        <div role="radiogroup" aria-label={t.download.format} className="grid grid-cols-2 gap-2">
           {formats.map((f) => (
             <button
-              key={f.id}
+              key={f}
               type="button"
               role="radio"
-              aria-checked={format === f.id}
+              aria-checked={format === f}
               disabled={busy}
-              onClick={() => setFormat(f.id)}
+              onClick={() => setFormat(f)}
               className={cn(
                 'flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted disabled:opacity-60',
-                format === f.id && 'border-foreground bg-brand/30 hover:bg-brand/40',
+                format === f && 'border-foreground bg-brand/30 hover:bg-brand/40',
               )}
             >
-              <span className="text-sm font-medium">{f.label}</span>
-              <span className="text-xs text-muted-foreground">{f.hint}</span>
+              <span className="text-sm font-medium">{t.download.formats[f].label}</span>
+              <span className="text-xs text-muted-foreground">{t.download.formats[f].hint}</span>
             </button>
           ))}
         </div>
@@ -114,17 +104,17 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
               <button
                 type="button"
                 aria-expanded={expanded}
-                aria-label="高级选项"
+                aria-label={t.download.advanced}
                 onClick={() => setExpanded(!expanded)}
                 className="absolute inset-0 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               />
-              <span className="font-medium">高级选项</span>
+              <span className="font-medium">{t.download.advanced}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {!expanded && changed.length > 0 && `· ${changed.map((s) => summaries[s](options[s])).join(' · ')}`}
+                {!expanded && changed.length > 0 && `· ${changed.map((s) => t.download.summaries[s](options[s])).join(' · ')}`}
               </span>
               {expanded && changed.length > 0 && (
                 <Button variant="ghost" size="sm" className="relative text-muted-foreground" disabled={busy} onClick={() => setOptions(defaultOptions)}>
-                  恢复默认
+                  {t.download.reset}
                 </Button>
               )}
               <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', expanded && 'rotate-180')} aria-hidden />
@@ -133,16 +123,16 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
               <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-sm">
                 {shown.map((s) => (
                   <Fragment key={s}>
-                    <span className="text-muted-foreground">{s === 'quality' ? '质量' : choices[s].label}</span>
+                    <span className="text-muted-foreground">{t.download.settings[s]}</span>
                     <div className="flex min-w-0 items-center gap-3">
                       {s === 'quality' ? (
                         <>
-                          <Slider aria-label="质量" min={1} max={100} value={options.quality} disabled={busy} onValueChange={(v) => set({ quality: v })} />
+                          <Slider aria-label={t.download.settings.quality} min={1} max={100} value={options.quality} disabled={busy} onValueChange={(v) => set({ quality: v })} />
                           <span className="w-7 shrink-0 text-right tabular-nums">{options.quality}</span>
                         </>
                       ) : (
                         <>
-                          <div role="radiogroup" aria-label={choices[s].label} className="flex rounded-lg border bg-card p-0.5">
+                          <div role="radiogroup" aria-label={t.download.settings[s]} className="flex rounded-lg border bg-card p-0.5">
                             {choices[s].values.map((v) => (
                               <button
                                 key={v}
@@ -156,7 +146,7 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
                                   options[s] === v ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
                                 )}
                               >
-                                {choices[s].text(v)}
+                                {choices[s].text(v, t)}
                               </button>
                             ))}
                           </div>
@@ -177,16 +167,16 @@ export function DownloadDialog({ meme, open, onOpenChange }: { meme: Meme; open:
         {busy && format !== 'original' && (
           <div className="flex flex-col gap-1.5" aria-live="polite">
             <Progress value={progress} />
-            <span className="text-xs text-muted-foreground tabular-nums">正在转换… {progress}%</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{t.download.converting(progress)}</span>
           </div>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button onClick={start} disabled={busy}>
             {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Download data-icon="inline-start" />}
-            下载
+            {t.meme.download}
           </Button>
         </DialogFooter>
       </DialogContent>

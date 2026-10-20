@@ -22,17 +22,19 @@ import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { EntryDetail, Feed, Folder, Meme, MemeTag, MemeThumb } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 type Place = { key: string; href: string; name: string; meta: string; icon: LucideIcon; cover?: MemeThumb; current?: boolean }
 
 const PLACES_SHOWN = 3
-const LIBRARY_ROOT: Place = { key: 'library', href: '/library', name: '我的库', meta: '根目录', icon: Library }
 
 /** Where the meme lives: the place it was opened from (by the private link share, if any), then the viewer's folders and the public collections holding it. */
 function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDetail; mine: boolean; share?: string }) {
   const { user } = useSession()
   const { data: folders } = useSWR<Folder[]>(`/memes/${meme.id}/folders`)
   const [expanded, setExpanded] = useState(false)
+  const t = useMessages()
+  const libraryRoot: Place = { key: 'library', href: '/library', name: t.titles.library, meta: t.meme.root, icon: Library }
 
   const folderPlace = (f: Folder): Place => {
     const own = f.owner.id === user?.id
@@ -40,7 +42,7 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
       key: f.id,
       href: own ? `/library?folder=${f.id}` : `/f/${f.id}`,
       name: f.name,
-      meta: `${own ? `我的库 · ${f.visibility === 'private' ? '私有' : '公开'}` : `@${f.owner.username}`} · ${f.item_count} 项`,
+      meta: `${own ? `${t.titles.library} · ${f.visibility === 'private' ? t.status.private : t.status.public}` : `@${f.owner.username}`} · ${t.meme.items(f.item_count)}`,
       icon: FolderOpen,
       cover: f.previews[0],
     }
@@ -51,14 +53,14 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
   const openedPlace = ({ owner }: EntryDetail): Place => {
     const found = folder && folders?.find((f) => f.id === folder.id)
     if (found) return folderPlace(found)
-    if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}${qs({ share })}`, name: folder.name, meta: mine ? '我的库' : `@${owner.username}`, icon: FolderOpen }
-    return mine ? LIBRARY_ROOT : { key: 'owner', href: `/u/${owner.username}`, name: `@${owner.username}`, meta: '公开的表情包', icon: UserRound }
+    if (folder) return { key: folder.id, href: mine ? `/library?folder=${folder.id}` : `/f/${folder.id}${qs({ share })}`, name: folder.name, meta: mine ? t.titles.library : `@${owner.username}`, icon: FolderOpen }
+    return mine ? libraryRoot : { key: 'owner', href: `/u/${owner.username}`, name: `@${owner.username}`, meta: t.meme.publicMemes, icon: UserRound }
   }
 
   // The first of each place is kept, so the one opened from stays marked.
   const places = [
     ...(entry ? [{ ...openedPlace(entry), current: true }] : []),
-    ...(meme.entries.some((e) => !e.folder_id) ? [LIBRARY_ROOT] : []),
+    ...(meme.entries.some((e) => !e.folder_id) ? [libraryRoot] : []),
     ...(folders ?? []).map(folderPlace),
   ].filter((p, i, all) => all.findIndex((q) => q.key === p.key) === i)
   if (!places.length && folders) return null
@@ -67,7 +69,7 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
   return (
     <section className="flex flex-col gap-2" aria-labelledby="places-heading">
       <h2 id="places-heading" className="text-sm font-medium">
-        收录于
+        {t.meme.places}
       </h2>
       <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
         {shown.map(({ key, href, name, meta, icon: Icon, cover, current }) => (
@@ -89,13 +91,13 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
                 <span className="truncate text-sm font-medium">{name}</span>
                 <span className="truncate text-xs text-muted-foreground">{meta}</span>
               </span>
-              {current && <span className="shrink-0 rounded-full bg-brand/40 px-2 py-0.5 text-xs">当前</span>}
+              {current && <span className="shrink-0 rounded-full bg-brand/40 px-2 py-0.5 text-xs">{t.meme.current}</span>}
               <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
             </Link>
           </li>
         ))}
         {!folders && (
-          <li className="flex items-center gap-3 p-2.5" aria-busy="true" aria-label="加载中">
+          <li className="flex items-center gap-3 p-2.5" aria-busy="true" aria-label={t.common.loading}>
             <Skeleton className="size-10 rounded-lg" />
             <span className="flex flex-1 flex-col gap-1.5">
               <Skeleton className="h-4 w-24" />
@@ -107,7 +109,7 @@ function MemePlaces({ meme, entry, mine, share }: { meme: Meme; entry?: EntryDet
       {places.length > PLACES_SHOWN && (
         <Button variant="ghost" size="sm" className="-ml-2 self-start text-muted-foreground" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
           <ChevronDown className={cn('transition-transform', expanded && 'rotate-180')} data-icon="inline-start" />
-          {expanded ? '收起' : `展开其余 ${places.length - PLACES_SHOWN} 个`}
+          {expanded ? t.meme.collapse : t.meme.expand(places.length - PLACES_SHOWN)}
         </Button>
       )}
     </section>
@@ -135,25 +137,26 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
     api(`/memes/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
   }, [id, share])
   const [tagPending, setTagPending] = useState(false)
+  const t = useMessages()
 
   // Opened only by a private link: the viewer may look and save it, but not favorite or tag it.
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0
   const ratio = meme.width && meme.height ? meme.width / meme.height : 1
-  const systemTags = meme.tags.filter((t) => !t.mine)
-  const myTags = meme.tags.filter((t) => t.mine)
+  const systemTags = meme.tags.filter((tag) => !tag.mine)
+  const myTags = meme.tags.filter((tag) => tag.mine)
 
   const addTag = async (e: React.FormEvent) => {
     e.preventDefault()
     const name = tagInput.trim().replace(/^#/, '')
     if (!name) return
     if (name.length > 20) {
-      toast.error('标签最多 20 个字符')
+      toast.error(t.meme.tagTooLong)
       return
     }
     setTagPending(true)
     try {
       const tag = await api<MemeTag>(`/memes/${meme.id}/tags`, { method: 'POST', json: { name } })
-      await mutate({ ...meme, tags: [...meme.tags.filter((t) => t.id !== tag.id || !t.mine), tag] })
+      await mutate({ ...meme, tags: [...meme.tags.filter((x) => x.id !== tag.id || !x.mine), tag] })
       setTagInput('')
     } catch (err) {
       toast.error((err as Error).message)
@@ -165,7 +168,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
   const removeTag = async (tag: MemeTag) => {
     try {
       await api(`/memes/${meme.id}/tags/${tag.id}`, { method: 'DELETE' })
-      await mutate({ ...meme, tags: meme.tags.filter((t) => !(t.mine && t.id === tag.id)) })
+      await mutate({ ...meme, tags: meme.tags.filter((x) => !(x.mine && x.id === tag.id)) })
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -174,7 +177,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
   const retry = async () => {
     try {
       await api(`/memes/${meme.id}/retry`, { method: 'POST' })
-      toast.success('已重新加入处理队列')
+      toast.success(t.meme.requeued)
       await mutate()
     } catch (err) {
       toast.error((err as Error).message)
@@ -183,10 +186,10 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
 
   const kind = kindOf(meme.mime_type)
   const info = [
-    ['格式', kind === 'lottie' ? 'Lottie' : (meme.mime_type.split('/')[1]?.toUpperCase() ?? '—')],
-    ['尺寸', meme.width ? `${meme.width} × ${meme.height}` : '—'],
-    ['大小', formatBytes(meme.file_size)],
-    ['上传时间', formatDateTime(meme.created_at)],
+    [t.meme.format, kind === 'lottie' ? 'Lottie' : (meme.mime_type.split('/')[1]?.toUpperCase() ?? '—')],
+    [t.meme.dimensions, meme.width ? `${meme.width} × ${meme.height}` : '—'],
+    [t.meme.size, formatBytes(meme.file_size)],
+    [t.meme.uploaded, formatDateTime(meme.created_at)],
   ]
 
   return (
@@ -194,7 +197,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
       <div className="flex flex-col gap-4">
         <Button variant="ghost" className="-ml-2 self-start" onClick={() => (window.history.length > 1 ? router.back() : router.push('/'))}>
           <ArrowLeft data-icon="inline-start" />
-          返回
+          {t.meme.back}
         </Button>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:gap-10">
@@ -208,13 +211,13 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <h1 className="text-pretty text-2xl font-semibold tracking-tight wrap-anywhere">{entry?.name ?? memeTitle(meme)}</h1>
+                <h1 className="text-pretty text-2xl font-semibold tracking-tight wrap-anywhere">{entry?.name ?? memeTitle(meme, t)}</h1>
                 {entry && meme.title && <p className="text-sm text-muted-foreground">{meme.title}</p>}
               </div>
               {viaLink && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Link2 className="size-4 shrink-0" aria-hidden />
-                  通过私密链接查看
+                  {t.meme.viaLink}
                 </p>
               )}
               {meme.summary && <p className="text-sm leading-relaxed text-pretty">{meme.summary}</p>}
@@ -223,11 +226,11 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
                   <ProcessBadge status={meme.status} />
                   {meme.status === 'failed' && (
                     <>
-                      <span className="text-sm break-all text-muted-foreground">{meme.fail_reason ?? '识别失败'}</span>
+                      <span className="text-sm break-all text-muted-foreground">{meme.fail_reason ?? t.meme.failed}</span>
                       {(meme.entries.length > 0 || user?.role === 'admin') && (
                         <Button size="sm" variant="outline" onClick={retry}>
                           <RotateCw data-icon="inline-start" />
-                          重试
+                          {t.common.retry}
                         </Button>
                       )}
                     </>
@@ -242,7 +245,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
                 {!viaLink && <FavoriteButton kind="meme" id={meme.id} active={meme.is_favorite} count={meme.favorite_count} showCount className="h-11 md:h-9" />}
                 <Button variant="outline" className="h-11 md:h-9" onClick={() => setDownloadOpen(true)}>
                   <Download data-icon="inline-start" />
-                  下载
+                  {t.meme.download}
                 </Button>
                 <ShareButton meme={meme} share={share} className="h-11 md:h-9" />
               </div>
@@ -250,34 +253,34 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
 
             <section className="flex flex-col gap-2" aria-labelledby="tags-heading">
               <h2 id="tags-heading" className="text-sm font-medium">
-                标签
+                {t.meme.tags}
               </h2>
               <ul className="flex flex-wrap gap-1.5">
-                {systemTags.map((t) => (
-                  <li key={t.id}>
-                    <Link href={`/tags/${encodeURIComponent(t.name)}`} className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-sm hover:bg-brand hover:text-brand-foreground">
-                      #{t.name}
+                {systemTags.map((tag) => (
+                  <li key={tag.id}>
+                    <Link href={`/tags/${encodeURIComponent(tag.name)}`} className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-sm hover:bg-brand hover:text-brand-foreground">
+                      #{tag.name}
                     </Link>
                   </li>
                 ))}
-                {myTags.map((t) => (
-                  <li key={`u-${t.id}`} className="inline-flex h-8 items-center rounded-full border border-dashed bg-card pl-3 text-sm">
-                    <Link href={`/tags/${encodeURIComponent(t.name)}`} className="hover:underline">
-                      #{t.name}
+                {myTags.map((tag) => (
+                  <li key={`u-${tag.id}`} className="inline-flex h-8 items-center rounded-full border border-dashed bg-card pl-3 text-sm">
+                    <Link href={`/tags/${encodeURIComponent(tag.name)}`} className="hover:underline">
+                      #{tag.name}
                     </Link>
-                    <button type="button" aria-label={`移除标签 ${t.name}`} onClick={() => removeTag(t)} className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
+                    <button type="button" aria-label={t.meme.removeTag(tag.name)} onClick={() => removeTag(tag)} className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
                       <X className="size-3.5" />
                     </button>
                   </li>
                 ))}
-                {meme.tags.length === 0 && <li className="text-sm text-muted-foreground">暂无标签</li>}
+                {meme.tags.length === 0 && <li className="text-sm text-muted-foreground">{t.meme.noTags}</li>}
               </ul>
               {user && !viaLink && (
                 <form onSubmit={addTag} className="flex gap-2">
-                  <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="添加我的标签" aria-label="添加我的标签" maxLength={20} className="h-10 text-base md:h-9 md:text-sm" />
+                  <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder={t.meme.addTag} aria-label={t.meme.addTag} maxLength={20} className="h-10 text-base md:h-9 md:text-sm" />
                   <Button type="submit" variant="secondary" disabled={!tagInput.trim() || tagPending} className="h-10 md:h-9">
                     {tagPending ? <Loader2 className="animate-spin" /> : <Plus data-icon="inline-start" />}
-                    添加
+                    {t.meme.add}
                   </Button>
                 </form>
               )}
@@ -288,7 +291,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
             {meme.ocr_text && (
               <section className="flex flex-col gap-2" aria-labelledby="ocr-heading">
                 <h2 id="ocr-heading" className="text-sm font-medium">
-                  识别文字
+                  {t.meme.ocr}
                 </h2>
                 <p className="rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-line">{meme.ocr_text}</p>
               </section>
@@ -296,7 +299,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
 
             <section aria-labelledby="info-heading" className="flex flex-col gap-2">
               <h2 id="info-heading" className="text-sm font-medium">
-                文件信息
+                {t.meme.info}
               </h2>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
                 {info.map(([k, v]) => (
@@ -314,7 +317,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
       {similar.items && similar.items.length > 0 && (
         <section className="flex flex-col gap-4" aria-labelledby="related-heading">
           <h2 id="related-heading" className="text-lg font-semibold">
-            相似表情包
+            {t.meme.similar}
           </h2>
           <MemeFeed memes={similar.items} feed={similar} allowAdd />
         </section>

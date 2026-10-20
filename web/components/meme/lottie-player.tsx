@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DotLottieWorker } from '@lottiefiles/dotlottie-web'
 import { Sparkles } from 'lucide-react'
 import { fetchAnimation } from '@/lib/media'
+import { useMessages } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
 
 // Served with the app rather than fetched from the player's CDN.
@@ -14,6 +15,7 @@ let nextWorker = 0
 export function LottiePlayer({ url, mime, label, className }: { url: string; mime: string; label: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
+  const t = useMessages()
 
   useEffect(() => {
     const el = ref.current
@@ -69,7 +71,7 @@ export function LottiePlayer({ url, mime, label, className }: { url: string; mim
     return (
       <div className={cn('flex size-full flex-col items-center justify-center gap-2 text-muted-foreground', className)} role="img" aria-label={label}>
         <Sparkles className="size-8" aria-hidden />
-        <span className="text-xs">Lottie 动画</span>
+        <span className="text-xs">{t.media.lottie}</span>
       </div>
     )
   }

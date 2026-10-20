@@ -5,6 +5,7 @@ import { qs } from '@/lib/utils'
 import { kindOf } from '@/lib/media'
 import { param, serverApi } from '@/lib/server-api'
 import { pageMetadata } from '@/lib/site'
+import { getMessages } from '@/lib/i18n/server'
 import type { FolderPage } from '@/lib/types'
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ share?: string | string[] }> }
@@ -17,10 +18,11 @@ async function load({ params, searchParams }: Props) {
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
   const { page: { folder }, share } = await load(props)
+  const t = await getMessages()
   const cover = folder.previews.find((m) => ['image', 'gif'].includes(kindOf(m.mime_type)))
   return pageMetadata({
     title: folder.name,
-    description: `@${folder.owner.username} 的表情包合集，共 ${folder.item_count} 个表情包`,
+    description: t.browse.folderMeta(folder.owner.username, folder.item_count),
     path: `/f/${folder.id}`,
     image: cover && { url: cover.url },
     index: folder.visibility === 'public' && !share,

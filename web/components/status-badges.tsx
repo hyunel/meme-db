@@ -1,15 +1,11 @@
+'use client'
+
 import { Globe, Loader2, Lock, Clock, CircleAlert, CheckCircle2, CornerLeftUp } from 'lucide-react'
 import type { ProcessStatus, Visibility } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 const pill = 'inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-medium whitespace-nowrap [&_svg]:size-3'
-
-export const processLabel: Record<ProcessStatus, string> = {
-  pending: '排队中',
-  processing: '处理中',
-  success: '已完成',
-  failed: '处理失败',
-}
 
 const processStyle = {
   pending: { icon: Clock, cls: 'bg-warning/15 text-warning-strong' },
@@ -20,33 +16,35 @@ const processStyle = {
 
 export function ProcessBadge({ status, className }: { status: ProcessStatus; className?: string }) {
   const { icon: Icon, cls } = processStyle[status]
+  const t = useMessages()
   return (
     <span className={cn(pill, cls, className)}>
       <Icon className={cn(status === 'processing' && 'animate-spin')} aria-hidden />
-      {processLabel[status]}
+      {t.status[status]}
     </span>
   )
 }
 
 export function VisibilityBadge({ visibility, className }: { visibility: Visibility; className?: string }) {
+  const t = useMessages()
   if (visibility === 'private')
     return (
       <span className={cn(pill, 'bg-muted text-muted-foreground', className)}>
         <Lock aria-hidden />
-        私有
+        {t.status.private}
       </span>
     )
   if (visibility === 'inherited')
     return (
-      <span className={cn(pill, 'bg-brand/40 text-foreground', className)} title="因上级文件夹公开而公开">
+      <span className={cn(pill, 'bg-brand/40 text-foreground', className)} title={t.status.inheritedHint}>
         <CornerLeftUp aria-hidden />
-        继承公开
+        {t.status.inherited}
       </span>
     )
   return (
     <span className={cn(pill, 'bg-brand text-brand-foreground', className)}>
       <Globe aria-hidden />
-      公开
+      {t.status.public}
     </span>
   )
 }

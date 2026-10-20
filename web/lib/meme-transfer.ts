@@ -4,6 +4,11 @@ import { toast } from 'sonner'
 import type { ConvertSource } from './convert-worker'
 import { fetchAnimation, kindOf } from './media'
 import type { Meme } from './types'
+import { messages } from './i18n'
+import { documentLocale } from './i18n/client'
+
+// Runs in the browser alone, where the page's language words its errors.
+const words = () => messages[documentLocale()].transfer
 
 export type DownloadFormat = 'original' | 'png' | 'jpg' | 'gif'
 
@@ -36,7 +41,7 @@ function saveBlob(blob: Blob, filename: string) {
 
 async function fetchBlob(meme: Meme, signal?: AbortSignal) {
   const res = await fetch(meme.url, { signal })
-  if (!res.ok) throw new Error('文件获取失败')
+  if (!res.ok) throw new Error(words().fetchFailed)
   return res.blob()
 }
 
@@ -70,7 +75,7 @@ export async function downloadConverted(
       worker.onerror = reject
       worker.onmessage = ({ data }) => {
         if (data.blob) resolve(data.blob)
-        else if (data.error) reject(new Error('无法转换这个文件，请下载原格式'))
+        else if (data.error) reject(new Error(words().convertFailed))
         else if (data.progress) onProgress(Math.round(data.progress * 100))
         else if (video) frameAt(video, data.seek).then((frame) => worker.postMessage({ frame }, [frame]), reject)
       }
@@ -107,7 +112,7 @@ async function frameAt(video: HTMLVideoElement, time: number) {
 const videoEvent = (video: HTMLVideoElement, type: string) =>
   new Promise((resolve, reject) => {
     video.addEventListener(type, resolve, { once: true })
-    video.addEventListener('error', () => reject(new Error('当前浏览器无法解码这个视频')), { once: true })
+    video.addEventListener('error', () => reject(new Error(words().videoUnsupported)), { once: true })
   })
 
 export async function downloadMany(memes: Meme[]) {
@@ -119,6 +124,6 @@ export async function downloadMany(memes: Meme[]) {
       await new Promise((r) => setTimeout(r, 400))
     } catch {}
   }
-  if (ok === memes.length) toast.success(`已开始下载 ${ok} 个文件`)
-  else toast.error(`${memes.length - ok} 个文件下载失败，已下载 ${ok} 个`)
+  if (ok === memes.length) toast.success(words().started(ok))
+  else toast.error(words().partial(memes.length - ok, ok))
 }

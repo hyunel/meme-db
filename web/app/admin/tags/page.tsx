@@ -1,6 +1,7 @@
 import { AdminTags } from '@/components/admin/tags'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '标签管理' }
+export const generateMetadata = pageTitle('tags')
 
 export default function Page() {
   return <AdminTags />

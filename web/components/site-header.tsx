@@ -21,23 +21,25 @@ import { useRequireLogin } from '@/components/app-providers'
 import { logout, useSession } from '@/lib/session'
 import { setTheme, useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 const mainNav = [
-  { href: '/search', label: '搜索', icon: Search, auth: false },
-  { href: '/discover', label: '发现', icon: Compass, auth: false },
-  { href: '/library', label: '我的库', icon: Library, auth: true },
-  { href: '/favorites', label: '收藏', icon: Heart, auth: true },
-]
+  { href: '/search', key: 'search', icon: Search, auth: false },
+  { href: '/discover', key: 'discover', icon: Compass, auth: false },
+  { href: '/library', key: 'library', icon: Library, auth: true },
+  { href: '/favorites', key: 'favorites', icon: Heart, auth: true },
+] as const
 
 export function useMainNav() {
   const { user } = useSession()
-  return mainNav.filter((n) => !n.auth || user)
+  const t = useMessages()
+  return mainNav.filter((n) => !n.auth || user).map((n) => ({ ...n, label: t.nav[n.key] }))
 }
 
 const themes = [
-  ['system', '跟随系统', Monitor],
-  ['light', '浅色', Sun],
-  ['dark', '深色', Moon],
+  ['system', Monitor],
+  ['light', Sun],
+  ['dark', Moon],
 ] as const
 
 export function isActive(pathname: string, href: string) {
@@ -49,9 +51,10 @@ export function SiteHeader() {
   const pathname = usePathname()
   const router = useRouter()
   const requireLogin = useRequireLogin()
+  const t = useMessages()
 
   const goUpload = () => {
-    if (requireLogin('登录后即可上传表情包到你的私人库。')) router.push('/library?upload=1')
+    if (requireLogin(t.nav.uploadPrompt)) router.push('/library?upload=1')
   }
 
   const links = useMainNav()
@@ -62,7 +65,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-4">
         <Logo />
-        <nav aria-label="主导航" className="hidden items-center gap-1 md:flex">
+        <nav aria-label={t.nav.main} className="hidden items-center gap-1 md:flex">
           {links.map((n) => {
             const active = isActive(pathname, n.href)
             return (
@@ -83,9 +86,9 @@ export function SiteHeader() {
         <div className="ml-auto flex flex-1 items-center justify-end gap-2">
           {showHeaderSearch && <SearchBar className="hidden max-w-xs lg:flex" />}
           {user && (
-            <Button variant="outline" onClick={goUpload} aria-label="上传表情包">
+            <Button variant="outline" onClick={goUpload} aria-label={t.nav.uploadLabel}>
               <Upload data-icon="inline-start" />
-              <span className="hidden sm:inline">上传</span>
+              <span className="hidden sm:inline">{t.nav.upload}</span>
             </Button>
           )}
           {!ready ? (
@@ -96,7 +99,7 @@ export function SiteHeader() {
                 render={
                   <button
                     type="button"
-                    aria-label="账户菜单"
+                    aria-label={t.nav.account}
                     className="flex size-9 items-center justify-center rounded-full bg-brand text-sm font-semibold text-brand-foreground ring-1 ring-foreground/10 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   />
                 }
@@ -109,7 +112,7 @@ export function SiteHeader() {
                     <div className="flex flex-col">
                       <span className="font-medium text-foreground">{user.username}</span>
                       <span className="truncate text-xs font-normal">{user.email}</span>
-                      {user.role === 'admin' && <span className="mt-1 text-xs font-normal text-foreground">管理员</span>}
+                      {user.role === 'admin' && <span className="mt-1 text-xs font-normal text-foreground">{t.nav.adminRole}</span>}
                     </div>
                   </DropdownMenuLabel>
                 </DropdownMenuGroup>
@@ -117,20 +120,20 @@ export function SiteHeader() {
                 <DropdownMenuGroup>
                   <DropdownMenuItem render={<Link href={`/u/${user.username}`} />}>
                     <UserRound />
-                    我的主页
+                    {t.nav.profile}
                   </DropdownMenuItem>
                   <DropdownMenuItem render={<Link href="/shares" />}>
                     <Link2 />
-                    我的分享
+                    {t.nav.shares}
                   </DropdownMenuItem>
                   <DropdownMenuItem render={<Link href="/settings" />}>
                     <Settings />
-                    个人设置
+                    {t.nav.settings}
                   </DropdownMenuItem>
                   {user.role === 'admin' && (
                     <DropdownMenuItem render={<Link href="/admin" />}>
                       <LayoutDashboard />
-                      管理后台
+                      {t.nav.admin}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuGroup>
@@ -139,15 +142,15 @@ export function SiteHeader() {
                 <div className="flex items-center justify-between gap-2 py-0.5 pl-1.5 text-sm">
                   <span className="flex items-center gap-1.5">
                     <SunMoon className="size-4 text-muted-foreground" aria-hidden />
-                    外观
+                    {t.nav.appearance}
                   </span>
-                  <DropdownMenuRadioGroup value={theme} onValueChange={(v: Theme) => setTheme(v)} aria-label="外观" className="flex rounded-lg border p-0.5">
-                    {themes.map(([value, label, Icon]) => (
+                  <DropdownMenuRadioGroup value={theme} onValueChange={(v: Theme) => setTheme(v)} aria-label={t.nav.appearance} className="flex rounded-lg border p-0.5">
+                    {themes.map(([value, Icon]) => (
                       <DropdownMenuRadioItem
                         key={value}
                         value={value}
-                        aria-label={label}
-                        title={label}
+                        aria-label={t.nav.themes[value]}
+                        title={t.nav.themes[value]}
                         className="size-7 justify-center rounded-md p-0 text-muted-foreground *:data-[slot=dropdown-menu-radio-item-indicator]:hidden data-checked:bg-foreground data-checked:text-background data-checked:focus:bg-foreground data-checked:focus:**:text-background"
                       >
                         <Icon />
@@ -158,17 +161,17 @@ export function SiteHeader() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                   <LogOut />
-                  退出登录
+                  {t.nav.logout}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
             <div className="flex items-center gap-2">
               <Button variant="ghost" nativeButton={false} render={<Link href="/login" />} className="hidden sm:inline-flex">
-                登录
+                {t.nav.signIn}
               </Button>
               <Button nativeButton={false} render={<Link href="/register" />}>
-                注册
+                {t.nav.signUp}
               </Button>
             </div>
           )}

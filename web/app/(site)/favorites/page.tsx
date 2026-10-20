@@ -1,8 +1,8 @@
-import type { Metadata } from 'next'
 import { RequireAuth } from '@/components/auth-guard'
 import { FavoritesView } from '@/components/account-views'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata: Metadata = { title: '我的收藏' }
+export const generateMetadata = pageTitle('favorites')
 
 export default function FavoritesPage() {
   return (

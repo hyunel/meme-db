@@ -18,38 +18,10 @@ import { qs } from '@/lib/utils'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { kindOf } from '@/lib/media'
 import type { MediaKind, Meme, Page, ProcessStatus } from '@/lib/types'
+import { useMessages } from '@/lib/i18n/client'
 
-const statusOptions = [
-  ['all', '全部状态'],
-  ['pending', '排队中'],
-  ['processing', '处理中'],
-  ['success', '已完成'],
-  ['failed', '处理失败'],
-] as const
-const visOptions = [
-  ['all', '公开与私有'],
-  ['public', '公开'],
-  ['private', '私有'],
-] as const
-const kindOptions = [
-  ['all', '全部类型'],
-  ['image', '静态图'],
-  ['gif', 'GIF'],
-  ['video', '视频'],
-  ['lottie', 'Lottie'],
-] as const
-const kindLabel: Record<MediaKind, string> = { image: '静态图', gif: 'GIF', video: '视频', lottie: 'Lottie' }
-const jobOptions = [
-  ['analyze_meme', '重新识别'],
-  ['embed_clip', '重建 CLIP 向量'],
-  ['embed_text', '重建文本向量'],
-] as const
-type Job = (typeof jobOptions)[number][0]
-const jobHint: Record<Job, string> = {
-  analyze_meme: '调用识别服务（VLM）重新生成描述、标签与全部向量，每个表情包调用一次；处理期间显示为排队中或处理中。',
-  embed_clip: '只重算图像的 CLIP 向量，不调用 VLM，不影响搜索；跳过尚未处理完成的表情包。',
-  embed_text: '用已有识别结果重算文本向量，不调用 VLM，不影响搜索；跳过尚未处理完成的表情包。',
-}
+const jobs = ['analyze_meme', 'embed_clip', 'embed_text'] as const
+type Job = (typeof jobs)[number]
 
 type Pending = { kind: 'retry'; ids: string[] } | { kind: 'retryFilter' } | { kind: 'retryAll' } | { kind: 'delete'; memes: Meme[] } | null
 
@@ -65,6 +37,8 @@ export function AdminContent() {
   const [pending, setPending] = useState<Pending>(null)
   const [job, setJob] = useState<Job>('analyze_meme')
   const router = useRouter()
+  const t = useMessages()
+  const c = t.content
 
   const filter = { q: dq, status: status === 'all' ? '' : status, visibility: vis === 'all' ? '' : vis, kind: kind === 'all' ? '' : kind, from }
   const paging = usePaging(JSON.stringify(filter))
@@ -77,38 +51,38 @@ export function AdminContent() {
   const reprocess = async (body: object) => {
     const { count, batch_id } = await api<{ count: number; batch_id: string }>('/admin/memes/reprocess', { method: 'POST', json: { ...body, job } })
     await refresh()
-    toast.success(`已将 ${count} 个表情包加入处理队列`, {
-      description: count ? undefined : job === 'analyze_meme' ? '排队中或处理中的表情包会被跳过' : '只处理已处理完成的表情包',
-      action: count ? { label: '查看进度', onClick: () => router.push(`/admin/tasks/batches/${batch_id}`) } : undefined,
+    toast.success(c.queued(count), {
+      description: count ? undefined : job === 'analyze_meme' ? c.skippedBusy : c.onlyProcessed,
+      action: count ? { label: c.progress, onClick: () => router.push(`/admin/tasks/batches/${batch_id}`) } : undefined,
     })
     sel.clear()
   }
-  const retryScope = pending?.kind === 'retry' ? ` ${pending.ids.length} 个` : pending?.kind === 'retryFilter' ? `当前筛选下的全部 ${total} 个` : '全站所有'
+  const retryScope = pending?.kind === 'retry' ? c.scopeSome(pending.ids.length) : pending?.kind === 'retryFilter' ? c.scopeFilter(total) : c.scopeAll
 
   const columns: Column<Meme>[] = [
     {
       key: 'meme',
-      header: '表情包',
+      header: c.meme,
       mobile: 'title',
       cell: (m) => (
         <div className="flex min-w-0 items-center gap-3">
-          <Link href={`/m/${m.id}`} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50" aria-label={`查看 ${m.id}`}>
+          <Link href={`/m/${m.id}`} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50" aria-label={c.view(m.id)}>
             <MemeMedia meme={m} />
           </Link>
           <CopyId value={m.id} className="min-w-0" />
         </div>
       ),
     },
-    { key: 'kind', header: '类型', cell: (m) => kindLabel[kindOf(m.mime_type)] },
-    { key: 'size', header: '大小', cell: (m) => <span className="tabular-nums">{formatBytes(m.file_size)}</span> },
-    { key: 'uploaded', header: '上传时间', cell: (m) => <span className="tabular-nums whitespace-nowrap">{formatDateTime(m.created_at)}</span> },
-    { key: 'status', header: '处理状态', cell: (m) => <ProcessBadge status={m.status} /> },
-    { key: 'processed', header: '处理完成', mobile: 'hidden', cell: (m) => <span className="tabular-nums whitespace-nowrap">{m.analyzed_at ? formatDateTime(m.analyzed_at) : '—'}</span> },
-    { key: 'collect', header: '收录', cell: (m) => <span className="tabular-nums">{m.library_count} 次</span> },
-    { key: 'public', header: '公开', cell: (m) => (m.is_public ? '是' : <span className="text-muted-foreground">否</span>) },
+    { key: 'kind', header: c.kind, cell: (m) => c.kinds[kindOf(m.mime_type)] },
+    { key: 'size', header: t.meme.size, cell: (m) => <span className="tabular-nums">{formatBytes(m.file_size)}</span> },
+    { key: 'uploaded', header: t.meme.uploaded, cell: (m) => <span className="tabular-nums whitespace-nowrap">{formatDateTime(m.created_at)}</span> },
+    { key: 'status', header: c.status, cell: (m) => <ProcessBadge status={m.status} /> },
+    { key: 'processed', header: c.processed, mobile: 'hidden', cell: (m) => <span className="tabular-nums whitespace-nowrap">{m.analyzed_at ? formatDateTime(m.analyzed_at) : '—'}</span> },
+    { key: 'collect', header: c.collected, cell: (m) => <span className="tabular-nums">{c.times(m.library_count)}</span> },
+    { key: 'public', header: t.status.public, cell: (m) => (m.is_public ? c.yes : <span className="text-muted-foreground">{c.no}</span>) },
     {
       key: 'fail',
-      header: '失败原因',
+      header: c.failReason,
       className: 'max-w-48',
       cell: (m) =>
         m.fail_reason ? (
@@ -124,27 +98,41 @@ export function AdminContent() {
   return (
     <>
       <AdminPageHeader
-        title="内容管理"
-        description="全站表情包及其处理状态"
+        title={t.titles.content}
+        description={c.description}
         actions={
           <>
             <Button variant="outline" className="h-10 md:h-9" disabled={!total} onClick={() => setPending({ kind: 'retryFilter' })}>
               <RotateCw aria-hidden />
-              重新处理筛选结果
+              {c.reprocessFiltered}
             </Button>
             <Button variant="outline" className="h-10 md:h-9" onClick={() => setPending({ kind: 'retryAll' })}>
-              全量重新处理
+              {c.reprocessAll}
             </Button>
           </>
         }
       />
 
       <Toolbar>
-        <SearchInput value={q} onChange={setQ} placeholder="搜索表情包标识" className="basis-full sm:basis-auto" />
-        <FilterSelect value={status} onChange={setStatus} options={statusOptions} label="处理状态" />
-        <FilterSelect value={vis} onChange={setVis} options={visOptions} label="是否公开" />
-        <FilterSelect value={kind} onChange={setKind} options={kindOptions} label="类型" />
-        <FilterSelect value={range} onChange={setRange} options={rangeOptions} label="上传时间" />
+        <SearchInput value={q} onChange={setQ} placeholder={c.searchId} className="basis-full sm:basis-auto" />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          options={[['all', c.allStatuses], ...(['pending', 'processing', 'success', 'failed'] as const).map((s) => [s, t.status[s]] as const)]}
+          label={c.status}
+        />
+        <FilterSelect
+          value={vis}
+          onChange={setVis}
+          options={[
+            ['all', c.allVisibility],
+            ['public', t.status.public],
+            ['private', t.status.private],
+          ]}
+          label={c.visibility}
+        />
+        <FilterSelect value={kind} onChange={setKind} options={[['all', c.allKinds], ...(['image', 'gif', 'video', 'lottie'] as const).map((k) => [k, c.kinds[k]] as const)]} label={c.kind} />
+        <FilterSelect value={range} onChange={setRange} options={rangeOptions(t)} label={t.meme.uploaded} />
       </Toolbar>
 
       <DataList
@@ -155,29 +143,29 @@ export function AdminContent() {
         rowLabel={(m) => m.id}
         selected={sel.ids}
         onSelectedChange={sel.set}
-        empty={<EmptyState icon={Images} title="没有符合条件的表情包" description="试试调整筛选条件。" className="border-0" />}
+        empty={<EmptyState icon={Images} title={c.none} description={c.noneHint} className="border-0" />}
         actions={(m) => (
           <>
             <DropdownMenuItem render={<Link href={`/m/${m.id}`} />}>
               <Eye />
-              查看详情
+              {t.meme.details}
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link href={`/admin/tasks?meme=${m.id}`} />}>
               <ListChecks />
-              查看相关任务
+              {c.tasks}
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link href={`/admin/search?track=${m.id}`} />}>
               <ScanSearch />
-              检索调试
+              {t.titles.searchDebug}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setPending({ kind: 'retry', ids: [m.id] })}>
               <RotateCw />
-              重新处理
+              {c.reprocess}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => setPending({ kind: 'delete', memes: [m] })}>
               <Trash2 />
-              删除
+              {t.library.delete}
             </DropdownMenuItem>
           </>
         )}
@@ -187,40 +175,40 @@ export function AdminContent() {
       <BulkBar count={selected.length} onClear={sel.clear}>
         <Button size="sm" variant="secondary" onClick={() => setPending({ kind: 'retry', ids: selected.map((m) => m.id) })}>
           <RotateCw aria-hidden />
-          重新处理
+          {c.reprocess}
         </Button>
         <Button size="sm" variant="destructive" onClick={() => setPending({ kind: 'delete', memes: selected })}>
           <Trash2 aria-hidden />
-          删除
+          {t.library.delete}
         </Button>
       </BulkBar>
 
       <ConfirmDialog
         open={pending?.kind === 'retry' || pending?.kind === 'retryFilter' || pending?.kind === 'retryAll'}
         onOpenChange={(o) => !o && setPending(null)}
-        title={pending?.kind === 'retryAll' ? '全量重新处理' : '重新处理'}
-        description={`将处理${retryScope}表情包，作为一个批次在任务管理中显示进度；新上传的表情包会优先处理。`}
-        confirmLabel={jobOptions.find(([v]) => v === job)?.[1]}
+        title={pending?.kind === 'retryAll' ? c.reprocessAll : c.reprocess}
+        description={c.reprocessHint(retryScope)}
+        confirmLabel={c.jobs[job].label}
         onConfirm={() => (pending?.kind === 'retry' ? reprocess({ ids: pending.ids }) : reprocess({ filter: pending?.kind === 'retryAll' ? {} : filter }))}
       >
         <div className="flex flex-col gap-2">
-          <FilterSelect value={job} onChange={setJob} options={jobOptions} label="处理内容" className="w-full" />
-          <p className="text-sm text-pretty text-muted-foreground">{jobHint[job]}</p>
+          <FilterSelect value={job} onChange={setJob} options={jobs.map((j) => [j, c.jobs[j].label] as const)} label={c.job} className="w-full" />
+          <p className="text-sm text-pretty text-muted-foreground">{c.jobs[job].hint}</p>
         </div>
       </ConfirmDialog>
       <ConfirmDialog
         open={pending?.kind === 'delete'}
         onOpenChange={(o) => !o && setPending(null)}
-        title={pending?.kind === 'delete' && pending.memes.length > 1 ? `删除 ${pending.memes.length} 个表情包` : '删除表情包'}
+        title={pending?.kind === 'delete' && pending.memes.length > 1 ? c.deleteSome(pending.memes.length) : c.deleteOne}
         destructive
-        description="会永久删除表情包，并从所有用户的库中移除，无法恢复。"
-        requireText={pending?.kind === 'delete' ? (pending.memes.length === 1 ? pending.memes[0].id : '删除') : undefined}
-        confirmLabel="永久删除"
+        description={c.deleteHint}
+        requireText={pending?.kind === 'delete' ? (pending.memes.length === 1 ? pending.memes[0].id : c.deleteWord) : undefined}
+        confirmLabel={c.deleteForever}
         onConfirm={async () => {
           if (pending?.kind !== 'delete') return
           const { count } = await api<{ count: number }>('/admin/memes', { method: 'DELETE', json: { ids: pending.memes.map((m) => m.id) } })
           await refresh()
-          toast.success(`已删除 ${count} 个表情包`)
+          toast.success(c.deleted(count))
           sel.clear()
         }}
       />

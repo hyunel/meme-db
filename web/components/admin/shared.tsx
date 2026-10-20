@@ -7,15 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { Messages } from '@/lib/i18n'
+import { useMessages } from '@/lib/i18n/client'
 
 export type RangeKey = 'all' | '1d' | '7d' | '30d'
 
-export const rangeOptions = [
-  ['all', '全部时间'],
-  ['1d', '最近一天'],
-  ['7d', '最近一周'],
-  ['30d', '最近一个月'],
-] as const
+export const rangeOptions = (t: Messages) => (['all', '1d', '7d', '30d'] as const).map((k) => [k, t.admin.ranges[k]] as const)
 
 const rangeMs: Record<Exclude<RangeKey, 'all'>, number> = { '1d': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 }
 
@@ -40,7 +37,7 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = '确认',
+  confirmLabel,
   destructive,
   requireText,
   onConfirm,
@@ -58,6 +55,7 @@ export function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false)
   const [typed, setTyped] = useState('')
+  const t = useMessages()
   const blocked = requireText !== undefined && typed.trim() !== requireText
 
   const close = (o: boolean) => {
@@ -94,18 +92,20 @@ export function ConfirmDialog({
           {requireText !== undefined && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="confirm-text" className="font-normal">
-                请输入 <span className="rounded bg-muted px-1 font-mono font-medium">{requireText}</span> 以确认
+                {t.admin.typeBefore}
+                <span className="rounded bg-muted px-1 font-mono font-medium">{requireText}</span>
+                {t.admin.typeAfter}
               </Label>
               <Input id="confirm-text" autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} className="h-10 text-base md:text-sm" />
             </div>
           )}
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" className="h-10 md:h-9" onClick={() => close(false)} disabled={busy}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button type="submit" variant={destructive ? 'destructive' : 'default'} className="h-10 md:h-9" disabled={busy || blocked}>
               {busy && <Loader2 className="animate-spin" aria-hidden />}
-              {confirmLabel}
+              {confirmLabel ?? t.admin.confirm}
             </Button>
           </DialogFooter>
         </form>

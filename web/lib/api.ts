@@ -1,5 +1,8 @@
 import { mutate } from 'swr'
-import { errorMessage } from './errors'
+import { messages } from './i18n'
+import { documentLocale } from './i18n/client'
+
+type Wording = string | ((params: Record<string, string | number>, field?: string) => string)
 
 export class ApiError extends Error {
   constructor(
@@ -33,16 +36,20 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
     body = JSON.stringify(json)
   }
 
+  const t = messages[documentLocale()]
   let res: Response
   try {
     res = await fetch(`/api${path}`, { method, headers, body })
   } catch {
-    throw new ApiError(0, '网络连接失败，请检查网络后重试')
+    throw new ApiError(0, t.network.offline)
   }
   if (!res.ok) {
     const data = await res.json().catch(() => null)
     if (res.status === 401) onUnauthorized(data?.code)
-    throw new ApiError(res.status, errorMessage(data) ?? data?.error ?? `请求失败（${res.status}）`, data?.field, data?.code)
+    // Worded by its code; a code without wording shows the API's English message.
+    const wording = data?.code ? (t.errors as Record<string, Wording>)[data.code] : undefined
+    const message = typeof wording === 'function' ? wording(data.params ?? {}, data.field) : wording
+    throw new ApiError(res.status, message ?? data?.error ?? t.network.failed(res.status), data?.field, data?.code)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }

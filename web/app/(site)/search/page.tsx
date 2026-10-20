@@ -1,9 +1,9 @@
 import { Suspense } from 'react'
-import type { Metadata } from 'next'
 import { SearchView } from '@/components/search/search-view'
 import { PageLoading } from '@/components/states'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata: Metadata = { title: '搜索' }
+export const generateMetadata = pageTitle('search')
 
 export default function SearchPage() {
   return (

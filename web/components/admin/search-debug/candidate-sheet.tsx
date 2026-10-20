@@ -9,8 +9,9 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { MemeMedia } from '@/components/meme/meme-media'
 import { CopyId } from '../admin-ui'
 import { RerankScore, ScoreBar } from './score'
-import { RERANK_PARSE_FAILED, channelLabel, channelRank, type DebugResult } from '@/lib/search-debug'
+import { RERANK_PARSE_FAILED, channelRank, type DebugResult } from '@/lib/search-debug'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 export function CandidateSheet({ result, memeId, onClose }: { result: DebugResult; memeId: string | null; onClose: () => void }) {
   return (
@@ -24,11 +25,13 @@ export function CandidateSheet({ result, memeId, onClose }: { result: DebugResul
 
 function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
   const meme = result.memes.get(memeId)
+  const t = useMessages()
+  const d = t.searchDebug
   if (!meme) {
     return (
       <SheetHeader className="border-b p-4 pr-12">
-        <SheetTitle>候选详情</SheetTitle>
-        <SheetDescription>找不到该表情包。</SheetDescription>
+        <SheetTitle>{d.candidate}</SheetTitle>
+        <SheetDescription>{d.memeMissing}</SheetDescription>
       </SheetHeader>
     )
   }
@@ -40,7 +43,7 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
   return (
     <>
       <SheetHeader className="gap-1 border-b p-4 pr-12">
-        <SheetTitle>候选详情</SheetTitle>
+        <SheetTitle>{d.candidate}</SheetTitle>
         <SheetDescription render={<div />}>
           <CopyId value={memeId} />
         </SheetDescription>
@@ -52,31 +55,31 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
             <MemeMedia meme={meme} controls />
           </div>
           <dl className="grid flex-1 grid-cols-2 content-start gap-3 text-sm sm:grid-cols-1">
-            <Stat label="最终名次" value={row ? `第 ${row.rank} 名` : '未进入候选'} />
+            <Stat label={d.finalRank} value={row ? t.searchDebug.rank(row.rank) : d.notCandidate} />
             <Stat
-              label={result.mode === 'image' ? '最终分数（相似度）' : '重排分数'}
+              label={result.mode === 'image' ? d.finalScoreImage : d.rerankScore}
               value={row ? result.mode === 'image' ? <ScoreBar value={row.finalScore} /> : <RerankScore value={row.rerankScore} /> : '—'}
             />
           </dl>
         </div>
 
-        <Section title="各路分数">
+        <Section title={d.channelScores}>
           <ul className="divide-y rounded-lg border">
             {result.channels.map((ch) => {
               const h = channelRank(result, ch, memeId)
               const hit = h?.rank != null && h.rank <= ch.topK
               return (
                 <li key={ch.channel} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <span className="text-sm">{channelLabel[ch.channel]}</span>
+                  <span className="text-sm">{d.channels[ch.channel]}</span>
                   {h ? (
                     <span className="flex items-center gap-3">
                       <ScoreBar value={h.similarity} />
                       <span className={cn('w-24 text-right text-xs tabular-nums', hit ? 'font-medium' : 'text-muted-foreground')}>
-                        {h.rank === null ? '未匹配' : `第 ${h.rank} 名${hit ? '' : `（> ${ch.topK}）`}`}
+                        {h.rank === null ? d.unmatched : `${d.rank(h.rank)}${hit ? '' : d.beyond(ch.topK)}`}
                       </span>
                     </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">未进入前 {ch.topK} 名</span>
+                    <span className="text-xs text-muted-foreground">{d.notInTop(ch.topK)}</span>
                   )}
                 </li>
               )
@@ -86,20 +89,20 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
 
         <Section title="VLM Caption">
           {!caption ? (
-            <p className="text-sm text-muted-foreground">暂无识别结果。</p>
+            <p className="text-sm text-muted-foreground">{d.noCaption}</p>
           ) : !vlm ? (
-            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm">识别结果无法解析，未参与重排（记为 {RERANK_PARSE_FAILED}），原文见下方原始 JSON。</p>
+            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm">{d.unparsable(RERANK_PARSE_FAILED)}</p>
           ) : (
             <dl className="grid gap-3 text-sm">
-              <Field label="OCR 文本">{vlm.ocr_text || <Muted />}</Field>
-              <Field label="画面描述">{vlm.description || <Muted />}</Field>
-              <Field label="含义">{vlm.meaning || <Muted />}</Field>
-              <Field label="搜索词">
+              <Field label={d.fields.ocr}>{vlm.ocr_text || <Muted />}</Field>
+              <Field label={d.fields.description}>{vlm.description || <Muted />}</Field>
+              <Field label={d.fields.meaning}>{vlm.meaning || <Muted />}</Field>
+              <Field label={d.fields.queries}>
                 <Chips items={vlm.queries} />
               </Field>
-              <Field label="标题">{vlm.title || <Muted />}</Field>
-              <Field label="说明">{vlm.summary || <Muted />}</Field>
-              <Field label="标签">
+              <Field label={d.fields.title}>{vlm.title || <Muted />}</Field>
+              <Field label={d.fields.summary}>{vlm.summary || <Muted />}</Field>
+              <Field label={t.meme.tags}>
                 <Chips items={vlm.tags} />
               </Field>
             </dl>
@@ -107,39 +110,39 @@ function Body({ result, memeId }: { result: DebugResult; memeId: string }) {
         </Section>
 
         {vlm && (
-          <Section title="派生文本">
+          <Section title={d.derived}>
             <div className="flex flex-col gap-3">
-              <Labeled label="Metaphor 文本">
-                <Pre>{caption.metaphor_text || '（空）'}</Pre>
+              <Labeled label={d.metaphorText}>
+                <Pre>{caption.metaphor_text || d.empty}</Pre>
               </Labeled>
-              <Labeled label="Semantic 文本（用于向量化）">
-                <Pre>{caption.semantic_text || '（空）'}</Pre>
+              <Labeled label={d.semanticText}>
+                <Pre>{caption.semantic_text || d.empty}</Pre>
               </Labeled>
-              <Labeled label="重排文档原文">
-                <Pre>{caption.rerank_doc || '（空）'}</Pre>
+              <Labeled label={d.rerankDoc}>
+                <Pre>{caption.rerank_doc || d.empty}</Pre>
               </Labeled>
             </div>
           </Section>
         )}
 
         {caption && (
-          <Section title="原始 JSON" action={<CopyButton text={json} />}>
+          <Section title={d.rawJson} action={<CopyButton text={json} />}>
             <Pre className="max-h-72 overflow-auto">{json}</Pre>
           </Section>
         )}
 
-        <nav aria-label="跳转" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <nav aria-label={d.links} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/m/${memeId}`} />}>
             <Eye />
-            表情详情
+            {d.memeDetails}
           </Button>
           <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/content?q=${encodeURIComponent(memeId)}`} />}>
             <Images />
-            内容管理
+            {t.titles.content}
           </Button>
           <Button variant="outline" className="h-10" nativeButton={false} render={<Link href={`/admin/tasks?meme=${encodeURIComponent(memeId)}`} />}>
             <ListChecks />
-            相关任务
+            {d.relatedTasks}
           </Button>
         </nav>
       </div>
@@ -199,7 +202,7 @@ function Chips({ items }: { items: string[] | null }) {
   )
 }
 
-const Muted = () => <span className="text-muted-foreground">（空）</span>
+const Muted = () => <span className="text-muted-foreground">{useMessages().searchDebug.empty}</span>
 
 function Pre({ children, className }: { children: React.ReactNode; className?: string }) {
   return <pre className={cn('rounded-lg border bg-muted/40 px-3 py-2.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap', className)}>{children}</pre>
@@ -207,6 +210,7 @@ function Pre({ children, className }: { children: React.ReactNode; className?: s
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false)
+  const t = useMessages()
   return (
     <Button
       variant="ghost"
@@ -218,12 +222,12 @@ function CopyButton({ text }: { text: string }) {
           setDone(true)
           setTimeout(() => setDone(false), 1500)
         } catch {
-          toast.error('复制失败')
+          toast.error(t.common.copyFailed)
         }
       }}
     >
       {done ? <Check /> : <Copy />}
-      {done ? '已复制' : '复制'}
+      {done ? t.shares.copied : t.share.copy}
     </Button>
   )
 }

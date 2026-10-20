@@ -1,5 +1,7 @@
 import { NotFoundState } from '@/components/states'
+import { getMessages } from '@/lib/i18n/server'
 
-export default function UserNotFound() {
-  return <NotFoundState title="用户不存在" description="该用户不存在或已被停用。" />
+export default async function UserNotFound() {
+  const t = await getMessages()
+  return <NotFoundState title={t.notFound.user} description={t.notFound.userHint} />
 }

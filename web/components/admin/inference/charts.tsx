@@ -3,6 +3,7 @@
 import { Line, LineChart, ReferenceLine, YAxis } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { fmtClock, fmtClockSec, type Level } from '@/lib/inference'
+import { useMessages } from '@/lib/i18n/client'
 
 export const SYNC_ID = 'inference'
 
@@ -47,9 +48,10 @@ export function TimeTooltip({ config, format }: { config: ChartConfig; format: (
 }
 
 export function ThresholdLines({ warn, danger, label }: { warn: number; danger: number; label?: string }) {
+  const t = useMessages()
   return (
     <>
-      <ReferenceLine y={warn} stroke={levelStroke.warn} strokeDasharray="4 4" ifOverflow="extendDomain" label={label ? { value: `${label}预警`, position: 'insideTopRight', fontSize: 10, fill: 'var(--muted-foreground)' } : undefined} />
+      <ReferenceLine y={warn} stroke={levelStroke.warn} strokeDasharray="4 4" ifOverflow="extendDomain" label={label ? { value: t.inference.warnLine(label), position: 'insideTopRight', fontSize: 10, fill: 'var(--muted-foreground)' } : undefined} />
       <ReferenceLine y={danger} stroke={levelStroke.danger} strokeDasharray="4 4" ifOverflow="extendDomain" />
     </>
   )

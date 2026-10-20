@@ -80,11 +80,12 @@ MemeDB/
 ### Error Handling
 - **Service Layer**: Services should return `apperror` types (from `server/internal/pkg/apperror`) for expected errors (e.g., `apperror.NotFound`, `apperror.BadRequest`). Unexpected internal errors should be returned as raw `error`, which will default to an Internal Server Error (500) in the handler.
 - **Handler Layer**: Handlers should simply return the error from the service layer. Avoid manual `c.JSON` or `c.String` for error responses.
-- **Language**: Backend text is English: an `apperror` carries a stable snake_case code and an English message, with params for the values it mentions (`apperror.BadRequest("file_too_large", "...").With("max_mb", n)`); logs and task errors are English too. The web words errors in Chinese by code in `web/lib/errors.ts`, so add each new code there.
+- **Language**: Backend text is English: an `apperror` carries a stable snake_case code and an English message, with params for the values it mentions (`apperror.BadRequest("file_too_large", "...").With("max_mb", n)`); logs and task errors are English too. The web words errors by code in the `errors` of its dictionaries (`web/lib/i18n/zh.ts`, `en.ts`), so add each new code there.
 
 ### Web
 - Read `web/AGENTS.md` first: this Next.js version differs from what you may know.
 - Build UI from `components/ui` and the theme tokens in `app/globals.css`; fetch with SWR through `lib/api`, calling `refresh()` after mutations.
+- UI text comes from the dictionaries in `lib/i18n` (`zh.ts`, with `en.ts` typed after it), through `useMessages()` in client components and `getMessages()` on the server. The server renders each page in the visitor's language (the `memedb_locale` cookie, else `Accept-Language`), so never pick it in the browser.
 - The public pages (meme, folder, profile, tag) fetch their record on the server through `lib/server-api`, as the visitor by their cookie, for their metadata and first paint, and hand it to SWR as `fallbackData`.
 - Keep `lib/types.ts` in sync with the server's JSON, and the API reference in `components/api-docs.tsx` with the routes.
 

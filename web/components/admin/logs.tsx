@@ -15,17 +15,13 @@ import { LevelBadge } from './labels'
 import { rangeOptions, rangeStart, type RangeKey } from './shared'
 import { api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { useMessages } from '@/lib/i18n/client'
 import type { LogEntry, LogLevel } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
 
 const PAGE = 100
 const EXPORT_MAX = 5000
-const levelOptions = [
-  ['debug', '最低：DEBUG'],
-  ['info', '最低：INFO'],
-  ['warn', '最低：WARN'],
-  ['error', '最低：ERROR'],
-] as const
+const levels: LogLevel[] = ['debug', 'info', 'warn', 'error']
 
 interface Cond {
   id: number
@@ -106,10 +102,11 @@ function useLogs(query: LogQuery, live: boolean) {
 
 export function AdminLogs() {
   const params = useSearchParams()
+  const t = useMessages()
   const [live, setLive] = useState(false)
   const [minLevel, setMinLevel] = useState<LogLevel>(() => {
     const l = params.get('level') as LogLevel | null
-    return levelOptions.some(([v]) => v === l) ? l! : 'debug'
+    return l && levels.includes(l) ? l : 'debug'
   })
   const [q, setQ] = useState(params.get('q') ?? '')
   const dq = useDebounced(q.trim().toLowerCase())
@@ -178,7 +175,7 @@ export function AdminLogs() {
       a.download = `memedb-logs-${Date.now()}.json`
       a.click()
       URL.revokeObjectURL(url)
-      toast.success(`已导出最近 ${all.length} 条符合条件的日志`)
+      toast.success(t.logs.exported(all.length))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -187,8 +184,8 @@ export function AdminLogs() {
   return (
     <>
       <AdminPageHeader
-        title="日志"
-        description="服务运行日志，按时间从新到旧"
+        title={t.titles.logs}
+        description={t.logs.description}
         actions={
           <>
             <div className="flex h-10 items-center gap-2 rounded-md border bg-background px-3 md:h-9">
@@ -202,13 +199,13 @@ export function AdminLogs() {
               />
               <Label htmlFor="live-tail" className="flex items-center gap-1.5 font-normal whitespace-nowrap">
                 <Radio className={cn('size-3.5', live && 'animate-pulse text-destructive')} aria-hidden />
-                实时追踪
+                {t.logs.live}
               </Label>
             </div>
             {!live && <RefreshControls onRefresh={() => void poll()} />}
             <Button variant="outline" className="h-10 md:h-9" onClick={exportLogs} disabled={!logs.length}>
               <Download aria-hidden />
-              导出
+              {t.logs.export}
             </Button>
           </>
         }
@@ -216,9 +213,9 @@ export function AdminLogs() {
 
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
         <Toolbar>
-          <SearchInput value={q} onChange={setQ} placeholder="搜索日志内容或信息值" className="basis-full sm:basis-auto" />
-          <FilterSelect value={minLevel} onChange={setMinLevel} options={levelOptions} label="最低级别" />
-          <FilterSelect value={range} onChange={setRange} options={rangeOptions} label="时间范围" />
+          <SearchInput value={q} onChange={setQ} placeholder={t.logs.search} className="basis-full sm:basis-auto" />
+          <FilterSelect value={minLevel} onChange={setMinLevel} options={levels.map((l) => [l, t.logs.atLeast(l.toUpperCase())] as const)} label={t.logs.minLevel} />
+          <FilterSelect value={range} onChange={setRange} options={rangeOptions(t)} label={t.overview.range} />
         </Toolbar>
         <form
           className="flex flex-wrap items-center gap-2"
@@ -227,35 +224,35 @@ export function AdminLogs() {
             addCond()
           }}
         >
-          <span className="text-xs text-muted-foreground">按信息筛选</span>
+          <span className="text-xs text-muted-foreground">{t.logs.byAttr}</span>
           <FilterSelect
             value={draft.key || '__'}
             onChange={(k) => setDraft((d) => ({ ...d, key: k === '__' ? '' : k }))}
-            options={[['__', '选择字段'] as const, ...attrKeys.map((k) => [k, k] as const)]}
-            label="信息字段"
+            options={[['__', t.logs.pickField] as const, ...attrKeys.map((k) => [k, k] as const)]}
+            label={t.logs.field}
             className="min-w-28"
           />
           <span className="text-muted-foreground">=</span>
           <Input
             value={draft.value}
             onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
-            placeholder="值"
-            aria-label="信息值"
+            placeholder={t.logs.value}
+            aria-label={t.logs.fieldValue}
             className="h-10 w-36 flex-1 text-base sm:flex-none md:h-9 md:text-sm"
           />
           <Button type="submit" variant="outline" className="h-10 md:h-9" disabled={!draft.key || !draft.value.trim()}>
             <Plus aria-hidden />
-            添加条件
+            {t.logs.addCondition}
           </Button>
         </form>
         {conds.length > 0 && (
-          <ul className="flex flex-wrap gap-2" aria-label="已添加的条件">
+          <ul className="flex flex-wrap gap-2" aria-label={t.logs.conditions}>
             {conds.map((c) => (
               <li key={c.id} className="flex h-8 items-center gap-1 rounded-full bg-muted pr-1 pl-3 font-mono text-xs">
                 {c.key}={c.value}
                 <button
                   type="button"
-                  aria-label={`移除条件 ${c.key}=${c.value}`}
+                  aria-label={t.logs.removeCondition(`${c.key}=${c.value}`)}
                   onClick={() => setConds((cur) => cur.filter((x) => x.id !== c.id))}
                   className="flex size-6 items-center justify-center rounded-full hover:bg-background"
                 >
@@ -265,7 +262,7 @@ export function AdminLogs() {
             ))}
             <li>
               <button type="button" onClick={() => setConds([])} className="h-8 px-2 text-xs text-muted-foreground underline-offset-2 hover:underline">
-                清除全部
+                {t.logs.clearAll}
               </button>
             </li>
           </ul>
@@ -279,18 +276,19 @@ export function AdminLogs() {
           className="sticky top-[calc(6.5rem+env(safe-area-inset-top))] z-30 mx-auto flex h-10 items-center gap-2 rounded-full bg-foreground px-4 text-sm text-background shadow-lg md:top-4"
         >
           <ArrowUp className="size-4" aria-hidden />
-          已暂停 · {newCount} 条新日志，回到最新
+          {t.logs.paused(newCount)}
         </button>
       )}
 
-      {error && <ErrorState title="日志加载失败" description={error} />}
+      {error && <ErrorState title={t.logs.loadFailed} description={error} />}
 
       <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
-        已加载 {visible.length} 条{live && frozenId === null && ' · 正在实时追踪'}
+        {t.logs.loaded(visible.length)}
+        {live && frozenId === null && ` · ${t.logs.tailing}`}
       </p>
 
       {loaded && visible.length === 0 ? (
-        <EmptyState icon={ScrollText} title="没有符合条件的日志" description="试试降低最低级别或移除部分条件。" />
+        <EmptyState icon={ScrollText} title={t.logs.none} description={t.logs.noneHint} />
       ) : (
         <ol className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
           {visible.map((l) => (
@@ -300,7 +298,7 @@ export function AdminLogs() {
       )}
 
       <div ref={sentinel} className="py-2 text-center text-xs text-muted-foreground">
-        {visible.length > 0 && (hasMore ? '加载更早的日志…' : '没有更早的日志了')}
+        {visible.length > 0 && (hasMore ? t.logs.loadingOlder : t.logs.noOlder)}
       </div>
     </>
   )
@@ -310,6 +308,7 @@ function LogRow({ log }: { log: LogEntry }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const entries = Object.entries(log.attrs)
+  const t = useMessages()
 
   const copy = async () => {
     try {
@@ -317,7 +316,7 @@ function LogRow({ log }: { log: LogEntry }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1200)
     } catch {
-      toast.error('复制失败')
+      toast.error(t.common.copyFailed)
     }
   }
 
@@ -366,7 +365,7 @@ function LogRow({ log }: { log: LogEntry }) {
           </dl>
           <Button size="sm" variant="outline" className="h-9 w-fit" onClick={copy}>
             {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-            {copied ? '已复制' : '复制'}
+            {copied ? t.shares.copied : t.share.copy}
           </Button>
         </div>
       )}

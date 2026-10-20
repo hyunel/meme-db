@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { api } from '@/lib/api'
 import type { Folder, LibraryView } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 export type PickerMode = 'move' | 'copy' | 'save' // save copies another user's folder in
 
@@ -49,7 +50,8 @@ export function FolderPickerDialog({
   // Folders being moved are disabled, so their subtrees cannot be entered.
   const blocked = new Set(mode === 'move' ? movingFolderIds : [])
   const sameAsSource = mode === 'move' && sourceFolder !== undefined && cur === sourceFolder
-  const verb = { move: '移动', copy: '复制', save: '保存' }[mode]
+  const t = useMessages()
+  const words = t.picker.modes[mode]
 
   const go = (id: string | null) => {
     setCur(id)
@@ -65,7 +67,7 @@ export function FolderPickerDialog({
       await onConfirm(cur)
       onOpenChange(false)
     } catch (e) {
-      setError((e as Error).message || `${verb}失败，请重试`)
+      setError((e as Error).message || words.failed)
     } finally {
       setPending(false)
     }
@@ -94,20 +96,20 @@ export function FolderPickerDialog({
       <DialogContent className="gap-4 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {name ? `${verb}「${name}」到…` : `${verb} ${count} 项到…`}
+            {name ? words.title(name) : words.titleCount(count)}
           </DialogTitle>
-          <DialogDescription>浏览并选择目标文件夹，然后点击「{verb}到此处」。</DialogDescription>
+          <DialogDescription>{t.picker.description(words.here)}</DialogDescription>
         </DialogHeader>
 
-        <nav aria-label="目标位置路径" className="scroll-row -mx-1 flex items-center gap-1 px-1 text-sm">
-          <Button variant="ghost" size="icon-sm" disabled={cur === null} onClick={() => go(path.at(-2)?.id ?? null)} aria-label="返回上一级">
+        <nav aria-label={t.picker.path} className="scroll-row -mx-1 flex items-center gap-1 px-1 text-sm">
+          <Button variant="ghost" size="icon-sm" disabled={cur === null} onClick={() => go(path.at(-2)?.id ?? null)} aria-label={t.picker.up}>
             <ChevronLeft />
           </Button>
           <ol className="flex min-w-0 items-center gap-0.5">
             <li>
               <button type="button" onClick={() => go(null)} className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-muted">
                 <Home className="size-3.5" aria-hidden />
-                我的库
+                {t.titles.library}
               </button>
             </li>
             {path.map((f) => (
@@ -126,16 +128,16 @@ export function FolderPickerDialog({
           </ol>
         </nav>
 
-        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选当前层的文件夹" aria-label="按名称筛选文件夹" />
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t.picker.filter} aria-label={t.libraryDialog.filterLabel} />
 
-        <ul className="flex max-h-64 min-h-32 flex-col gap-0.5 overflow-y-auto rounded-lg border p-1" aria-label="子文件夹" aria-busy={!data}>
+        <ul className="flex max-h-64 min-h-32 flex-col gap-0.5 overflow-y-auto rounded-lg border p-1" aria-label={t.picker.subfolders} aria-busy={!data}>
           {!data && (
             <li className="flex h-28 items-center justify-center text-muted-foreground">
               <Loader2 className="size-4 animate-spin" aria-hidden />
             </li>
           )}
           {data && children.length === 0 && (
-            <li className="flex h-28 items-center justify-center text-sm text-muted-foreground">{filter ? '没有匹配的文件夹' : '此处没有子文件夹'}</li>
+            <li className="flex h-28 items-center justify-center text-sm text-muted-foreground">{filter ? t.libraryDialog.noMatch : t.picker.noSubfolders}</li>
           )}
           {children.map((f) => {
             const disabled = blocked.has(f.id)
@@ -149,7 +151,7 @@ export function FolderPickerDialog({
                 >
                   <FolderIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="flex-1 truncate">{f.name}</span>
-                  {disabled ? <span className="text-xs">不可选</span> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden />}
+                  {disabled ? <span className="text-xs">{t.picker.unavailable}</span> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden />}
                 </button>
               </li>
             )
@@ -158,34 +160,34 @@ export function FolderPickerDialog({
 
         {creating ? (
           <form onSubmit={create} className="flex gap-2">
-            <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="新文件夹名称" aria-label="新文件夹名称" maxLength={255} />
+            <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t.libraryDialog.newFolderName} aria-label={t.libraryDialog.newFolderName} maxLength={255} />
             <Button type="submit" disabled={!newName.trim() || pending}>
-              创建
+              {t.tokens.create}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setCreating(false)}>
-              取消
+              {t.common.cancel}
             </Button>
           </form>
         ) : (
           <Button variant="outline" className="self-start" onClick={() => setCreating(true)}>
             <FolderPlus data-icon="inline-start" />
-            在此新建文件夹
+            {t.picker.newHere}
           </Button>
         )}
 
         {(error || sameAsSource) && (
           <p role="alert" className={cn('text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>
-            {error ?? '条目已在此文件夹中，请选择其他位置。'}
+            {error ?? t.picker.alreadyHere}
           </p>
         )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button onClick={confirm} disabled={pending || sameAsSource}>
             {pending && <Loader2 className="animate-spin" data-icon="inline-start" />}
-            {verb}到此处
+            {words.here}
           </Button>
         </DialogFooter>
       </DialogContent>

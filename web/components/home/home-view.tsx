@@ -10,6 +10,7 @@ import { MemeGridSkeleton } from '@/components/states'
 import { Button } from '@/components/ui/button'
 import { clearRecentSearches, useRecentSearches } from '@/lib/recent-searches'
 import type { Feed, Folder, Meme, SiteStats } from '@/lib/types'
+import { useMessages } from '@/lib/i18n/client'
 
 function Chip({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -25,29 +26,31 @@ export function HomeView() {
   const { data: stats } = useSWR<SiteStats>('/stats')
   const { data: popular } = useSWR<Feed<Meme>>('/memes?limit=12')
   const { data: folders } = useSWR<Feed<Folder>>('/folders?limit=6')
+  const t = useMessages()
 
   return (
     <>
       <section className="border-b bg-[radial-gradient(ellipse_at_top,var(--color-brand)/0.35,transparent_60%)]">
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 px-4 pt-20 pb-16 text-center md:pt-28 md:pb-20">
           <p className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
-            {'已收录 '}
+            {t.home.indexedBefore}
             <span className="font-medium text-foreground tabular-nums">{stats?.memes ?? '…'}</span>
-            {' 张表情包，支持以图搜图'}
+            {t.home.indexedAfter}
           </p>
           {/* break-keep wraps Chinese only between phrases: at the <wbr>, or after punctuation */}
           <h1 className="text-4xl font-semibold tracking-tight text-balance break-keep md:text-6xl">
-            找到那张<wbr />
+            {t.home.heroBefore}
+            <wbr />
             <span className="relative whitespace-nowrap">
               {/* On a dark page the word itself turns yellow, as light text would vanish into the marker */}
-              <span className="relative z-10 dark:text-brand">刚刚好</span>
+              <span className="relative z-10 dark:text-brand">{t.home.heroMark}</span>
               <span className="absolute inset-x-0 bottom-1 -z-0 h-3 rounded-sm bg-brand md:h-4 dark:hidden" aria-hidden />
             </span>
-            的表情包
+            {t.home.heroAfter}
           </h1>
           <p className="max-w-xl text-pretty break-keep text-muted-foreground md:text-lg">
-            <span className="inline-block">输入一句话、一个情绪，或直接丢一张图进来。</span>
-            <span className="inline-block">MemeDB 会识别图中的文字和角色，帮你秒找同款。</span>
+            <span className="inline-block">{t.home.intro1}</span>
+            <span className="inline-block">{t.home.intro2}</span>
           </p>
           <SearchBar size="lg" className="max-w-2xl" />
           <div className="flex flex-col items-center gap-3">
@@ -55,14 +58,14 @@ export function HomeView() {
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="size-3" aria-hidden />
-                  最近搜索
+                  {t.home.recent}
                 </span>
                 {recent.slice(0, 5).map((q) => (
                   <Chip key={q} href={`/search?q=${encodeURIComponent(q)}`}>
                     {q}
                   </Chip>
                 ))}
-                <Button variant="ghost" size="icon-xs" onClick={clearRecentSearches} aria-label="清除最近搜索">
+                <Button variant="ghost" size="icon-xs" onClick={clearRecentSearches} aria-label={t.home.clearRecent}>
                   <X />
                 </Button>
               </div>
@@ -71,7 +74,7 @@ export function HomeView() {
             <div className="flex flex-wrap items-center justify-center gap-2">
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Flame className="size-3" aria-hidden />
-                热门
+                {t.home.hot}
               </span>
               {hot.map((k) => (
                 <Chip key={k} href={`/search?q=${encodeURIComponent(k)}`}>
@@ -88,12 +91,12 @@ export function HomeView() {
         <div className="mb-5 flex items-end justify-between gap-4">
           <div>
             <h2 id="popular-heading" className="text-xl font-semibold tracking-tight">
-              热门表情包
+              {t.browse.popular}
             </h2>
-            <p className="text-sm text-muted-foreground">大家最近都在收藏这些</p>
+            <p className="text-sm text-muted-foreground">{t.home.popularHint}</p>
           </div>
           <Button variant="ghost" nativeButton={false} render={<Link href="/discover" />}>
-            浏览全部
+            {t.home.browseAll}
             <ArrowRight data-icon="inline-end" />
           </Button>
         </div>
@@ -104,9 +107,9 @@ export function HomeView() {
       <section className="mx-auto w-full max-w-6xl px-4 pb-16" aria-labelledby="folders-heading">
         <div className="mb-5">
           <h2 id="folders-heading" className="text-xl font-semibold tracking-tight">
-            精选公开文件夹
+            {t.home.folders}
           </h2>
-          <p className="text-sm text-muted-foreground">由用户整理并公开分享的表情包合集</p>
+          <p className="text-sm text-muted-foreground">{t.home.foldersHint}</p>
         </div>
         <FolderGrid folders={folders.items} />
       </section>

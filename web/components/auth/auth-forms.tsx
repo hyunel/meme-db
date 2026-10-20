@@ -10,6 +10,7 @@ import { FormField, validateEmail, validatePassword, validateUsername } from '@/
 import { GuestOnly } from '@/components/auth-guard'
 import { ApiError } from '@/lib/api'
 import { login, register } from '@/lib/session'
+import { useMessages } from '@/lib/i18n/client'
 
 function useRedirectTarget() {
   const params = useSearchParams()
@@ -38,17 +39,18 @@ export function LoginForm() {
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({})
   const [pending, setPending] = useState(false)
+  const t = useMessages()
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (pending) return
-    const next = { email: validateEmail(email), password: password ? undefined : '请输入密码' }
+    const next = { email: validateEmail(email, t), password: password ? undefined : t.form.passwordRequired }
     setErrors(next)
     if (next.email || next.password) return
     setPending(true)
     try {
       await login(email.trim(), password)
-      toast.success('登录成功')
+      toast.success(t.auth.signedIn)
       router.replace(target)
     } catch (err) {
       setErrors({ form: (err as Error).message })
@@ -60,21 +62,21 @@ export function LoginForm() {
   return (
     <GuestOnly redirect={target}>
       <AuthCard
-        title="登录 MemeDB"
-        description="登录后管理你的表情包库与收藏。"
+        title={t.auth.loginTitle}
+        description={t.auth.loginDescription}
         footer={
           <>
-            还没有账号？{' '}
+            {t.auth.noAccount}{' '}
             <Link href={`/register${query}`} className="font-medium text-foreground underline underline-offset-4">
-              去注册
+              {t.auth.goRegister}
             </Link>
           </>
         }
       >
-        {expired && <p className="mb-4 rounded-lg bg-warning/15 px-3 py-2 text-sm">登录已过期，请重新登录。</p>}
+        {expired && <p className="mb-4 rounded-lg bg-warning/15 px-3 py-2 text-sm">{t.auth.expired}</p>}
         <form onSubmit={submit} noValidate className="flex flex-col gap-4">
           <FormField
-            label="邮箱"
+            label={t.auth.email}
             type="email"
             inputMode="email"
             autoComplete="email"
@@ -84,7 +86,7 @@ export function LoginForm() {
             placeholder="you@example.com"
           />
           <FormField
-            label="密码"
+            label={t.auth.password}
             type="password"
             autoComplete="current-password"
             value={password}
@@ -98,7 +100,7 @@ export function LoginForm() {
           )}
           <Button type="submit" size="lg" className="h-11 w-full" disabled={pending}>
             {pending && <Loader2 className="animate-spin" data-icon="inline-start" />}
-            登录
+            {t.nav.signIn}
           </Button>
         </form>
       </AuthCard>
@@ -114,8 +116,9 @@ export function RegisterForm() {
   const [values, setValues] = useState<Record<RegField, string>>({ username: '', email: '', password: '' })
   const [errors, setErrors] = useState<Partial<Record<RegField, string>>>({})
   const [pending, setPending] = useState(false)
+  const t = useMessages()
 
-  const validators: Record<RegField, (v: string) => string | undefined> = {
+  const validators: Record<RegField, (v: string, m: typeof t) => string | undefined> = {
     username: validateUsername,
     email: validateEmail,
     password: validatePassword,
@@ -124,25 +127,25 @@ export function RegisterForm() {
   const bind = (k: RegField) => ({
     value: values[k],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setValues((v) => ({ ...v, [k]: e.target.value })),
-    onBlur: () => setErrors((er) => ({ ...er, [k]: validators[k](values[k]) })),
+    onBlur: () => setErrors((er) => ({ ...er, [k]: validators[k](values[k], t) })),
     error: errors[k],
   })
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (pending) return
-    const next = { username: validateUsername(values.username), email: validateEmail(values.email), password: validatePassword(values.password) }
+    const next = { username: validateUsername(values.username, t), email: validateEmail(values.email, t), password: validatePassword(values.password, t) }
     setErrors(next)
     if (next.username || next.email || next.password) return
     setPending(true)
     try {
       await register({ username: values.username, email: values.email.trim(), password: values.password })
-      toast.success('注册成功，已自动登录')
+      toast.success(t.auth.registered)
       router.replace(target)
     } catch (err) {
       const field = err instanceof ApiError ? (err.field as RegField | undefined) : undefined
       if (field && field in values) setErrors({ [field]: (err as Error).message })
-      else toast.error('注册失败', { description: (err as Error).message })
+      else toast.error(t.auth.registerFailed, { description: (err as Error).message })
     } finally {
       setPending(false)
     }
@@ -151,24 +154,24 @@ export function RegisterForm() {
   return (
     <GuestOnly redirect={target}>
       <AuthCard
-        title="创建账号"
-        description="免费注册，开始收集属于你的表情包。"
+        title={t.auth.registerTitle}
+        description={t.auth.registerDescription}
         footer={
           <>
-            已有账号？{' '}
+            {t.auth.haveAccount}{' '}
             <Link href={`/login${query}`} className="font-medium text-foreground underline underline-offset-4">
-              去登录
+              {t.login.go}
             </Link>
           </>
         }
       >
         <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <FormField label="用户名" autoComplete="username" autoCapitalize="none" hint="3–50 个字符，小写字母、数字或下划线" {...bind('username')} />
-          <FormField label="邮箱" type="email" inputMode="email" autoComplete="email" {...bind('email')} />
-          <FormField label="密码" type="password" autoComplete="new-password" hint="至少 6 个字符" {...bind('password')} />
+          <FormField label={t.auth.username} autoComplete="username" autoCapitalize="none" hint={t.auth.usernameHint} {...bind('username')} />
+          <FormField label={t.auth.email} type="email" inputMode="email" autoComplete="email" {...bind('email')} />
+          <FormField label={t.auth.password} type="password" autoComplete="new-password" hint={t.auth.passwordHint} {...bind('password')} />
           <Button type="submit" size="lg" className="h-11 w-full" disabled={pending}>
             {pending && <Loader2 className="animate-spin" data-icon="inline-start" />}
-            注册
+            {t.nav.signUp}
           </Button>
         </form>
       </AuthCard>

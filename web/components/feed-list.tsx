@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/states'
 import type { FeedStatus } from '@/hooks/use-feed'
+import { useMessages } from '@/lib/i18n/client'
 
 /** Lays out a feed's items, loading the next page as the end comes near; items are undefined until the first page comes. */
 export function FeedList<L extends unknown[]>({
@@ -22,6 +23,7 @@ export function FeedList<L extends unknown[]>({
 }) {
   const { hasMore, isLoadingMore, error, loadMore, retry } = feed
   const sentinel = useRef<HTMLDivElement>(null)
+  const t = useMessages()
 
   useEffect(() => {
     const el = sentinel.current
@@ -41,18 +43,18 @@ export function FeedList<L extends unknown[]>({
       <div ref={sentinel} className="flex min-h-9 items-center justify-center gap-2 text-sm text-muted-foreground">
         {error ? (
           <>
-            加载失败
+            {t.common.loadFailed}
             <Button variant="ghost" size="sm" onClick={retry}>
-              重试
+              {t.common.retry}
             </Button>
           </>
         ) : isLoadingMore ? (
           <>
             <Loader2 className="size-4 animate-spin" aria-hidden />
-            加载中…
+            {t.common.loadingMore}
           </>
         ) : (
-          !hasMore && '没有更多了'
+          !hasMore && t.common.noMore
         )}
       </div>
     </div>

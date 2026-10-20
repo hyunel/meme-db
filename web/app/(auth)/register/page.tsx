@@ -1,8 +1,8 @@
 import { Suspense } from 'react'
-import type { Metadata } from 'next'
 import { RegisterForm } from '@/components/auth/auth-forms'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata: Metadata = { title: '注册' }
+export const generateMetadata = pageTitle('register')
 
 export default function RegisterPage() {
   return (

@@ -23,6 +23,7 @@ import { formatDate } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { Entry, Feed, Folder, FolderPage, Meme, Profile } from '@/lib/types'
 import { TabSwitch, useTabParam } from '@/components/tab-switch'
+import { useMessages } from '@/lib/i18n/client'
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.ReactNode; title: string; description?: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -40,20 +41,21 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.R
 export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }) {
   const memes = useFeed(['tag', tag], (cursor) => api<Feed<Meme>>(`/memes${qs({ tag, cursor })}`))
   const { data: hot = initialHot } = useSWR<string[]>('/tags/hot?limit=12', { fallbackData: initialHot })
-  const others = hot.filter((t) => t !== tag)
+  const others = hot.filter((name) => name !== tag)
+  const t = useMessages()
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
-        eyebrow={<span className="inline-flex items-center gap-1"><Hash className="size-3.5" aria-hidden />标签</span>}
+        eyebrow={<span className="inline-flex items-center gap-1"><Hash className="size-3.5" aria-hidden />{t.meme.tags}</span>}
         title={`#${tag}`}
       />
       {others.length > 0 && (
-        <nav aria-label="其他标签" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
+        <nav aria-label={t.browse.otherTags} className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
           <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
-            {others.map((t) => (
-              <li key={t}>
-                <Link href={`/tags/${encodeURIComponent(t)}`} className="inline-flex h-9 items-center rounded-full bg-muted px-3.5 text-sm whitespace-nowrap hover:bg-brand hover:text-brand-foreground">
-                  #{t}
+            {others.map((name) => (
+              <li key={name}>
+                <Link href={`/tags/${encodeURIComponent(name)}`} className="inline-flex h-9 items-center rounded-full bg-muted px-3.5 text-sm whitespace-nowrap hover:bg-brand hover:text-brand-foreground">
+                  #{name}
                 </Link>
               </li>
             ))}
@@ -64,7 +66,7 @@ export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }
         memes={memes.items}
         feed={memes}
         allowAdd
-        empty={<EmptyState icon={ImageOff} title="该标签下暂无表情包" description="试试其他标签或直接搜索。" />}
+        empty={<EmptyState icon={ImageOff} title={t.browse.tagEmpty} description={t.browse.tagEmptyHint} />}
       />
     </div>
   )
@@ -74,17 +76,18 @@ export function DiscoverView() {
   const [tab, setTab] = useTabParam(['memes', 'folders'] as const)
   const memes = useFeed(['popular'], (cursor) => api<Feed<Meme>>(`/memes${qs({ cursor })}`))
   const folders = useFeed(['public-folders'], (cursor) => api<Feed<Folder>>(`/folders${qs({ cursor })}`))
+  const t = useMessages()
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-      <PageHeader title="发现" description="全站热门表情包与社区公开分享的合集" />
-      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['memes', '热门表情包'], ['folders', '公开合集']] as const} />
+      <PageHeader title={t.titles.discover} description={t.browse.discoverDescription} />
+      <TabSwitch label={t.browse.kind} value={tab} onChange={setTab} tabs={[['memes', t.browse.popular], ['folders', t.browse.publicFolders]] as const} />
       {/* Both tabs stay mounted, so switching shows the cards built before rather than building them again */}
       <div role="tabpanel">
         <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
-          <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无表情包" />} />
+          <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title={t.browse.noMemes} />} />
         </Activity>
         <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
-          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
+          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title={t.browse.noFolders} />}>
             {(list) => <FolderGrid folders={list} />}
           </FeedList>
         </Activity>
@@ -103,6 +106,7 @@ export function UserProfileView({ profile: initial }: { profile: Profile }) {
   const [tab, setTab] = useTabParam(memesFirst ? (['memes', 'folders'] as const) : (['folders', 'memes'] as const))
   const folders = useFeed(['profile-folders', username], (cursor) => api<Feed<Folder>>(`${path}/folders${qs({ cursor })}`), { live: true })
   const memes = useFeed(['profile-memes', username], (cursor) => api<Feed<Meme>>(`${path}/memes${qs({ cursor })}`), { live: true })
+  const t = useMessages()
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <header className="flex items-center gap-4">
@@ -111,24 +115,24 @@ export function UserProfileView({ profile: initial }: { profile: Profile }) {
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h1 className="truncate text-2xl font-semibold tracking-tight">@{user.username}</h1>
-          <p className="text-sm text-muted-foreground">{formatDate(user.created_at)} 加入</p>
+          <p className="text-sm text-muted-foreground">{t.settings.joined(formatDate(user.created_at))}</p>
         </div>
         {user.id === viewer?.id && (
           <Button variant="outline" nativeButton={false} render={<Link href="/library" />} className="shrink-0">
             <Library data-icon="inline-start" />
-            管理我的库
+            {t.browse.manageLibrary}
           </Button>
         )}
       </header>
-      <TabSwitch label="内容类型" value={tab} onChange={setTab} tabs={[['folders', '合集', folder_count], ['memes', '表情包', meme_count]] as const} />
+      <TabSwitch label={t.browse.kind} value={tab} onChange={setTab} tabs={[['folders', t.favorites.folders, folder_count], ['memes', t.favorites.memes, meme_count]] as const} />
       <div role="tabpanel">
         <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
-          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title="暂无公开合集" />}>
+          <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title={t.browse.noFolders} />}>
             {(list) => <FolderGrid folders={list} showOwner={false} />}
           </FeedList>
         </Activity>
         <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
-          <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title="暂无公开表情包" />} />
+          <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title={t.browse.noPublicMemes} />} />
         </Activity>
       </div>
     </div>
@@ -141,11 +145,12 @@ function FolderActions({ folder, own, viaLink, share }: { folder: Folder; own: b
   const requireLogin = useRequireLogin()
   const [picking, setPicking] = useState(false)
   const [privateLink, setPrivateLink] = useState(false)
+  const t = useMessages()
 
   const save = async (target: string | null) => {
     const copy = await api<Folder>(`/library/folders/${folder.id}/save`, { method: 'POST', json: { parent_id: target, share } })
     void refresh()
-    toast.success(`已保存到我的库：${copy.name}`, { action: { label: '前往', onClick: () => router.push(`/library?folder=${copy.id}`) } })
+    toast.success(t.browse.saved(copy.name), { action: { label: t.libraryDialog.go, onClick: () => router.push(`/library?folder=${copy.id}`) } })
   }
 
   return (
@@ -153,18 +158,18 @@ function FolderActions({ folder, own, viaLink, share }: { folder: Folder; own: b
       {own ? (
         <Button nativeButton={false} render={<Link href={`/library?folder=${folder.id}`} />} variant="secondary" className="h-11 flex-1 sm:h-9 sm:flex-none">
           <Check data-icon="inline-start" />
-          在我的库中打开
+          {t.browse.openInLibrary}
         </Button>
       ) : (
-        <Button onClick={() => requireLogin('登录后即可把合集保存到你的库。') && setPicking(true)} className="h-11 flex-1 sm:h-9 sm:flex-none">
+        <Button onClick={() => requireLogin(t.browse.savePrompt) && setPicking(true)} className="h-11 flex-1 sm:h-9 sm:flex-none">
           <FolderPlus data-icon="inline-start" />
-          保存到我的库
+          {t.browse.save}
         </Button>
       )}
       {!viaLink && <FavoriteButton kind="folder" id={folder.id} active={folder.is_favorite} count={folder.favorite_count} showCount className="h-11 sm:h-9" />}
-      <Button variant="outline" onClick={() => shareFolder(folder, own, () => setPrivateLink(true), share)} className="h-11 sm:h-9">
+      <Button variant="outline" onClick={() => shareFolder(folder, own, () => setPrivateLink(true), t, share)} className="h-11 sm:h-9">
         <Share2 data-icon="inline-start" />
-        分享
+        {t.shares.share}
       </Button>
       {picking && <FolderPickerDialog open onOpenChange={setPicking} mode="save" count={1} name={folder.name} initialFolder={null} onConfirm={save} />}
       {privateLink && <PrivateLinkDialog target={{ kind: 'folder', id: folder.id, title: folder.name }} onOpenChange={setPrivateLink} />}
@@ -188,9 +193,10 @@ export function PublicFolderView({ page: initial, share }: { page: FolderPage; s
 
   const own = folder.owner.id === user?.id
   const viaLink = Boolean(share) && folder.visibility === 'private' && !own
+  const t = useMessages()
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-      <nav aria-label="合集路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
+      <nav aria-label={t.browse.path} className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
         <ol className="flex w-max items-center gap-1 text-sm text-muted-foreground">
           <li>
             <Link href={`/u/${folder.owner.username}`} className="inline-flex items-center gap-1 hover:text-foreground">
@@ -217,11 +223,11 @@ export function PublicFolderView({ page: initial, share }: { page: FolderPage; s
         title={folder.name}
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {folders.length} 个子文件夹 · 共 {folder.item_count} 个表情包
+            {t.browse.folderSummary(folders.length, folder.item_count)}
             {viaLink && (
               <span className="inline-flex items-center gap-1.5">
                 <Link2 className="size-4 shrink-0" aria-hidden />
-                通过私密链接查看
+                {t.meme.viaLink}
               </span>
             )}
           </span>
@@ -235,7 +241,7 @@ export function PublicFolderView({ page: initial, share }: { page: FolderPage; s
         feed={entries}
         share={share}
         allowAdd
-        empty={folders.length === 0 && <EmptyState icon={FolderOpen} title="这个合集还是空的" />}
+        empty={folders.length === 0 && <EmptyState icon={FolderOpen} title={t.browse.folderEmpty} />}
       />
     </div>
   )

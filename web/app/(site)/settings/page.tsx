@@ -1,8 +1,8 @@
-import type { Metadata } from 'next'
 import { RequireAuth } from '@/components/auth-guard'
 import { SettingsView } from '@/components/account-views'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata: Metadata = { title: '账号设置' }
+export const generateMetadata = pageTitle('settings')
 
 export default function SettingsPage() {
   return (

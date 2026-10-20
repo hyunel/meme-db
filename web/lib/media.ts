@@ -1,5 +1,6 @@
 import { qs } from './utils'
 import type { MediaKind, Meme } from './types'
+import type { Messages } from './i18n'
 
 export function kindOf(mime: string): MediaKind {
   if (mime === 'image/gif') return 'gif'
@@ -22,6 +23,6 @@ export async function fetchAnimation(url: string, mime: string, signal: AbortSig
 
 export const isProcessing = (meme?: Pick<Meme, 'status'> | null) => meme?.status === 'pending' || meme?.status === 'processing'
 
-export const memeTitle = (meme: Meme) => meme.title || '未命名表情包'
+export const memeTitle = (meme: Meme, t: Messages) => meme.title || t.media.untitled
 
-export const memeAlt = (meme: { title?: string }) => (meme.title ? `表情包：${meme.title}` : '表情包')
+export const memeAlt = (meme: { title?: string }, t: Messages) => (meme.title ? t.media.alt(meme.title) : t.media.meme)

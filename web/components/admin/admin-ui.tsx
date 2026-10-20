@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CopyButton } from '@/components/code-block'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 export function AdminPageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
@@ -89,20 +90,21 @@ export function Toolbar({ children }: { children: React.ReactNode }) {
 
 export function RefreshControls({ auto, onAutoChange, onRefresh }: { auto?: boolean; onAutoChange?: (v: boolean) => void; onRefresh: () => void }) {
   const [spin, setSpin] = useState(false)
+  const t = useMessages()
   return (
     <div className="flex items-center gap-3">
       {onAutoChange && (
         <div className="flex items-center gap-2">
           <Switch id="auto-refresh" checked={auto} onCheckedChange={onAutoChange} />
           <Label htmlFor="auto-refresh" className="text-sm font-normal whitespace-nowrap">
-            自动刷新
+            {t.admin.autoRefresh}
           </Label>
         </div>
       )}
       <Button
         variant="outline"
         size="icon"
-        aria-label="刷新"
+        aria-label={t.admin.refresh}
         onClick={() => {
           setSpin(true)
           onRefresh()
@@ -127,6 +129,7 @@ export function CopyId({ value, className }: { value: string; className?: string
 
 export function ExpandableText({ text, max = 40 }: { text: string; max?: number }) {
   const [open, setOpen] = useState(false)
+  const t = useMessages()
   if (text.length <= max) return <span>{text}</span>
   return (
     // Table cells don't wrap, and errors hold long unbroken paths: the full text wraps anywhere, at about the width it
@@ -134,7 +137,7 @@ export function ExpandableText({ text, max = 40 }: { text: string; max?: number 
     <span className={cn(open && 'block min-w-56 whitespace-normal wrap-anywhere')}>
       {open ? text : `${text.slice(0, max)}…`}{' '}
       <button type="button" className="text-xs font-medium underline underline-offset-2" onClick={() => setOpen(!open)}>
-        {open ? '收起' : '展开'}
+        {open ? t.meme.collapse : t.admin.expand}
       </button>
     </span>
   )
@@ -167,31 +170,32 @@ export function Pagination({ paging, total }: { paging: Paging; total: number })
   const [jump, setJump] = useState('')
   const { page, pageSize } = paging
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const t = useMessages()
   return (
-    <nav aria-label="分页" className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+    <nav aria-label={t.admin.pagination} className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-2 text-muted-foreground">
-        <span className="tabular-nums">共 {total} 条</span>
+        <span className="tabular-nums">{t.admin.total(total)}</span>
         <Select value={String(pageSize)} onValueChange={(v) => paging.setPageSize(Number(v))}>
-          <SelectTrigger aria-label="每页条数" className="h-9 w-24">
-            <SelectValue>{(v: string) => `${v} 条/页`}</SelectValue>
+          <SelectTrigger aria-label={t.admin.pageSize} className="h-9 w-24">
+            <SelectValue>{(v: string) => t.admin.perPage(Number(v))}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {[10, 20, 50, 100].map((n) => (
               <SelectItem key={n} value={String(n)}>
-                {n} 条/页
+                {t.admin.perPage(n)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label="上一页" disabled={page <= 1} onClick={() => paging.setPage(Math.min(page, pageCount) - 1)}>
+        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label={t.admin.prevPage} disabled={page <= 1} onClick={() => paging.setPage(Math.min(page, pageCount) - 1)}>
           <ChevronLeft />
         </Button>
         <span className="min-w-16 text-center tabular-nums" aria-live="polite">
           {page} / {pageCount}
         </span>
-        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label="下一页" disabled={page >= pageCount} onClick={() => paging.setPage(page + 1)}>
+        <Button variant="outline" size="icon" className="size-10 md:size-9" aria-label={t.admin.nextPage} disabled={page >= pageCount} onClick={() => paging.setPage(page + 1)}>
           <ChevronRight />
         </Button>
         <form
@@ -203,9 +207,9 @@ export function Pagination({ paging, total }: { paging: Paging; total: number })
             setJump('')
           }}
         >
-          <Input inputMode="numeric" value={jump} onChange={(e) => setJump(e.target.value.replace(/\D/g, ''))} aria-label="跳转到页码" placeholder="页码" className="h-10 w-16 text-base md:h-9 md:text-sm" />
+          <Input inputMode="numeric" value={jump} onChange={(e) => setJump(e.target.value.replace(/\D/g, ''))} aria-label={t.admin.jumpTo} placeholder={t.admin.pageNumber} className="h-10 w-16 text-base md:h-9 md:text-sm" />
           <Button type="submit" variant="ghost" className="h-10 md:h-9" disabled={!jump}>
-            跳转
+            {t.admin.jump}
           </Button>
         </form>
       </div>
@@ -277,6 +281,7 @@ export function DataList<T>({
 }) {
   const selectable = Boolean(selected && onSelectedChange)
   const ids = rows.map(getId)
+  const t = useMessages()
   const all = selectable && ids.length > 0 && ids.every((id) => selected!.has(id))
   const some = selectable && ids.some((id) => selected!.has(id))
   const toggle = (id: string) => {
@@ -291,7 +296,7 @@ export function DataList<T>({
   if (loading)
     return (
       <div className="flex h-40 items-center justify-center rounded-xl border bg-card text-muted-foreground" aria-busy="true">
-        <Loader2 className="size-5 animate-spin" aria-label="加载中" />
+        <Loader2 className="size-5 animate-spin" aria-label={t.common.loading} />
       </div>
     )
   if (!rows.length) return <div className="rounded-xl border bg-card">{empty}</div>
@@ -300,7 +305,7 @@ export function DataList<T>({
   const rowMenu = (row: T) =>
     actions ? (
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={`${rowLabel(row)} 的操作`} className="size-10 md:size-8" />}>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={t.admin.rowActions(rowLabel(row))} className="size-10 md:size-8" />}>
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
@@ -318,7 +323,7 @@ export function DataList<T>({
               {selectable && (
                 <TableHead className="w-10">
                   <Checkbox
-                    aria-label="全选本页"
+                    aria-label={t.admin.selectPage}
                     checked={all}
                     indeterminate={!all && some}
                     onCheckedChange={() => onSelectedChange!(all ? new Set() : new Set(ids))}
@@ -347,7 +352,7 @@ export function DataList<T>({
               })}
               {actions && (
                 <TableHead className="w-12">
-                  <span className="sr-only">操作</span>
+                  <span className="sr-only">{t.admin.actions}</span>
                 </TableHead>
               )}
             </TableRow>
@@ -364,7 +369,7 @@ export function DataList<T>({
                 >
                   {selectable && (
                     <TableCell>
-                      <Checkbox aria-label={`选择 ${rowLabel(r)}`} checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />
+                      <Checkbox aria-label={t.library.selectItem(rowLabel(r))} checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />
                     </TableCell>
                   )}
                   {columns.map((c) => (
@@ -388,7 +393,7 @@ export function DataList<T>({
         {selectable && (
           <label className="flex h-10 items-center gap-2 px-1 text-sm text-muted-foreground">
             <Checkbox checked={all} indeterminate={!all && some} onCheckedChange={() => onSelectedChange!(all ? new Set() : new Set(ids))} />
-            全选本页
+            {t.admin.selectPage}
           </label>
         )}
         <ul className="flex flex-col gap-2">
@@ -401,7 +406,7 @@ export function DataList<T>({
                 className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', onRowClick && 'cursor-pointer active:bg-muted/50', selected?.has(id) && 'border-foreground/40 bg-muted/40', rowClassName?.(r))}
               >
                 <div className="flex items-start gap-3">
-                  {selectable && <Checkbox aria-label={`选择 ${rowLabel(r)}`} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
+                  {selectable && <Checkbox aria-label={t.library.selectItem(rowLabel(r))} className="mt-1 size-5" checked={selected!.has(id)} onCheckedChange={() => toggle(id)} />}
                   <div className="min-w-0 flex-1">{title?.cell(r)}</div>
                   <div className="-mt-1 -mr-1">
                     {rowMenu(r)}
@@ -429,24 +434,24 @@ export function DataList<T>({
 /* ------------------------------- bulk actions ------------------------------ */
 
 export function BulkBar({ count, onClear, children }: { count: number; onClear: () => void; children: React.ReactNode }) {
+  const t = useMessages()
   if (!count) return null
   return (
     <div
       role="toolbar"
-      aria-label="批量操作"
+      aria-label={t.library.bulk}
       className="sticky bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap items-center gap-2 rounded-xl border bg-foreground px-3 py-2 text-background shadow-lg"
     >
-      <span className="text-sm tabular-nums">已选 {count} 项</span>
+      <span className="text-sm tabular-nums">{t.library.selected(count)}</span>
       <div className="flex flex-1 flex-wrap justify-end gap-2 [&_button]:h-9">{children}</div>
       <Button size="sm" variant="ghost" className="h-9 text-background hover:bg-background/15 hover:text-background" onClick={onClear}>
-        取消
+        {t.common.cancel}
       </Button>
     </div>
   )
 }
 
 export const toneText = { warn: 'text-warning-strong', danger: 'text-destructive' } as const
-export const toneLabel = { warn: '预警', danger: '严重' } as const
 
 export function StatCard({
   label,
@@ -463,12 +468,13 @@ export function StatCard({
   tone?: 'danger' | 'warn'
   children?: React.ReactNode
 }) {
+  const t = useMessages()
   const body = (
     <>
       <span className="truncate text-xs text-muted-foreground">{label}</span>
       <span className={cn('truncate text-xl font-semibold tabular-nums sm:text-2xl', tone && toneText[tone])}>
         {value}
-        {tone && <span className="sr-only">（{toneLabel[tone]}）</span>}
+        {tone && <span className="sr-only">{t.admin.tones[tone]}</span>}
       </span>
       {hint && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
       {children}

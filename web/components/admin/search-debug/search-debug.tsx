@@ -12,6 +12,7 @@ import { CandidateSheet } from './candidate-sheet'
 import { ChannelColumns, FinalRanking, Overview, TrackBanner } from './results'
 import { putImageQuery, type ImageQuery } from '@/lib/image-query'
 import { explainTrack, runSearchDebug, type DebugScope, type TopK } from '@/lib/search-debug'
+import { useMessages } from '@/lib/i18n/client'
 
 export function AdminSearchDebug() {
   const router = useRouter()
@@ -25,6 +26,8 @@ export function AdminSearchDebug() {
   const [topK, setTopK] = useState<TopK>({})
   const [tab, setTab] = useState<'final' | 'channels'>('final')
   const [selected, setSelected] = useState<string | null>(null)
+  const t = useMessages()
+  const d = t.searchDebug
 
   const setParams = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString())
@@ -44,7 +47,7 @@ export function AdminSearchDebug() {
 
   return (
     <>
-      <AdminPageHeader title="检索调试" description="用与前台相同的查询复现一次搜索，查看各路召回、重排与每个候选的识别结果。调试请求不会写入最近搜索。" />
+      <AdminPageHeader title={t.titles.searchDebug} description={d.description} />
 
       <QueryPanel
         key={q}
@@ -60,7 +63,7 @@ export function AdminSearchDebug() {
           else setParams({ q: text || null })
         }}
         onImage={(file) => {
-          setImage(putImageQuery(file))
+          setImage(putImageQuery(file, t))
           setParams({ q: null })
         }}
         onClearImage={() => setImage(null)}
@@ -69,19 +72,19 @@ export function AdminSearchDebug() {
       />
 
       {error && !isLoading ? (
-        <ErrorState title="检索失败" description={(error as Error).message} onRetry={() => mutate()} />
+        <ErrorState title={d.failed} description={(error as Error).message} onRetry={() => mutate()} />
       ) : !result ? (
         <div className="rounded-xl border bg-card">
           {isLoading ? (
             <p className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" aria-hidden />
-              正在检索…
+              {d.searching}
             </p>
           ) : (
             <EmptyState
               icon={ScanSearch}
-              title={track ? '输入查询以追踪该表情包' : '输入查询开始调试'}
-              description="支持关键词，或拖入、粘贴、选择一张图片进行以图搜图。"
+              title={track ? d.startTracking : d.start}
+              description={d.startHint}
             />
           )}
         </div>
@@ -89,15 +92,15 @@ export function AdminSearchDebug() {
         <>
           {verdict && track && <TrackBanner verdict={verdict} memeId={track} onOpen={() => open(track)} />}
           <Overview result={result} />
-          <section aria-label="结果" aria-busy={isLoading} className="flex flex-col gap-3">
+          <section aria-label={d.results} aria-busy={isLoading} className="flex flex-col gap-3">
             <TabSwitch
               fill
-              label="结果视图"
+              label={d.resultView}
               value={tab}
               onChange={setTab}
               tabs={[
-                ['final', `最终排名 · ${result.final.length}`],
-                ['channels', result.mode === 'image' ? '召回 · CLIP 图像' : `各路召回 · ${result.channels.length}`],
+                ['final', d.finalTab(result.final.length)],
+                ['channels', result.mode === 'image' ? d.imageRecallTab : d.channelsTab(result.channels.length)],
               ]}
             />
             {tab === 'final' ? <FinalRanking result={result} track={track} onOpen={open} /> : <ChannelColumns result={result} track={track} onOpen={open} />}

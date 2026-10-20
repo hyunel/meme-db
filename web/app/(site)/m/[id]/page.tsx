@@ -5,6 +5,7 @@ import { qs } from '@/lib/utils'
 import { kindOf, memeTitle } from '@/lib/media'
 import { param, serverApi } from '@/lib/server-api'
 import { pageMetadata } from '@/lib/site'
+import { getMessages } from '@/lib/i18n/server'
 import type { EntryDetail, Meme } from '@/lib/types'
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ entry?: string | string[]; share?: string | string[] }> }
@@ -21,7 +22,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const { meme, entry, share } = await load(props)
   const kind = kindOf(meme.mime_type)
   return pageMetadata({
-    title: entry?.name ?? memeTitle(meme),
+    title: entry?.name ?? memeTitle(meme, await getMessages()),
     description: meme.summary || undefined,
     path: `/m/${meme.id}`,
     image: kind === 'image' || kind === 'gif' ? { url: meme.url, width: meme.width, height: meme.height } : undefined,

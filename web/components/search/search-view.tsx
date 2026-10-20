@@ -19,13 +19,14 @@ import { clearRecentSearches, pushRecentSearch, removeRecentSearch, useRecentSea
 import { useSession } from '@/lib/session'
 import type { FolderPage, SearchFeed } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 type Scope = 'all' | 'mine'
 
 // One example of each way to search, which runs in the scope chosen.
 const EXAMPLES = [
-  { icon: MessageCircle, title: '描述情境或情绪', query: '被夸了有点害羞' },
-  { icon: ScanText, title: '搜图中的文字', query: '收到' },
+  { icon: MessageCircle, key: 'mood' },
+  { icon: ScanText, key: 'text' },
 ] as const
 
 async function search(q: string, scope: Scope, folderId: string | null, share: string | null, image: ImageQuery | null, cursor: string | null, page: number) {
@@ -52,6 +53,7 @@ export function SearchView() {
   const pathname = usePathname()
   const params = useSearchParams()
   const requireLogin = useRequireLogin()
+  const t = useMessages()
 
   const q = params.get('q')?.trim() ?? ''
   const scope: Scope = params.get('scope') === 'mine' ? 'mine' : 'all'
@@ -97,7 +99,7 @@ export function SearchView() {
 
   const folder = folderPage.data?.folder
   const own = Boolean(folder && folder.owner.id === user?.id)
-  const within = folder ? `「${folder.name}」` : !folderId && scope === 'mine' ? '我的库' : null
+  const within = folder ? t.search.quoted(folder.name) : !folderId && scope === 'mine' ? t.search.myLibrary : null
   // Kept across renders, as typing a new query rerenders the page under the results.
   const memes = useMemo(() => results?.map((r) => r.meme), [results])
   const similarity = useMemo(() => (image && results ? new Map(results.map((r) => [r.meme.id, r.similarity])) : undefined), [image, results])
@@ -123,7 +125,7 @@ export function SearchView() {
     const v = input.trim()
     setInput(v)
     if (!v && !image) {
-      toast.info('请输入关键词或添加图片')
+      toast.info(t.errors.empty_search)
       return
     }
     if (v) pushRecentSearch(v)
@@ -131,12 +133,12 @@ export function SearchView() {
     else navigate({ q: v })
   }
 
-  const imageInput = useImageInput((file) => navigate({ img: putImageQuery(file).id, q: input.trim() }))
+  const imageInput = useImageInput((file) => navigate({ img: putImageQuery(file, t).id, q: input.trim() }))
   const dragging = imageInput.dragging
 
   const setScope = (next: Scope) => {
     if (next === scope && !folderId) return
-    if (next === 'mine' && !requireLogin('登录后即可在你的私人库中搜索。')) return
+    if (next === 'mine' && !requireLogin(t.search.minePrompt)) return
     navigate({ scope: next, folder: null })
   }
 
@@ -144,7 +146,7 @@ export function SearchView() {
   const related = collections?.length ? (
     <section aria-labelledby="related-collections" className="flex flex-col gap-2">
       <h2 id="related-collections" className="text-sm font-medium">
-        {image ? '包含相似表情的合集' : '相关合集'}
+        {image ? t.search.collectionsSimilar : t.search.collections}
       </h2>
       <div className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
         <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
@@ -159,7 +161,7 @@ export function SearchView() {
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span className="max-w-44 truncate text-sm font-medium">{f.name}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">{f.item_count} 张</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{t.search.count(f.item_count)}</span>
                 </span>
               </Link>
             </li>
@@ -171,7 +173,7 @@ export function SearchView() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
-      <h1 className="sr-only">搜索表情包</h1>
+      <h1 className="sr-only">{t.search.title}</h1>
       <form
         role="search"
         onSubmit={submit}
@@ -186,7 +188,7 @@ export function SearchView() {
             // Into the form's padding, its corners concentric with the form's
             <button
               type="button"
-              title="移除图片"
+              title={t.search.removeImage}
               onClick={() => navigate({ img: null })}
               className="group relative -my-1 -ml-1 size-13 shrink-0 overflow-hidden rounded-xl border bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
@@ -202,7 +204,7 @@ export function SearchView() {
             <Search className="ml-2 size-5 shrink-0 text-muted-foreground" aria-hidden />
           )}
           <label htmlFor="search-main" className="sr-only">
-            关键词
+            {t.search.keywords}
           </label>
           <input
             ref={inputRef}
@@ -213,28 +215,28 @@ export function SearchView() {
             onChange={(e) => setInput(e.target.value)}
             onPaste={imageInput.onPaste}
             autoComplete="off"
-            placeholder={dragging ? '松开以添加图片' : within ? `在${within}中搜索…` : image ? '补充关键词…' : '关键词，或粘贴图片…'}
+            placeholder={dragging ? t.search.dropToAdd : within ? t.search.searchIn(within) : image ? t.search.moreKeywords : t.search.placeholderMore}
             className="h-11 min-w-0 flex-1 bg-transparent px-2 text-base text-ellipsis outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           <input {...imageInput.inputProps} />
-          <Button type="button" variant="ghost" size="icon-lg" onClick={imageInput.open} aria-label={image ? '替换图片' : '添加图片'}>
+          <Button type="button" variant="ghost" size="icon-lg" onClick={imageInput.open} aria-label={image ? t.search.replaceImage : t.search.addImage}>
             <ImageIcon />
           </Button>
           <Button type="submit" size="lg" className="h-10 px-4 sm:px-5" disabled={isLoading}>
             {isLoading ? <Loader2 className="animate-spin" /> : null}
-            <span className="hidden sm:inline">搜索</span>
+            <span className="hidden sm:inline">{t.search.submit}</span>
             <Search className="sm:hidden" aria-hidden />
-            <span className="sr-only sm:hidden">搜索</span>
+            <span className="sr-only sm:hidden">{t.search.submit}</span>
           </Button>
         </div>
       </form>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div role="radiogroup" aria-label="搜索范围" className="inline-flex rounded-lg border bg-card p-0.5">
+        <div role="radiogroup" aria-label={t.search.scope} className="inline-flex rounded-lg border bg-card p-0.5">
           {(
             [
-              { id: 'all', label: '全站', icon: Globe },
-              { id: 'mine', label: '我的库', icon: Library },
+              { id: 'all', label: t.search.all, icon: Globe },
+              { id: 'mine', label: t.titles.library, icon: Library },
             ] as const
           ).map((o) => (
             <button
@@ -257,12 +259,12 @@ export function SearchView() {
           <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-brand/30 pr-1 pl-3 text-sm">
             <FolderIcon className="size-4" aria-hidden />
             <span className="max-w-56 truncate">
-              限定：
-              {folder ? `${own ? '我的库' : `@${folder.owner.username}`} / ${folder.name}` : folderPage.error ? '合集不可用' : '…'}
+              {t.search.limitedTo}
+              {folder ? `${own ? t.titles.library : `@${folder.owner.username}`} / ${folder.name}` : folderPage.error ? t.search.unavailable : '…'}
             </span>
             <button
               type="button"
-              aria-label="移除文件夹范围"
+              aria-label={t.search.removeFolder}
               onClick={() => navigate({ folder: null })}
               className="flex size-7 items-center justify-center rounded-md hover:bg-background/60"
             >
@@ -281,7 +283,7 @@ export function SearchView() {
             }}
           >
             <RotateCcw data-icon="inline-start" />
-            新搜索
+            {t.search.new}
           </Button>
         )}
       </div>
@@ -294,10 +296,10 @@ export function SearchView() {
                 <div className="flex items-center justify-between">
                   <h2 className="flex items-center gap-2 text-sm font-medium">
                     <Clock className="size-4 text-muted-foreground" aria-hidden />
-                    最近搜索
+                    {t.home.recent}
                   </h2>
                   <Button variant="ghost" size="sm" onClick={clearRecentSearches}>
-                    清空
+                    {t.search.clear}
                   </Button>
                 </div>
                 <ul className="flex flex-wrap gap-2">
@@ -309,7 +311,7 @@ export function SearchView() {
                       <button
                         type="button"
                         onClick={() => removeRecentSearch(r)}
-                        aria-label={`删除最近搜索：${r}`}
+                        aria-label={t.search.removeRecent(r)}
                         className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
                       >
                         <X className="size-3.5" />
@@ -320,11 +322,14 @@ export function SearchView() {
               </div>
             )}
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium">{within ? `在${within}中，试试这样搜` : '试试这样搜'}</h2>
+              <h2 className="text-sm font-medium">{within ? t.search.tryIn(within) : t.search.try}</h2>
               <ul className="grid gap-2 sm:grid-cols-3">
                 {[
-                  ...EXAMPLES.map(({ icon, title, query }) => ({ icon, title, hint: `“${query}”`, onClick: () => navigate({ q: query }) })),
-                  { icon: ImageIcon, title: '以图搜图', hint: '粘贴、拖入或选择一张图片', onClick: imageInput.open },
+                  ...EXAMPLES.map(({ icon, key }) => {
+                    const { title, query } = t.search.examples[key]
+                    return { icon, title, hint: t.search.quoted(query), onClick: () => navigate({ q: query }) }
+                  }),
+                  { icon: ImageIcon, title: t.search.imageExample, hint: t.search.imageExampleHint, onClick: imageInput.open },
                 ].map(({ icon: Icon, title, hint, onClick }) => (
                   <li key={title}>
                     <button
@@ -348,26 +353,26 @@ export function SearchView() {
         ) : blocked && ready ? (
           <EmptyState
             icon={Library}
-            title="登录后才可搜索我的库"
-            description="你也可以切换到全站范围继续搜索。"
+            title={t.errors.library_search_unauthenticated}
+            description={t.search.blockedHint}
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
-                  切换到全站
+                  {t.search.switchAll}
                 </Button>
                 <Button nativeButton={false} render={<Link href={`/login?redirect=${encodeURIComponent(`${pathname}?${params.toString()}`)}`} />}>
-                  去登录
+                  {t.login.go}
                 </Button>
               </div>
             }
           />
         ) : error ? (
-          <ErrorState title="搜索暂时不可用" description={error.message} onRetry={feed.retry} />
+          <ErrorState title={t.search.failed} description={error.message} onRetry={feed.retry} />
         ) : !memes ? (
           <div className="flex flex-col gap-4">
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" aria-hidden />
-              正在搜索…
+              {t.search.searching}
             </p>
             <MemeGridSkeleton />
           </div>
@@ -377,7 +382,7 @@ export function SearchView() {
             {(folderId ? own : scope === 'mine') && (
               <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                新上传的表情包需处理完成后才能被搜到。
+                {t.search.pendingHint}
               </p>
             )}
             <MemeFeed memes={memes} feed={feed} share={share ?? undefined} similarity={similarity} allowAdd />
@@ -387,18 +392,18 @@ export function SearchView() {
             {related}
             <EmptyState
               icon={SearchX}
-              title="没有找到相关表情包"
-              description="换个关键词试试，或调整搜索范围。"
+              title={t.search.none}
+              description={t.search.noneHint}
               action={
                 <div className="flex flex-wrap justify-center gap-2">
                   {(scope === 'mine' || folderId) && (
                     <Button variant="outline" onClick={() => navigate({ scope: 'all', folder: null })}>
-                      切换到全站
+                      {t.search.switchAll}
                     </Button>
                   )}
                   {image && (
                     <Button variant="outline" onClick={() => navigate({ img: null })}>
-                      移除图片
+                      {t.search.removeImage}
                     </Button>
                   )}
                 </div>

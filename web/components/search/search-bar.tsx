@@ -9,6 +9,7 @@ import { useImageInput } from '@/hooks/use-image-input'
 import { putImageQuery } from '@/lib/image-query'
 import { pushRecentSearch } from '@/lib/recent-searches'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 export function SearchBar({
   size = 'md',
@@ -29,6 +30,7 @@ export function SearchBar({
 }) {
   const router = useRouter()
   const [value, setValue] = useState(defaultValue)
+  const t = useMessages()
 
   const buildParams = (extra: Record<string, string>) => {
     const p = new URLSearchParams(extra)
@@ -46,7 +48,7 @@ export function SearchBar({
     router.push(`/search?${buildParams(q ? { q } : {})}`)
   }
 
-  const imageInput = useImageInput((file) => router.push(`/search?${buildParams({ img: putImageQuery(file).id })}`))
+  const imageInput = useImageInput((file) => router.push(`/search?${buildParams({ img: putImageQuery(file, t).id })}`))
   const dragging = imageInput.dragging
 
   const lg = size === 'lg'
@@ -65,7 +67,7 @@ export function SearchBar({
     >
       <Search className={cn('shrink-0 text-muted-foreground', lg ? 'size-5' : 'size-4')} aria-hidden />
       <label htmlFor={`search-${size}`} className="sr-only">
-        搜索表情包
+        {t.search.title}
       </label>
       <input
         id={`search-${size}`}
@@ -74,23 +76,23 @@ export function SearchBar({
         onPaste={imageInput.onPaste}
         autoFocus={autoFocus}
         autoComplete="off"
-        placeholder={dragging ? '松开以按图片搜索' : folderId ? '在此合集中搜索…' : scope === 'mine' ? '在我的库中搜索…' : '关键词，或粘贴图片'}
+        placeholder={dragging ? t.search.dropToSearch : folderId ? t.search.inCollection : scope === 'mine' ? t.search.inLibrary : t.search.placeholder}
         className={cn('h-full min-w-0 flex-1 bg-transparent px-2 text-ellipsis outline-none placeholder:text-muted-foreground', lg ? 'text-base' : 'text-sm')}
       />
       <input {...imageInput.inputProps} />
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="button" variant="ghost" size={lg ? 'icon-lg' : 'icon-sm'} onClick={imageInput.open} aria-label="按图片搜索" />
+            <Button type="button" variant="ghost" size={lg ? 'icon-lg' : 'icon-sm'} onClick={imageInput.open} aria-label={t.search.byImage} />
           }
         >
           <ImageIcon />
         </TooltipTrigger>
-        <TooltipContent>按图片搜索（也可粘贴或拖入）</TooltipContent>
+        <TooltipContent>{t.search.byImageHint}</TooltipContent>
       </Tooltip>
       {lg && (
         <Button type="submit" size="lg" className="h-10 px-5">
-          搜索
+          {t.search.submit}
         </Button>
       )}
     </form>

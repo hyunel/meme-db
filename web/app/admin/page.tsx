@@ -1,6 +1,7 @@
 import { AdminOverview } from '@/components/admin/overview'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '概览' }
+export const generateMetadata = pageTitle('overview')
 
 export default function Page() {
   return <AdminOverview />

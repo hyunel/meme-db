@@ -57,9 +57,9 @@ import { isProcessing, memeHref, memeTitle } from '@/lib/media'
 import { downloadMany } from '@/lib/meme-transfer'
 import type { Entry, Folder, LibraryView as Library } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 type Sort = 'name' | 'newest' | 'oldest'
-const SORT_LABELS: Record<Sort, string> = { newest: '最新添加', oldest: '最早添加', name: '按名称' }
 type Item = { type: 'folder'; folder: Folder } | { type: 'entry'; entry: Entry }
 const nodeOf = (i: Item) => (i.type === 'folder' ? i.folder : i.entry)
 
@@ -70,12 +70,13 @@ export function LibraryView() {
     keepPreviousData: true, // A folder being opened leaves the last one in view, rather than a skeleton
     refreshInterval: (lib) => (lib?.entries.some((e) => isProcessing(e.meme)) ? 3000 : 0),
   })
+  const t = useMessages()
   return (
     <Loadable
       result={library}
-      notFound={{ title: '文件夹不存在', description: '它可能已被删除或移动。' }}
+      notFound={{ title: t.library.notFound, description: t.library.notFoundHint }}
       loading={
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label="加载中">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8" aria-busy="true" aria-label={t.common.loading}>
           <Skeleton className="h-5 w-20" />
           <div className="flex flex-col gap-2">
             <Skeleton className="h-9 w-36" />
@@ -104,6 +105,7 @@ export function LibraryView() {
 const TileBody = memo(function TileBody({ item }: { item: Item }) {
   const node = nodeOf(item)
   const meme = item.type === 'entry' ? item.entry.meme : null
+  const t = useMessages()
   return (
     <>
       <div className="relative aspect-square overflow-hidden rounded-lg">
@@ -113,7 +115,7 @@ const TileBody = memo(function TileBody({ item }: { item: Item }) {
         {item.type === 'folder' && (
           <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
             <FolderIcon className="size-3" aria-hidden />
-            {item.folder.item_count} 项
+            {t.meme.items(item.folder.item_count)}
           </span>
         )}
         {meme && meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-1.5 left-1.5 bg-background/80" />}
@@ -130,7 +132,8 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const router = useRouter()
   const params = useSearchParams()
   const folder = lib.folder
-  const here = folder?.name ?? '我的库'
+  const t = useMessages()
+  const here = folder?.name ?? t.titles.library
   const libraryHref = (id: string | null) => (id ? `/library?folder=${id}` : '/library')
 
   const [sort, setSort] = useState<Sort>('newest')
@@ -188,8 +191,8 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const transfer = async (mode: PickerMode, nodeIds: string[], target: string | null) => {
     await api(`/library/nodes/${mode}`, { method: 'POST', json: { ids: nodeIds, target_id: target } })
     await refresh()
-    toast.success(mode === 'move' ? '已移动' : '已复制', {
-      action: { label: '前往', onClick: () => router.push(libraryHref(target)) },
+    toast.success(mode === 'move' ? t.library.moved : t.library.copied, {
+      action: { label: t.libraryDialog.go, onClick: () => router.push(libraryHref(target)) },
     })
     exitSelect()
   }
@@ -202,22 +205,22 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const dropHighlight = (target: string) => drag.isOver(target) && 'bg-brand/40 text-foreground ring-2 ring-foreground/20'
 
   const setPublic = (sel: Item[], isPublic: boolean) =>
-    run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? '已设为公开' : '已设为私有')
+    run(() => api('/library/nodes', { method: 'PATCH', json: { ids: ids(sel), is_public: isPublic } }), isPublic ? t.library.madePublic : t.library.madePrivate)
 
   const share = (item: Item) => {
     if (item.type === 'entry') {
       const { meme } = item.entry
-      shareMeme(meme, () => setPrivateLink({ kind: 'meme', id: meme.id, title: memeTitle(meme) }))
+      shareMeme(meme, () => setPrivateLink({ kind: 'meme', id: meme.id, title: memeTitle(meme, t) }), t)
     } else {
       const { folder } = item
-      shareFolder(folder, true, () => setPrivateLink({ kind: 'folder', id: folder.id, title: folder.name }))
+      shareFolder(folder, true, () => setPrivateLink({ kind: 'folder', id: folder.id, title: folder.name }), t)
     }
   }
 
   const download = (sel: Item[]) => {
     const memes = sel.flatMap((i) => (i.type === 'entry' ? [i.entry.meme] : []))
     if (!memes.length) {
-      toast.info('所选内容中没有可下载的表情包')
+      toast.info(t.library.nothingToDownload)
       return
     }
     void downloadMany(memes)
@@ -232,7 +235,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
     try {
       await api(`/library/nodes/${nodeOf(rename).id}`, { method: 'PATCH', json: { name: v } })
       await refresh()
-      toast.success('已重命名')
+      toast.success(t.library.renamed)
       setRename(null)
     } catch (err) {
       toast.error((err as Error).message)
@@ -249,7 +252,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
     try {
       await api('/library/folders', { method: 'POST', json: { parent_id: folder?.id, name: v } })
       await refresh()
-      toast.success('文件夹已创建')
+      toast.success(t.library.folderCreated)
       setNewFolderOpen(false)
       setNewFolderName('')
     } catch (err) {
@@ -274,12 +277,12 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
       aria-busy={opening}
       className={cn('mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8', opening && 'pointer-events-none opacity-60 transition-opacity delay-150')}
     >
-      <nav aria-label="文件夹路径" className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
+      <nav aria-label={t.library.path} className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
         <ol className="flex w-max items-center gap-0.5 text-sm text-muted-foreground">
           <li>
             <Link href="/library" {...drag.target(ROOT)} className={cn('flex h-8 items-center gap-1 rounded-md px-1.5 hover:bg-muted hover:text-foreground', dropHighlight(ROOT))}>
               <Home className="size-3.5" aria-hidden />
-              我的库
+              {t.titles.library}
             </Link>
           </li>
           {crumbs.map((f) => (
@@ -308,12 +311,12 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
             {folder && <VisibilityBadge visibility={folder.visibility} />}
           </div>
           <p className="text-sm text-muted-foreground">
-            {items.length} 项
+            {t.meme.items(items.length)}
             {items.length > 0 && (
               <>
                 {' · '}
-                <span className="pointer-coarse:hidden">右键</span>
-                <span className="hidden pointer-coarse:inline">长按</span>条目查看更多操作
+                <span className="pointer-coarse:hidden">{t.library.rightClickHint}</span>
+                <span className="hidden pointer-coarse:inline">{t.library.longPressHint}</span>
               </>
             )}
           </p>
@@ -321,11 +324,11 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button onClick={() => setUploadOpen(true)} className="h-11 sm:h-9">
             <Upload data-icon="inline-start" />
-            上传
+            {t.nav.upload}
           </Button>
           <Button variant="outline" onClick={() => setNewFolderOpen(true)} className="h-11 sm:h-9">
             <FolderPlus data-icon="inline-start" />
-            新建文件夹
+            {t.libraryDialog.newFolder}
           </Button>
         </div>
       </header>
@@ -334,33 +337,33 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
         {selecting ? (
           <>
             <Button variant="outline" onClick={() => setSelected(allSelected ? new Set() : new Set(allIds))}>
-              {allSelected ? '取消全选' : '全选'}
+              {allSelected ? t.library.deselectAll : t.library.selectAll}
             </Button>
-            <span className="text-sm text-muted-foreground tabular-nums">已选 {selected.size} 项</span>
+            <span className="text-sm text-muted-foreground tabular-nums">{t.library.selected(selected.size)}</span>
             <Button variant="ghost" className="ml-auto" onClick={exitSelect}>
-              完成
+              {t.tokens.done}
             </Button>
           </>
         ) : (
           <>
             <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
-              <SelectTrigger className="h-9 w-32" aria-label="排序方式">
-                <SelectValue>{SORT_LABELS[sort]}</SelectValue>
+              <SelectTrigger className="h-9 w-32" aria-label={t.library.sortBy}>
+                <SelectValue>{t.library.sort[sort]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">最新添加</SelectItem>
-                <SelectItem value="oldest">最早添加</SelectItem>
-                <SelectItem value="name">按名称</SelectItem>
+                <SelectItem value="newest">{t.library.sort.newest}</SelectItem>
+                <SelectItem value="oldest">{t.library.sort.oldest}</SelectItem>
+                <SelectItem value="name">{t.library.sort.name}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="ghost" nativeButton={false} render={<Link href={folder ? `/search?folder=${folder.id}` : '/search?scope=mine'} />}>
               <Search data-icon="inline-start" />
-              <span className="hidden sm:inline">在{folder ? '此文件夹' : '我的库'}中搜索</span>
-              <span className="sm:hidden">搜索</span>
+              <span className="hidden sm:inline">{folder ? t.library.searchFolder : t.library.searchLibrary}</span>
+              <span className="sm:hidden">{t.search.submit}</span>
             </Button>
             <Button variant="ghost" className="ml-auto" onClick={() => setSelecting(true)} disabled={!items.length}>
               <CheckSquare data-icon="inline-start" />
-              选择
+              {t.library.select}
             </Button>
           </>
         )}
@@ -369,12 +372,12 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
       {items.length === 0 ? (
         <EmptyState
           icon={Inbox}
-          title={folder ? '这个文件夹是空的' : '你的库还是空的'}
-          description="上传表情包，或从搜索与发现页加入你喜欢的表情包。"
+          title={folder ? t.library.folderEmpty : t.library.empty}
+          description={t.library.emptyHint}
           action={
             <Button onClick={() => setUploadOpen(true)}>
               <Upload data-icon="inline-start" />
-              上传表情包
+              {t.nav.uploadLabel}
             </Button>
           }
         />
@@ -421,7 +424,7 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                       {checked && <Check className="size-3.5" />}
                     </span>
                     <span className="sr-only">
-                      {checked ? '取消选择' : '选择'} {node.name}
+                      {checked ? t.library.deselect(node.name) : t.library.selectItem(node.name)}
                     </span>
                   </button>
                 ) : (
@@ -448,34 +451,34 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
                         }}
                       >
                         <Pencil />
-                        重命名
+                        {t.library.rename}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setPicker({ mode: 'move', items: [item] })}>
                         <FolderInput />
-                        移动到…
+                        {t.library.moveTo}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setPicker({ mode: 'copy', items: [item] })}>
                         <Copy />
-                        复制到…
+                        {t.library.copyTo}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
                         {isPublicSelf ? <Lock /> : <Globe />}
-                        {isPublicSelf ? '设为私有' : '设为公开'}
+                        {isPublicSelf ? t.library.makePrivate : t.library.makePublic}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => share(item)}>
                         <Share2 />
-                        分享
+                        {t.shares.share}
                       </DropdownMenuItem>
                       {item.type === 'entry' && (
                         <DropdownMenuItem onClick={() => download([item])}>
                           <Download />
-                          下载
+                          {t.meme.download}
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete([item])}>
                         <Trash2 />
-                        删除
+                        {t.library.delete}
                       </DropdownMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
@@ -489,35 +492,35 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
       {selecting && selected.size > 0 && (
         <div
           role="toolbar"
-          aria-label="批量操作"
+          aria-label={t.library.bulk}
           className="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-xl items-center gap-1 overflow-x-auto rounded-2xl border bg-foreground p-1.5 text-background shadow-xl md:bottom-6"
         >
-          <span className="shrink-0 px-2 text-sm tabular-nums">{selected.size} 项</span>
+          <span className="shrink-0 px-2 text-sm tabular-nums">{t.meme.items(selected.size)}</span>
           {(
             [
-              { label: '移动', icon: FolderInput, on: () => setPicker({ mode: 'move', items: sel }) },
-              { label: '复制', icon: Copy, on: () => setPicker({ mode: 'copy', items: sel }) },
-              { label: '公开', icon: Globe, on: () => setPublic(sel, true) },
-              { label: '私有', icon: Lock, on: () => setPublic(sel, false) },
-              { label: '下载', icon: Download, on: () => download(sel) },
-              { label: '删除', icon: Trash2, on: () => setConfirmDelete(sel) },
+              { key: 'move', icon: FolderInput, on: () => setPicker({ mode: 'move', items: sel }) },
+              { key: 'copy', icon: Copy, on: () => setPicker({ mode: 'copy', items: sel }) },
+              { key: 'public', icon: Globe, on: () => setPublic(sel, true) },
+              { key: 'private', icon: Lock, on: () => setPublic(sel, false) },
+              { key: 'download', icon: Download, on: () => download(sel) },
+              { key: 'delete', icon: Trash2, on: () => setConfirmDelete(sel) },
             ] as const
           ).map((a) => (
             <button
-              key={a.label}
+              key={a.key}
               type="button"
               onClick={a.on}
               disabled={busy}
               className={cn(
                 'flex h-12 min-w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] transition-colors hover:bg-background/15 disabled:opacity-50',
-                a.label === '删除' && 'text-[oklch(0.8_0.15_25)] dark:text-[oklch(0.55_0.2_27)]',
+                a.key === 'delete' && 'text-[oklch(0.8_0.15_25)] dark:text-[oklch(0.55_0.2_27)]',
               )}
             >
               <a.icon className="size-4" aria-hidden />
-              {a.label}
+              {t.library.bulkActions[a.key]}
             </button>
           ))}
-          <button type="button" onClick={exitSelect} aria-label="退出选择" className="ml-auto flex size-12 shrink-0 items-center justify-center rounded-xl hover:bg-background/15">
+          <button type="button" onClick={exitSelect} aria-label={t.library.exitSelect} className="ml-auto flex size-12 shrink-0 items-center justify-center rounded-xl hover:bg-background/15">
             <X className="size-4" />
           </button>
         </div>
@@ -544,16 +547,16 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
         <DialogContent className="sm:max-w-sm">
           <form onSubmit={submitRename} className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>重命名</DialogTitle>
-              <DialogDescription>同一位置下名称不能重复。</DialogDescription>
+              <DialogTitle>{t.library.rename}</DialogTitle>
+              <DialogDescription>{t.library.renameHint}</DialogDescription>
             </DialogHeader>
-            <Input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={255} aria-label="新名称" className="h-11 text-base md:h-9 md:text-sm" />
+            <Input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={255} aria-label={t.library.newName} className="h-11 text-base md:h-9 md:text-sm" />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRename(null)}>
-                取消
+                {t.common.cancel}
               </Button>
               <Button type="submit" disabled={!renameValue.trim() || busy}>
-                保存
+                {t.library.save}
               </Button>
             </DialogFooter>
           </form>
@@ -564,16 +567,16 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
         <DialogContent className="sm:max-w-sm">
           <form onSubmit={submitNewFolder} className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>新建文件夹</DialogTitle>
-              <DialogDescription>将创建在「{here}」中，默认私有。</DialogDescription>
+              <DialogTitle>{t.libraryDialog.newFolder}</DialogTitle>
+              <DialogDescription>{t.library.newFolderHint(here)}</DialogDescription>
             </DialogHeader>
-            <Input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} maxLength={255} placeholder="文件夹名称" aria-label="文件夹名称" className="h-11 text-base md:h-9 md:text-sm" />
+            <Input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} maxLength={255} placeholder={t.library.folderName} aria-label={t.library.folderName} className="h-11 text-base md:h-9 md:text-sm" />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setNewFolderOpen(false)}>
-                取消
+                {t.common.cancel}
               </Button>
               <Button type="submit" disabled={!newFolderName.trim() || busy}>
-                创建
+                {t.tokens.create}
               </Button>
             </DialogFooter>
           </form>
@@ -583,22 +586,23 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
       <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除 {confirmDelete?.length ?? 0} 项？</AlertDialogTitle>
+            <AlertDialogTitle>{t.library.confirmDelete(confirmDelete?.length ?? 0)}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmDelete?.some((i) => i.type === 'folder') ? '文件夹内的所有子文件夹和表情包也会一并删除。' : ''}此操作无法撤销，但不会影响其他用户库中的同一表情包。
+              {confirmDelete?.some((i) => i.type === 'folder') ? t.library.deleteFoldersHint : ''}
+              {t.library.deleteHint}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
                 const target = confirmDelete
                 setConfirmDelete(null)
-                if (target) void run(() => api('/library/nodes', { method: 'DELETE', json: { ids: ids(target) } }), '已删除')
+                if (target) void run(() => api('/library/nodes', { method: 'DELETE', json: { ids: ids(target) } }), t.library.deleted)
               }}
             >
-              删除
+              {t.library.delete}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

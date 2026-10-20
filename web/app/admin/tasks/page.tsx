@@ -1,7 +1,8 @@
 import { Suspense } from 'react'
 import { AdminTasks } from '@/components/admin/tasks'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '任务管理' }
+export const generateMetadata = pageTitle('tasks')
 
 export default function Page() {
   return (

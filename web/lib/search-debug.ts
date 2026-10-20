@@ -8,20 +8,6 @@ export type DebugScope = 'all' | 'public'
 export type TopK = Partial<Record<Channel, number>>
 
 export const textChannels: TextChannel[] = ['metaphor', 'semantic', 'clip_text', 'ocr']
-export const channelLabel: Record<Channel, string> = {
-  metaphor: 'Metaphor',
-  semantic: 'Semantic',
-  clip_text: 'CLIP 文本',
-  ocr: 'OCR',
-  clip_image: 'CLIP 图像',
-}
-export const channelHint: Record<Channel, string> = {
-  metaphor: '隐喻文本向量',
-  semantic: '语义文本向量',
-  clip_text: '查询文本 → 图像向量',
-  ocr: 'OCR 文字模糊匹配',
-  clip_image: '查询图像 → 图像向量',
-}
 // The rerank score of a candidate whose caption cannot be parsed
 export const RERANK_PARSE_FAILED = -1
 
@@ -110,7 +96,7 @@ export async function runSearchDebug(input: { q: string; image: File | null; sco
 
 export type TrackVerdict =
   | { kind: 'unknown' }
-  | { kind: 'out_of_scope'; reason: string }
+  | { kind: 'out_of_scope'; reason: 'failed' | 'pending' | 'private' }
   | { kind: 'ranked'; rank: number }
   | { kind: 'not_recalled'; channels: { channel: Channel; similarity: number; rank: number | null; topK: number; cutoff: number | null }[] }
 
@@ -118,8 +104,8 @@ export function explainTrack(r: DebugResult): TrackVerdict | null {
   const t = r.tracked
   if (!t) return null
   if (t.excluded === 'missing') return { kind: 'unknown' }
-  if (t.excluded === 'not_analyzed') return { kind: 'out_of_scope', reason: r.memes.get(t.id)?.status === 'failed' ? '处理失败，未进入索引' : '尚未处理完成，未进入索引' }
-  if (t.excluded === 'private') return { kind: 'out_of_scope', reason: '未公开，访客视角下不可检索' }
+  if (t.excluded === 'not_analyzed') return { kind: 'out_of_scope', reason: r.memes.get(t.id)?.status === 'failed' ? 'failed' : 'pending' }
+  if (t.excluded === 'private') return { kind: 'out_of_scope', reason: 'private' }
 
   const row = r.final.find((x) => x.memeId === t.id)
   if (row) return { kind: 'ranked', rank: row.rank }

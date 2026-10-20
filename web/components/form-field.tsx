@@ -5,6 +5,8 @@ import { Eye, EyeOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import type { Messages } from '@/lib/i18n'
+import { useMessages } from '@/lib/i18n/client'
 
 export function FormField({
   label,
@@ -16,6 +18,7 @@ export function FormField({
 }: React.ComponentProps<'input'> & { label: string; error?: string; hint?: string }) {
   const id = useId()
   const [show, setShow] = useState(false)
+  const t = useMessages()
   const isPassword = type === 'password'
   const describedBy = error ? `${id}-err` : hint ? `${id}-hint` : undefined
 
@@ -35,7 +38,7 @@ export function FormField({
           <button
             type="button"
             onClick={() => setShow((v) => !v)}
-            aria-label={show ? '隐藏密码' : '显示密码'}
+            aria-label={show ? t.form.hidePassword : t.form.showPassword}
             aria-pressed={show}
             className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-r-md"
           >
@@ -59,19 +62,19 @@ export function FormField({
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const USERNAME_RE = /^[a-z0-9_]{3,50}$/
 
-export function validateUsername(v: string) {
-  if (!v) return '请输入用户名'
-  if (v.length < 3 || v.length > 50) return '用户名需为 3–50 个字符'
-  if (!USERNAME_RE.test(v)) return '只能包含小写字母、数字和下划线'
+export function validateUsername(v: string, { form }: Messages) {
+  if (!v) return form.usernameRequired
+  if (v.length < 3 || v.length > 50) return form.usernameLength
+  if (!USERNAME_RE.test(v)) return form.usernameChars
   return undefined
 }
-export function validateEmail(v: string) {
-  if (!v.trim()) return '请输入邮箱'
-  if (!EMAIL_RE.test(v.trim())) return '邮箱格式不正确'
+export function validateEmail(v: string, { form }: Messages) {
+  if (!v.trim()) return form.emailRequired
+  if (!EMAIL_RE.test(v.trim())) return form.emailInvalid
   return undefined
 }
-export function validatePassword(v: string) {
-  if (!v) return '请输入密码'
-  if (v.length < 6) return '密码至少 6 个字符'
+export function validatePassword(v: string, { form }: Messages) {
+  if (!v) return form.passwordRequired
+  if (v.length < 6) return form.passwordShort
   return undefined
 }

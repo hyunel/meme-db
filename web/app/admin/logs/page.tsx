@@ -1,7 +1,8 @@
 import { Suspense } from 'react'
 import { AdminLogs } from '@/components/admin/logs'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '日志' }
+export const generateMetadata = pageTitle('logs')
 
 export default function Page() {
   return (

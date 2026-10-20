@@ -8,6 +8,7 @@ import { MemeMedia } from '@/components/meme/meme-media'
 import { FavoriteButton } from '@/components/meme/meme-actions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 /** Up to four memes of a folder, or a folder icon while it has none. */
 export function FolderMosaic({ previews, className }: { previews: MemeThumb[]; className?: string }) {
@@ -35,6 +36,7 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
   const own = folder.owner.id === user?.id
   const href = own ? `/library?folder=${folder.id}` : `/f/${folder.id}${qs({ share })}`
   const viaLink = Boolean(share) && folder.visibility === 'private' && !own // Opened only by the link, so not to be favorited
+  const t = useMessages()
 
   return (
     <div className="group relative flex flex-col gap-2 rounded-xl border bg-card p-2.5 transition hover:border-foreground/30 hover:shadow-md">
@@ -51,7 +53,7 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
             ·
           </>
         )}
-        <span className="tabular-nums">{folder.item_count} 项</span>
+        <span className="tabular-nums">{t.meme.items(folder.item_count)}</span>
       </p>
       {/* On the cover's corner, as on a meme card */}
       {!viaLink && (
@@ -72,8 +74,9 @@ export function FolderCard({ folder, showOwner = true, share }: { folder: Folder
 }
 
 export function FolderGridSkeleton() {
+  const t = useMessages()
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" aria-busy="true" aria-label="加载中">
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" aria-busy="true" aria-label={t.common.loading}>
       {Array.from({ length: 6 }, (_, i) => (
         <li key={i} className="flex flex-col gap-2 rounded-xl border bg-card p-2.5">
           <Skeleton className="aspect-[4/3] rounded-lg" />

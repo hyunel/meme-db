@@ -9,13 +9,9 @@ import { FilterSelect, Toolbar } from '../admin-ui'
 import { useImageInput } from '@/hooks/use-image-input'
 import type { ImageQuery } from '@/lib/image-query'
 import { formatBytes } from '@/lib/format'
-import { channelLabel, textChannels, type Channel, type DebugScope, type TopK } from '@/lib/search-debug'
+import { textChannels, type Channel, type DebugScope, type TopK } from '@/lib/search-debug'
 import { cn } from '@/lib/utils'
-
-const scopeOptions = [
-  ['all', '全部'],
-  ['public', '仅公开（访客视角）'],
-] as const
+import { useMessages } from '@/lib/i18n/client'
 
 export function QueryPanel({
   initialQ,
@@ -47,9 +43,11 @@ export function QueryPanel({
   const img = useImageInput(onImage)
   const channels: Channel[] = [...textChannels, 'clip_image']
   const customized = Object.keys(topK).length > 0
+  const t = useMessages()
+  const d = t.searchDebug
 
   return (
-    <section aria-label="查询" className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
+    <section aria-label={d.query} className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
       <form
         role="search"
         onSubmit={(e) => {
@@ -64,7 +62,7 @@ export function QueryPanel({
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <label htmlFor="debug-q" className="sr-only">
-          调试查询
+          {d.debugQuery}
         </label>
         <input
           id="debug-q"
@@ -72,15 +70,15 @@ export function QueryPanel({
           onChange={(e) => setValue(e.target.value)}
           onPaste={img.onPaste}
           autoComplete="off"
-          placeholder={img.dragging ? '松开以按图片调试' : '输入与前台相同的查询，或拖入/粘贴图片'}
+          placeholder={img.dragging ? d.dropToDebug : d.placeholder}
           className="h-full min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground md:text-sm"
         />
         <input {...img.inputProps} />
-        <Button type="button" variant="ghost" size="icon" onClick={img.open} aria-label="以图搜图" className="size-9">
+        <Button type="button" variant="ghost" size="icon" onClick={img.open} aria-label={t.search.imageExample} className="size-9">
           <ImageIcon />
         </Button>
         <Button type="submit" className="h-9 px-4">
-          运行
+          {d.run}
         </Button>
       </form>
 
@@ -88,10 +86,10 @@ export function QueryPanel({
         <div className="flex flex-wrap gap-2">
           {image && (
             <span className="inline-flex h-10 max-w-full items-center gap-2 rounded-lg border bg-muted/40 pr-1 pl-1 text-sm">
-              <img src={image.url} alt="查询图片" className="size-8 rounded object-cover" />
+              <img src={image.url} alt={d.queryImage} className="size-8 rounded object-cover" />
               <span className="truncate">{image.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(image.file.size)}</span>
-              <Button variant="ghost" size="icon" aria-label="移除查询图片" onClick={onClearImage} className="size-8">
+              <Button variant="ghost" size="icon" aria-label={d.removeImage} onClick={onClearImage} className="size-8">
                 <X />
               </Button>
             </span>
@@ -99,9 +97,9 @@ export function QueryPanel({
           {track && (
             <span className="inline-flex h-10 max-w-full items-center gap-2 rounded-lg border border-foreground/30 bg-brand/25 pr-1 pl-3 text-sm">
               <Crosshair className="size-4 shrink-0" aria-hidden />
-              <span className="shrink-0">追踪</span>
+              <span className="shrink-0">{d.track}</span>
               <span className="truncate font-mono text-xs">{track}</span>
-              <Button variant="ghost" size="icon" aria-label="停止追踪" onClick={onClearTrack} className="size-8">
+              <Button variant="ghost" size="icon" aria-label={d.stopTracking} onClick={onClearTrack} className="size-8">
                 <X />
               </Button>
             </span>
@@ -110,9 +108,19 @@ export function QueryPanel({
       )}
 
       <Toolbar>
-        <FilterSelect value={scope} onChange={onScopeChange} options={scopeOptions} label="检索范围" className="min-w-40" />
+        <FilterSelect
+          value={scope}
+          onChange={onScopeChange}
+          options={[
+            ['all', d.scopes.all],
+            ['public', d.scopes.public],
+          ]}
+          label={d.scope}
+          className="min-w-40"
+        />
         <Button variant="outline" className="h-10 md:h-9" aria-expanded={showK} aria-controls="topk-panel" onClick={() => setShowK((v) => !v)}>
-          召回条数{customized && <span className="size-1.5 rounded-full bg-foreground" aria-label="已自定义" />}
+          {d.topK}
+          {customized && <span className="size-1.5 rounded-full bg-foreground" aria-label={d.customized} />}
           <ChevronDown className={cn('transition-transform', showK && 'rotate-180')} aria-hidden />
         </Button>
       </Toolbar>
@@ -123,7 +131,7 @@ export function QueryPanel({
             {channels.map((c) => (
               <div key={c} className="flex flex-col gap-1.5">
                 <Label htmlFor={`topk-${c}`} className="text-xs font-normal text-muted-foreground">
-                  {channelLabel[c]}
+                  {d.channels[c]}
                 </Label>
                 <Input
                   id={`topk-${c}`}
@@ -132,7 +140,7 @@ export function QueryPanel({
                   min={1}
                   max={200}
                   value={topK[c] ?? ''}
-                  placeholder="默认"
+                  placeholder={d.default}
                   onChange={(e) => {
                     const next = { ...topK }
                     const n = Math.round(Number(e.target.value))
@@ -146,10 +154,10 @@ export function QueryPanel({
             ))}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">每页召回条数，留空即用服务端配置；调试复现搜索的第一页，不改变线上参数。</p>
+            <p className="text-xs text-muted-foreground">{d.topKHint}</p>
             <Button variant="ghost" size="sm" disabled={!customized} onClick={() => onTopKChange({})}>
               <RotateCcw />
-              恢复默认
+              {t.download.reset}
             </Button>
           </div>
         </div>

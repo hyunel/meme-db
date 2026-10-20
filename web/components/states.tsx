@@ -1,9 +1,12 @@
+'use client'
+
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import { AlertTriangle, FileQuestion, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 export function EmptyState({
   icon: Icon,
@@ -32,27 +35,29 @@ export function EmptyState({
   )
 }
 
-export function ErrorState({ title = '加载失败', description = '请稍后重试。', onRetry }: { title?: string; description?: string; onRetry?: () => void }) {
+export function ErrorState({ title, description, onRetry }: { title?: string; description?: string; onRetry?: () => void }) {
+  const t = useMessages()
   return (
     <EmptyState
       icon={AlertTriangle}
-      title={title}
-      description={description}
-      action={onRetry && <Button variant="outline" onClick={onRetry}>重试</Button>}
+      title={title ?? t.common.loadFailed}
+      description={description ?? t.common.tryLater}
+      action={onRetry && <Button variant="outline" onClick={onRetry}>{t.common.retry}</Button>}
     />
   )
 }
 
-export function NotFoundState({ title = '内容不存在', description = '它可能已被删除，或你没有访问权限。' }: { title?: string; description?: string }) {
+export function NotFoundState({ title, description }: { title?: string; description?: string }) {
+  const t = useMessages()
   return (
     <div className="mx-auto max-w-lg px-4 py-24">
       <EmptyState
         icon={FileQuestion}
-        title={title}
-        description={description}
+        title={title ?? t.notFound.content}
+        description={description ?? t.notFound.contentHint}
         action={
           <Button nativeButton={false} render={<Link href="/" />} variant="outline">
-            返回首页
+            {t.common.backHome}
           </Button>
         }
       />
@@ -61,15 +66,16 @@ export function NotFoundState({ title = '内容不存在', description = '它可
 }
 
 export function ForbiddenState() {
+  const t = useMessages()
   return (
     <div className="mx-auto max-w-lg px-4 py-24">
       <EmptyState
         icon={Lock}
-        title="无权访问"
-        description="此页面仅对管理员开放。如需访问，请联系系统管理员。"
+        title={t.notFound.forbidden}
+        description={t.notFound.forbiddenHint}
         action={
           <Button nativeButton={false} render={<Link href="/" />} variant="outline">
-            返回首页
+            {t.common.backHome}
           </Button>
         }
       />
@@ -82,8 +88,9 @@ const SKELETON_RATIOS = [1, 1.3, 0.75, 1.1, 0.9, 1.25]
 
 /** Columns of placeholder cards as MemeGrid lays them out, as many as it shows at each width. */
 export function MemeGridSkeleton() {
+  const t = useMessages()
   return (
-    <div className="flex items-start gap-3" aria-busy="true" aria-label="加载中">
+    <div className="flex items-start gap-3" aria-busy="true" aria-label={t.common.loading}>
       {['flex', 'flex', 'hidden sm:flex', 'hidden md:flex', 'hidden lg:flex', 'hidden xl:flex'].map((display, c) => (
         <div key={c} className={cn('min-w-0 flex-1 flex-col gap-4', display)}>
           {[0, 1, 2].map((r) => (

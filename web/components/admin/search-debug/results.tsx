@@ -9,27 +9,30 @@ import { MemeMedia } from '@/components/meme/meme-media'
 import { CopyId, DataList, FilterSelect, StatCard, sortRows, type Column, type SortState } from '../admin-ui'
 import { ChannelCell, RerankScore, ScoreBar, fmt3 } from './score'
 import { formatDuration } from '@/lib/format'
-import { channelHint, channelLabel, type DebugResult, type FinalRow, type TrackVerdict } from '@/lib/search-debug'
+import { type DebugResult, type FinalRow, type TrackVerdict } from '@/lib/search-debug'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 const ms = (n: number) => (n < 1000 ? `${n} ms` : formatDuration(n))
 
 export function Overview({ result }: { result: DebugResult }) {
   const { timings, channels } = result
   const image = result.mode === 'image'
+  const t = useMessages()
+  const d = t.searchDebug
   return (
-    <section aria-label="概览" className="flex flex-col gap-3">
+    <section aria-label={t.titles.overview} className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="向量化" value={ms(timings.embed)} hint={image ? '图像编码' : '查询文本编码'} />
-        <StatCard label="召回" value={ms(timings.recall)} hint={`${channels.length} 路并行`} />
-        <StatCard label="重排" value={image ? '—' : ms(timings.rerank)} hint={image ? '以图搜图不重排' : `${result.final.length} 个候选`} />
-        <StatCard label="总计" value={ms(timings.total)} />
+        <StatCard label={d.embed} value={ms(timings.embed)} hint={image ? d.embedImage : d.embedText} />
+        <StatCard label={d.recall} value={ms(timings.recall)} hint={d.parallel(channels.length)} />
+        <StatCard label={d.rerank} value={image ? '—' : ms(timings.rerank)} hint={image ? d.noRerank : d.candidates(result.final.length)} />
+        <StatCard label={d.total} value={ms(timings.total)} />
       </div>
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
         <dl className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
           {channels.map((c) => (
             <div key={c.channel} className="flex flex-col gap-0.5">
-              <dt className="text-xs text-muted-foreground">{channelLabel[c.channel]} 命中</dt>
+              <dt className="text-xs text-muted-foreground">{d.hits(d.channels[c.channel])}</dt>
               <dd className="font-medium tabular-nums">
                 {c.hits.length}
                 <span className="font-normal text-muted-foreground"> / {c.topK}</span>
@@ -37,7 +40,7 @@ export function Overview({ result }: { result: DebugResult }) {
             </div>
           ))}
           <div className="flex flex-col gap-0.5">
-            <dt className="text-xs text-muted-foreground">合并后候选</dt>
+            <dt className="text-xs text-muted-foreground">{d.merged}</dt>
             <dd className="font-medium tabular-nums">{result.final.length}</dd>
           </div>
         </dl>
@@ -47,7 +50,7 @@ export function Overview({ result }: { result: DebugResult }) {
               <span className="text-muted-foreground transition-transform group-open:rotate-90" aria-hidden>
                 ›
               </span>
-              当前检索提示词
+              {d.prompt}
             </summary>
             <pre className="overflow-x-auto border-t px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap">{result.prompt}</pre>
           </details>
@@ -58,40 +61,44 @@ export function Overview({ result }: { result: DebugResult }) {
 }
 
 export function TrackBanner({ verdict, memeId, onOpen }: { verdict: TrackVerdict; memeId: string; onOpen: () => void }) {
+  const t = useMessages()
+  const d = t.searchDebug
   if (verdict.kind === 'ranked') {
     return (
-      <Banner tone="ok" title={`被追踪的表情包位于最终结果第 ${verdict.rank} 名`} memeId={memeId} onOpen={onOpen}>
-        已在下方表格中高亮。
+      <Banner tone="ok" title={d.trackedRank(verdict.rank)} memeId={memeId} onOpen={onOpen}>
+        {d.highlighted}
       </Banner>
     )
   }
   if (verdict.kind === 'unknown') {
-    return <Banner tone="warn" title="找不到被追踪的表情包" memeId={memeId}>该 ID 不存在或已被删除。</Banner>
+    return <Banner tone="warn" title={d.trackedMissing} memeId={memeId}>{d.trackedMissingHint}</Banner>
   }
   if (verdict.kind === 'out_of_scope') {
     return (
-      <Banner tone="warn" title="被追踪的表情包不在检索范围内" memeId={memeId} onOpen={onOpen}>
-        {verdict.reason}。
+      <Banner tone="warn" title={d.outOfScope} memeId={memeId} onOpen={onOpen}>
+        {d.outOfScopeReasons[verdict.reason]}
       </Banner>
     )
   }
   return (
-    <Banner tone="warn" title="未被任何一路召回" memeId={memeId} onOpen={onOpen}>
-      <span>它在每一路的相似度都没有进入该路的召回条数：</span>
+    <Banner tone="warn" title={d.notRecalled} memeId={memeId} onOpen={onOpen}>
+      <span>{d.notRecalledHint}</span>
       <ul className="mt-2 grid gap-2 sm:grid-cols-2">
         {verdict.channels.map((c) => (
           <li key={c.channel} className="flex flex-col gap-1 rounded-lg border bg-background/70 px-3 py-2">
-            <span className="text-xs font-medium text-foreground">{channelLabel[c.channel]}</span>
+            <span className="text-xs font-medium text-foreground">{d.channels[c.channel]}</span>
             <ScoreBar value={c.similarity} />
             <span className="text-xs">
               {c.rank === null ? (
-                '该路未匹配'
+                d.noMatch
               ) : (
                 <>
-                  排第 <b className="font-medium text-foreground tabular-nums">{c.rank}</b> 名，需进入前 {c.topK} 名
+                  {d.rankedBefore}
+                  <b className="font-medium text-foreground tabular-nums">{c.rank}</b>
+                  {d.rankedAfter(c.topK)}
                 </>
               )}
-              {c.cutoff !== null && <>（该路最低入选 {fmt3(c.cutoff)}）</>}
+              {c.cutoff !== null && d.cutoff(fmt3(c.cutoff))}
             </span>
           </li>
         ))}
@@ -102,6 +109,7 @@ export function TrackBanner({ verdict, memeId, onOpen }: { verdict: TrackVerdict
 
 function Banner({ tone, title, memeId, onOpen, children }: { tone: 'ok' | 'warn'; title: string; memeId: string; onOpen?: () => void; children: React.ReactNode }) {
   const Icon = tone === 'ok' ? CircleCheck : CircleAlert
+  const t = useMessages()
   return (
     <section
       aria-live="polite"
@@ -116,7 +124,7 @@ function Banner({ tone, title, memeId, onOpen, children }: { tone: 'ok' | 'warn'
         <div className="text-sm text-muted-foreground">{children}</div>
       </div>
       {onOpen && (
-        <button type="button" onClick={onOpen} className="-m-1 flex size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground" aria-label="查看候选详情">
+        <button type="button" onClick={onOpen} className="-m-1 flex size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground" aria-label={t.searchDebug.viewCandidate}>
           <PanelRightOpen className="size-4" />
         </button>
       )}
@@ -127,25 +135,27 @@ function Banner({ tone, title, memeId, onOpen, children }: { tone: 'ok' | 'warn'
 export function FinalRanking({ result, track, onOpen }: { result: DebugResult; track: string | null; onOpen: (id: string) => void }) {
   const image = result.mode === 'image'
   const [sort, setSort] = useState<SortState>({ key: 'rank', dir: 'asc' })
+  const t = useMessages()
+  const d = t.searchDebug
 
   const columns = useMemo<Column<FinalRow>[]>(() => {
     const cols: Column<FinalRow>[] = [
-      { key: 'rank', header: '名次', mobile: 'hidden', className: 'w-14', sortValue: (r) => r.rank, cell: (r) => <span className="font-mono tabular-nums">{r.rank}</span> },
+      { key: 'rank', header: d.rankHeader, mobile: 'hidden', className: 'w-14', sortValue: (r) => r.rank, cell: (r) => <span className="font-mono tabular-nums">{r.rank}</span> },
       {
         key: 'meme',
-        header: '表情包',
+        header: t.content.meme,
         mobile: 'title',
         cell: (r) => {
           const meme = result.memes.get(r.memeId)!
           return (
             <div className="flex min-w-0 items-center gap-3">
               <span className="w-7 shrink-0 font-mono text-sm text-muted-foreground tabular-nums md:hidden">#{r.rank}</span>
-              <button type="button" onClick={() => onOpen(r.memeId)} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50 transition hover:ring-2 hover:ring-foreground/30" aria-label={`查看 ${r.memeId} 的候选详情`}>
+              <button type="button" onClick={() => onOpen(r.memeId)} className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/50 transition hover:ring-2 hover:ring-foreground/30" aria-label={d.viewCandidateOf(r.memeId)}>
                 <MemeMedia meme={meme} />
               </button>
               <div className="flex min-w-0 flex-col">
                 <CopyId value={r.memeId} />
-                {track === r.memeId && <span className="text-xs font-medium">追踪中</span>}
+                {track === r.memeId && <span className="text-xs font-medium">{d.tracking}</span>}
               </div>
             </div>
           )
@@ -153,24 +163,24 @@ export function FinalRanking({ result, track, onOpen }: { result: DebugResult; t
       },
       {
         key: 'score',
-        header: image ? '相似度' : '重排分数',
+        header: image ? d.similarity : d.rerankScore,
         sortValue: (r) => r.finalScore,
         cell: (r) => (image ? <ScoreBar value={r.finalScore} /> : <RerankScore value={r.rerankScore} />),
       },
-      { key: 'best', header: '最佳召回路', sortValue: (r) => channelLabel[r.bestChannel], cell: (r) => <span className="text-sm whitespace-nowrap">{channelLabel[r.bestChannel]}</span> },
+      { key: 'best', header: d.bestChannel, sortValue: (r) => d.channels[r.bestChannel], cell: (r) => <span className="text-sm whitespace-nowrap">{d.channels[r.bestChannel]}</span> },
     ]
     if (!image) {
       result.channels.forEach((c) =>
         cols.push({
           key: c.channel,
-          header: channelLabel[c.channel],
+          header: d.channels[c.channel],
           sortValue: (r) => r.perChannel[c.channel]?.similarity ?? null,
           cell: (r) => <ChannelCell hit={r.perChannel[c.channel]} />,
         }),
       )
     }
     return cols
-  }, [result, track, image, onOpen])
+  }, [result, track, image, onOpen, t, d])
 
   const rows = useMemo(() => sortRows(result.final, columns, sort), [result.final, columns, sort])
   const sortOptions = columns.filter((c) => c.sortValue).map((c) => [c.key, c.header] as const)
@@ -180,19 +190,19 @@ export function FinalRanking({ result, track, onOpen }: { result: DebugResult; t
       {image && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Info className="size-4 shrink-0" aria-hidden />
-          以图搜图不经过重排，最终分数即 CLIP 图像相似度。
+          {d.imageNoRerank}
         </p>
       )}
       <div className="flex gap-2 md:hidden">
-        <FilterSelect value={sort.key} onChange={(key) => setSort({ key, dir: key === 'rank' ? 'asc' : 'desc' })} options={sortOptions} label="排序方式" className="flex-1" />
+        <FilterSelect value={sort.key} onChange={(key) => setSort({ key, dir: key === 'rank' ? 'asc' : 'desc' })} options={sortOptions} label={t.library.sortBy} className="flex-1" />
         <FilterSelect
           value={sort.dir}
           onChange={(dir) => setSort({ ...sort, dir })}
           options={[
-            ['desc', '降序'],
-            ['asc', '升序'],
+            ['desc', d.desc],
+            ['asc', d.asc],
           ]}
-          label="排序方向"
+          label={d.direction}
         />
       </div>
       <DataList
@@ -203,16 +213,16 @@ export function FinalRanking({ result, track, onOpen }: { result: DebugResult; t
         sort={sort}
         onSortChange={(next) => setSort(next.key === 'rank' && sort.key !== 'rank' ? { key: 'rank', dir: 'asc' } : next)}
         rowClassName={(r) => (r.memeId === track ? 'bg-brand/25 hover:bg-brand/30 md:shadow-[inset_3px_0_0_var(--foreground)] border-foreground/40' : undefined)}
-        empty={<EmptyState icon={SearchX} title="没有结果" description="各路召回均为空。" />}
+        empty={<EmptyState icon={SearchX} title={d.noResults} description={d.noResultsHint} />}
         actions={(r) => (
           <>
             <DropdownMenuItem onClick={() => onOpen(r.memeId)}>
               <PanelRightOpen />
-              候选详情
+              {d.candidate}
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link href={`/m/${r.memeId}`} />}>
               <Eye />
-              表情详情
+              {d.memeDetails}
             </DropdownMenuItem>
           </>
         )}
@@ -224,6 +234,8 @@ export function FinalRanking({ result, track, onOpen }: { result: DebugResult; t
 export function ChannelColumns({ result, track, onOpen }: { result: DebugResult; track: string | null; onOpen: (id: string) => void }) {
   const [hovered, setHovered] = useState<string | null>(null)
   const single = result.channels.length === 1
+  const t = useMessages()
+  const d = t.searchDebug
 
   return (
     <div
@@ -232,24 +244,24 @@ export function ChannelColumns({ result, track, onOpen }: { result: DebugResult;
       )}
       onPointerLeave={() => setHovered(null)}
     >
-      {!single && <p className="sr-only">左右滑动查看其他召回路</p>}
+      {!single && <p className="sr-only">{d.swipe}</p>}
       {result.channels.map((c) => (
         <section
           key={c.channel}
-          aria-label={`${channelLabel[c.channel]} 召回`}
+          aria-label={d.channelRecall(d.channels[c.channel])}
           className={cn('flex min-w-0 flex-col rounded-xl border bg-card', !single && 'w-[85%] shrink-0 snap-start sm:w-[46%] lg:w-auto')}
         >
           <header className="flex items-baseline justify-between gap-2 border-b px-3 py-2.5">
             <div className="flex min-w-0 flex-col">
-              <h3 className="text-sm font-medium">{channelLabel[c.channel]}</h3>
-              <span className="truncate text-xs text-muted-foreground">{channelHint[c.channel]}</span>
+              <h3 className="text-sm font-medium">{d.channels[c.channel]}</h3>
+              <span className="truncate text-xs text-muted-foreground">{d.channelHints[c.channel]}</span>
             </div>
             <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               {c.hits.length} / {c.topK}
             </span>
           </header>
           {c.hits.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">无命中</p>
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">{d.noHits}</p>
           ) : (
             <ol className={cn('flex flex-col p-1.5', single && 'grid gap-0.5 sm:grid-cols-2 xl:grid-cols-3')}>
               {c.hits.map((h) => {
@@ -264,7 +276,7 @@ export function ChannelColumns({ result, track, onOpen }: { result: DebugResult;
                       onPointerEnter={(e) => e.pointerType === 'mouse' && setHovered(h.memeId)}
                       onFocus={() => setHovered(h.memeId)}
                       onBlur={() => setHovered(null)}
-                      aria-label={`第 ${h.rank} 名 ${h.memeId}，相似度 ${fmt3(h.similarity)}`}
+                      aria-label={d.hitLabel(h.rank, h.memeId, fmt3(h.similarity))}
                       className={cn(
                         'flex min-h-12 w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-muted',
                         active && 'bg-brand/35 hover:bg-brand/35',

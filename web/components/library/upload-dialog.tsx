@@ -10,6 +10,7 @@ import { api, refresh } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
 import type { UploadConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 const CONCURRENCY = 3
 
@@ -73,6 +74,7 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
   const [dragging, setDragging] = useState(false)
   const stopped = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const t = useMessages()
 
   const choose = (folder: boolean) => {
     if (!inputRef.current) return
@@ -86,9 +88,9 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
       .filter(({ file, dir }) => !dir || accepts(config.accept, file)) // Folders hold all sorts, of which only memes are taken
       .map((p): Item => {
         const error = !accepts(config.accept, p.file)
-          ? '不支持的文件格式'
+          ? t.upload.unsupported
           : p.file.size > config.max_size_mb * 1024 * 1024
-            ? `超过 ${config.max_size_mb}MB 限制`
+            ? t.upload.tooLarge(config.max_size_mb)
             : undefined
         return { ...p, state: error ? 'error' : 'ready', error }
       })
@@ -131,13 +133,13 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
     void refresh()
 
     if (stopped.current) {
-      toast.info('已停止上传', { description: done ? `已上传的 ${done} 个文件会保留` : undefined })
+      toast.info(t.upload.stopped, { description: done ? t.upload.stoppedKept(done) : undefined })
       close()
     } else if (!failed) {
-      toast.success(`已上传 ${done} 个文件`, { description: '处理完成后即可被搜索到。' })
+      toast.success(t.upload.done(done), { description: t.upload.doneHint })
       close()
     } else {
-      toast.error(`${failed} 个文件上传失败`, { description: done ? `其余 ${done} 个已上传` : undefined })
+      toast.error(t.upload.failed(failed), { description: done ? t.upload.restDone(done) : undefined })
       setItems((cur) => cur.filter((i) => i.state !== 'done'))
     }
   }
@@ -146,8 +148,8 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : !uploading && close())}>
       <DialogContent className="gap-4 sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>上传到「{folderName}」</DialogTitle>
-          <DialogDescription>默认私有{config && `，单个文件不超过 ${config.max_size_mb}MB`}。</DialogDescription>
+          <DialogTitle>{t.upload.title(folderName)}</DialogTitle>
+          <DialogDescription>{t.upload.description(config?.max_size_mb)}</DialogDescription>
         </DialogHeader>
 
         <div
@@ -166,7 +168,7 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
             const dropped = Array.from(e.dataTransfer.items, (i) => i.webkitGetAsEntry() ?? i.getAsFile())
             Promise.all(dropped.map((d) => (d instanceof File ? [{ file: d, dir: '' }] : d ? walk(d) : [])))
               .then((found) => add(found.flat()))
-              .catch((err: Error) => toast.error('读取失败', { description: err.message }))
+              .catch((err: Error) => toast.error(t.upload.readFailed, { description: err.message }))
           }}
           className={cn(
             'relative flex min-h-36 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed p-6 text-center transition-colors hover:bg-muted/60',
@@ -182,18 +184,18 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
             onClick={() => choose(false)}
             className="font-medium outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-3 focus-visible:after:ring-ring/50"
           >
-            点击选择文件
+            {t.upload.choose}
           </button>
           {/* Phones can neither drag nor choose folders */}
           <p className="text-sm text-muted-foreground pointer-coarse:hidden">
-            或将文件、文件夹拖放到这里，也可以
+            {t.upload.dropHint}
             <button
               type="button"
               disabled={uploading || !config}
               onClick={() => choose(true)}
               className="relative font-medium text-foreground underline underline-offset-4 outline-none focus-visible:rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              选择文件夹
+              {t.upload.chooseFolder}
             </button>
           </p>
         </div>
@@ -212,7 +214,7 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
         />
 
         {items.length > 0 && (
-          <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto" aria-label="待上传">
+          <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto" aria-label={t.upload.queue}>
             {[...Map.groupBy(items, rowOf)].map(([key, row], i) => {
               const folder = typeof key === 'string' ? key : undefined
               const name = folder ?? row[0].file.name
@@ -233,11 +235,11 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
                     </span>
                     {folder ? (
                       <span className="text-xs text-muted-foreground">
-                        {ok.length > 0 && `${ok.length} 个文件 · ${formatBytes(ok.reduce((sum, x) => sum + x.file.size, 0))}`}
+                        {ok.length > 0 && `${t.upload.files(ok.length)} · ${formatBytes(ok.reduce((sum, x) => sum + x.file.size, 0))}`}
                         {ok.length > 0 && failed.length > 0 && ' · '}
                         {failed.length > 0 && (
-                          <span className="text-destructive" title={failed.map((x) => `${x.dir}/${x.file.name}：${x.error}`).join('\n')}>
-                            {failed.length} 个无法上传
+                          <span className="text-destructive" title={failed.map((x) => t.upload.fileError(`${x.dir}/${x.file.name}`, x.error ?? '')).join('\n')}>
+                            {t.upload.rejected(failed.length)}
                           </span>
                         )}
                       </span>
@@ -251,12 +253,12 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
                   {row.some((x) => x.state === 'uploading') ? (
                     <span className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
                       {folder && `${done}/${ok.length}`}
-                      <Loader2 className="size-4 animate-spin" aria-label="上传中" />
+                      <Loader2 className="size-4 animate-spin" aria-label={t.upload.uploading} />
                     </span>
                   ) : ok.length > 0 && done === ok.length ? (
-                    <CheckCircle2 className="size-4 text-success" aria-label="已上传" />
+                    <CheckCircle2 className="size-4 text-success" aria-label={t.upload.uploaded} />
                   ) : uploading ? null : (
-                    <Button variant="ghost" size="icon-sm" aria-label={`移除 ${name}`} onClick={() => setItems((cur) => cur.filter((x) => rowOf(x) !== key))}>
+                    <Button variant="ghost" size="icon-sm" aria-label={t.upload.remove(name)} onClick={() => setItems((cur) => cur.filter((x) => rowOf(x) !== key))}>
                       <X />
                     </Button>
                   )}
@@ -275,11 +277,11 @@ export function UploadDialog({ open, onOpenChange, folderId, folderName }: { ope
               else close()
             }}
           >
-            {uploading ? '停止' : '取消'}
+            {uploading ? t.upload.stop : t.common.cancel}
           </Button>
           <Button onClick={submit} disabled={uploading || ready.length === 0}>
             {uploading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Upload data-icon="inline-start" />}
-            {uploading ? '上传中' : ready.length > 0 ? `上传 ${ready.length} 个` : '上传'}
+            {uploading ? t.upload.uploading : ready.length > 0 ? t.upload.submit(ready.length) : t.nav.upload}
           </Button>
         </DialogFooter>
       </DialogContent>

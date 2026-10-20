@@ -1,26 +1,16 @@
 import { api } from './api'
 import { formatBytes } from './format'
+import type { Messages } from './i18n'
 
 const MIN = 60 * 1000
 const HOUR = 60 * MIN
 
 export type InferenceRange = '15m' | '1h' | '6h' | '24h'
-export const rangeConfig: Record<InferenceRange, { label: string; span: number }> = {
-  '15m': { label: '15 分钟', span: 15 * MIN },
-  '1h': { label: '1 小时', span: HOUR },
-  '6h': { label: '6 小时', span: 6 * HOUR },
-  '24h': { label: '24 小时', span: 24 * HOUR },
-}
-export const isRange = (v: string | null): v is InferenceRange => !!v && v in rangeConfig
+export const rangeSpan: Record<InferenceRange, number> = { '15m': 15 * MIN, '1h': HOUR, '6h': 6 * HOUR, '24h': 24 * HOUR }
+export const isRange = (v: string | null): v is InferenceRange => !!v && v in rangeSpan
 
-export const kindLabel: Record<string, string> = {
-  text_embedding: '文本向量',
-  clip_image: 'CLIP 图像',
-  clip_text: 'CLIP 文本',
-  reranker: '重排',
-  vlm: 'VLM 识图',
-}
-export const roleLabel: Record<string, string> = { clip: 'CLIP', text_embedding: '文本向量', reranker: '重排', vlm: 'VLM' }
+export const kindLabel = (kind: string, t: Messages) => (t.inference.kinds as Record<string, string>)[kind] ?? kind
+export const roleLabel = (role: string, t: Messages) => (t.inference.roles as Record<string, string>)[role] ?? role
 
 export type Level = 'ok' | 'warn' | 'danger'
 export const pctLevel = (pct: number | null): Level => (pct === null ? 'ok' : pct >= 95 ? 'danger' : pct >= 80 ? 'warn' : 'ok')
@@ -94,41 +84,43 @@ export async function fetchInference(range: InferenceRange): Promise<InferenceSn
 
   const series = r.series.map(({ gpus, ...p }) => ({ ...p, ...Object.fromEntries(gpus.flatMap((g, i) => [[`gpu${i}`, g.util], [`vram${i}`, g.vram]])) }) as ResourcePoint)
   const current = series.findLast((p) => p.cpu !== null) ?? series[series.length - 1]
-  return { ...r, start: r.now - rangeConfig[range].span, series, current }
+  return { ...r, start: r.now - rangeSpan[range], series, current }
 }
 
 export const pctOf = (used: number | null, total: number) => (used === null || !total ? null : (used / total) * 100)
 export const gpuUtil = (p: ResourcePoint, i: number) => p[`gpu${i}`] ?? null
 export const gpuVram = (p: ResourcePoint, i: number) => p[`vram${i}`] ?? null
 
-export function inferenceAlerts(s: InferenceSnapshot) {
+export function inferenceAlerts(s: InferenceSnapshot, t: Messages) {
   const c = s.current
+  const { alerts } = t.inference
   const out: { key: string; level: Exclude<Level, 'ok'>; text: string }[] = []
   const push = (key: string, level: Level, text: string) => level !== 'ok' && out.push({ key, level, text })
 
-  push('cpu', pctLevel(c.cpu), `CPU 使用率 ${fmtPct(c.cpu)}`)
-  push('mem', pctLevel(pctOf(c.mem, s.mem_total)), `内存使用 ${fmtPct(pctOf(c.mem, s.mem_total))}`)
+  push('cpu', pctLevel(c.cpu), alerts.cpu(fmtPct(c.cpu)))
+  push('mem', pctLevel(pctOf(c.mem, s.mem_total)), alerts.mem(fmtPct(pctOf(c.mem, s.mem_total))))
   s.gpus.forEach((g, i) => {
-    push(`gpu${i}`, pctLevel(gpuUtil(c, i)), `${g.id} GPU 利用率 ${fmtPct(gpuUtil(c, i))}`)
-    push(`vram${i}`, pctLevel(pctOf(gpuVram(c, i), g.vram_total)), `${g.id} 显存使用 ${fmtPct(pctOf(gpuVram(c, i), g.vram_total))}`)
+    push(`gpu${i}`, pctLevel(gpuUtil(c, i)), alerts.gpu(g.id, fmtPct(gpuUtil(c, i))))
+    push(`vram${i}`, pctLevel(pctOf(gpuVram(c, i), g.vram_total)), alerts.vram(g.id, fmtPct(pctOf(gpuVram(c, i), g.vram_total))))
   })
-  push('err', errLevel(c.error_rate), `推理错误率 ${fmtPct(c.error_rate)}`)
-  s.tasks.forEach((t) => t.queue_growing && out.push({ key: `q-${t.kind}`, level: 'warn', text: `${kindLabel[t.kind] ?? t.kind}排队持续增长，当前 ${t.queue} 个` }))
+  push('err', errLevel(c.error_rate), alerts.errors(fmtPct(c.error_rate)))
+  s.tasks.forEach((task) => task.queue_growing && out.push({ key: `q-${task.kind}`, level: 'warn', text: alerts.queue(kindLabel(task.kind, t), task.queue) }))
 
   return out
 }
 
 export const fmtPct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`)
 export const fmtLatency = (ms: number | null) => (ms === null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
-export const fmtRate = (v: number | null) => (v === null ? '—' : `${v.toFixed(1)} / 秒`)
+export const fmtRate = (v: number | null, t: Messages) => (v === null ? '—' : t.inference.rate(v.toFixed(1)))
 export const fmtBytes = (n: number | null) => (n === null ? '—' : formatBytes(n))
-export function fmtUptime(ms: number) {
+export function fmtUptime(ms: number, t: Messages) {
   const d = Math.floor(ms / (24 * HOUR))
   const h = Math.floor((ms % (24 * HOUR)) / HOUR)
   const m = Math.floor((ms % HOUR) / MIN)
-  return d ? `${d} 天 ${h} 小时` : h ? `${h} 小时 ${m} 分钟` : `${m} 分钟`
+  return t.inference.uptime(d, h, m)
 }
 
+// 24-hour clock times read alike in either language.
 const clockFmt = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 const clockSecFmt = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 export const fmtClock = (t: number) => clockFmt.format(t)

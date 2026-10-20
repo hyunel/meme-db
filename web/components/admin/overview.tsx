@@ -10,24 +10,25 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loadable } from '@/components/loadable'
 import { AdminPageHeader, FilterSelect, RefreshControls, StatCard, toneText, useNow } from './admin-ui'
-import { jobLabel, taskStateLabel } from './labels'
+import { jobLabel } from './labels'
 import { useInference } from '@/hooks/use-inference'
 import { fmtLatency, fmtPct, gpuUtil, inferenceAlerts } from '@/lib/inference'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import type { Overview, TaskState, TaskTypeCounts } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 const DAY = 86_400_000
 type Range = '1d' | '7d' | '30d' | 'custom'
 const toInput = (t: number) => new Date(t - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
-const chartConfig = {
-  uploads: { label: '上传', color: 'var(--chart-1)' },
-  users: { label: '新增用户', color: 'var(--chart-2)' },
-  completed: { label: '任务完成', color: 'var(--chart-3)' },
-  failed: { label: '任务失败', color: 'var(--destructive)' },
-} satisfies ChartConfig
+const chartColors = {
+  uploads: 'var(--chart-1)',
+  users: 'var(--chart-2)',
+  completed: 'var(--chart-3)',
+  failed: 'var(--destructive)',
+}
 
 const states: TaskState[] = ['pending', 'retrying', 'running', 'completed', 'failed']
 const sum = (rows: TaskTypeCounts[], key: keyof Omit<TaskTypeCounts, 'job_type'>) => rows.reduce((n, r) => n + r[key], 0)
@@ -35,14 +36,14 @@ const failRate = (failed: number, completed: number) => (failed + completed ? Ma
 
 type Health = 'ok' | 'degraded' | 'down' | null
 const healthDot = { ok: 'bg-success', degraded: 'bg-warning', down: 'bg-destructive' } as const
-const healthText = { ok: '正常', degraded: '降级', down: '不可用' } as const
 
 function HealthCard({ name, status, detail, href }: { name: string; status: Health; detail: React.ReactNode; href?: string }) {
+  const t = useMessages()
   const body = (
     <>
       <span className={cn('size-2.5 shrink-0 rounded-full', status ? healthDot[status] : 'bg-muted-foreground/40')} aria-hidden />
       <span className="text-sm font-medium">{name}</span>
-      <span className="sr-only">：{status ? healthText[status] : '检测中'}</span>
+      <span className="sr-only">{t.overview.healthStatus(status ? t.overview.health[status] : t.overview.checking)}</span>
       <span className="ml-auto truncate text-xs text-muted-foreground tabular-nums">{detail}</span>
       {href && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
     </>
@@ -79,11 +80,13 @@ export function AdminOverview() {
   const stats = useSWR<Overview>(`/admin/stats${qs({ from: start, to: end, tz: timeZone })}`, { keepPreviousData: true })
   const inf = useInference('15m', { auto })
   const rangeQ = `from=${start}&to=${end}`
+  const t = useMessages()
+  const chartConfig = Object.fromEntries(Object.entries(chartColors).map(([k, color]) => [k, { label: t.overview.chart[k as keyof typeof chartColors], color }])) satisfies ChartConfig
 
-  const t = stats.data?.tasks ?? []
-  const backlog = sum(t, 'pending') + sum(t, 'retrying')
-  const doneN = sum(t, 'completed_in_range')
-  const failN = sum(t, 'failed_in_range')
+  const tasks = stats.data?.tasks ?? []
+  const backlog = sum(tasks, 'pending') + sum(tasks, 'retrying')
+  const doneN = sum(tasks, 'completed_in_range')
+  const failN = sum(tasks, 'failed_in_range')
   const rate = failRate(failN, doneN) ?? 0
 
   const service = (name: string) => stats.data?.services.find((sv) => sv.name === name)
@@ -93,14 +96,14 @@ export function AdminOverview() {
   const gpuAvg = inf.data?.gpus.length && ic ? inf.data.gpus.reduce((a, _, i) => a + (gpuUtil(ic, i) ?? 0), 0) / inf.data.gpus.length : null
 
   const failedMemes = stats.data?.memes.failed ?? 0
-  const alerts = inf.data ? inferenceAlerts(inf.data) : []
+  const alerts = inf.data ? inferenceAlerts(inf.data, t) : []
   const attention = [
-    failedMemes > 0 && { text: '表情包处理失败', count: `${failedMemes} 个`, href: '/admin/content?status=failed', level: 'danger' as const },
-    backlog > 5 && { text: '任务积压（排队中 + 等待重试）', count: `${backlog} 个`, href: '/admin/tasks?status=pending&status=retrying', level: 'warn' as const },
-    rate > 20 && { text: '所选时间内任务失败率过高', count: `${rate}%`, href: '/admin/tasks?status=failed', level: 'danger' as const },
+    failedMemes > 0 && { text: t.overview.failedMemes, count: String(failedMemes), href: '/admin/content?status=failed', level: 'danger' as const },
+    backlog > 5 && { text: t.overview.backlogAlert, count: String(backlog), href: '/admin/tasks?status=pending&status=retrying', level: 'warn' as const },
+    rate > 20 && { text: t.overview.failRateAlert, count: `${rate}%`, href: '/admin/tasks?status=failed', level: 'danger' as const },
     alerts.length > 0 && {
-      text: `推理服务预警：${alerts.map((a) => a.text).join('、')}`,
-      count: `${alerts.length} 项`,
+      text: t.overview.inferenceAlert(alerts.map((a) => a.text)),
+      count: String(alerts.length),
       href: '/admin/inference',
       level: alerts.some((a) => a.level === 'danger') ? ('danger' as const) : ('warn' as const),
     },
@@ -109,8 +112,8 @@ export function AdminOverview() {
   return (
     <>
       <AdminPageHeader
-        title="概览"
-        description={`更新于 ${formatDateTime(now)}`}
+        title={t.titles.overview}
+        description={t.overview.updated(formatDateTime(now))}
         actions={
           <RefreshControls
             auto={auto}
@@ -123,19 +126,19 @@ export function AdminOverview() {
         }
       />
 
-      <section aria-label="健康摘要">
+      <section aria-label={t.overview.healthSummary}>
         <ul className="grid gap-2 sm:grid-cols-3 sm:gap-3">
-          <HealthCard name="数据库" status={db ? (db.ok ? 'ok' : 'down') : null} detail={db ? (db.ok ? `响应 ${db.detail}` : db.detail) : '—'} />
+          <HealthCard name={t.overview.database} status={db ? (db.ok ? 'ok' : 'down') : null} detail={db ? (db.ok ? t.overview.responds(db.detail) : db.detail) : '—'} />
           <HealthCard
-            name="推理服务"
+            name={t.titles.inference}
             status={inf.connection}
-            detail={ic ? `${gpuAvg === null ? `CPU ${fmtPct(ic.cpu)}` : `GPU ${fmtPct(gpuAvg)}`} · P95 ${fmtLatency(ic.p95)}` : inf.down ? '无法连接' : '—'}
+            detail={ic ? `${gpuAvg === null ? `CPU ${fmtPct(ic.cpu)}` : `GPU ${fmtPct(gpuAvg)}`} · P95 ${fmtLatency(ic.p95)}` : inf.down ? t.overview.unreachable : '—'}
             href="/admin/inference"
           />
           <HealthCard
-            name="文件存储"
+            name={t.overview.storage}
             status={storage ? (storage.ok ? 'ok' : 'down') : null}
-            detail={storage?.ok && stats.data ? `可读写 · ${formatBytes(stats.data.memes.storage_bytes)}` : (storage?.detail ?? '—')}
+            detail={storage?.ok && stats.data ? `${t.overview.writable} · ${formatBytes(stats.data.memes.storage_bytes)}` : (storage?.detail ?? '—')}
           />
         </ul>
       </section>
@@ -143,13 +146,13 @@ export function AdminOverview() {
       {attention.length > 0 && (
         <section aria-labelledby="attention" className="flex flex-col gap-3">
           <h2 id="attention" className="text-sm font-medium text-muted-foreground">
-            需要关注
+            {t.overview.attention}
           </h2>
           <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {attention.map((a) => (
               <li key={a.href}>
                 <Link href={a.href} className="flex min-h-12 items-center gap-3 px-3.5 py-3 text-sm transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none">
-                  <TriangleAlert className={cn('size-4 shrink-0', toneText[a.level])} aria-label={a.level === 'danger' ? '严重' : '预警'} />
+                  <TriangleAlert className={cn('size-4 shrink-0', toneText[a.level])} aria-label={t.overview.levels[a.level]} />
                   <span className="min-w-0 flex-1 break-words">{a.text}</span>
                   <span className={cn('shrink-0 font-medium tabular-nums', toneText[a.level])}>{a.count}</span>
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -160,16 +163,16 @@ export function AdminOverview() {
         </section>
       )}
 
-      <section aria-label="时间范围" className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+      <section aria-label={t.overview.range} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
         <FilterSelect
-          label="时间范围"
+          label={t.overview.range}
           value={range}
           onChange={setRange}
           options={[
-            ['1d', '最近一天'],
-            ['7d', '最近一周'],
-            ['30d', '最近一个月'],
-            ['custom', '自定义'],
+            ['1d', t.admin.ranges['1d']],
+            ['7d', t.admin.ranges['7d']],
+            ['30d', t.admin.ranges['30d']],
+            ['custom', t.overview.custom],
           ]}
           className="sm:w-36"
         />
@@ -177,19 +180,19 @@ export function AdminOverview() {
           <div className="grid grid-cols-2 gap-2 sm:flex">
             <div className="flex flex-col gap-1">
               <Label htmlFor="from" className="text-xs text-muted-foreground">
-                开始
+                {t.overview.from}
               </Label>
               <Input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="h-10 text-base md:h-9 md:text-sm" />
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="to" className="text-xs text-muted-foreground">
-                结束
+                {t.overview.to}
               </Label>
               <Input id="to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} aria-invalid={customInvalid} className="h-10 text-base md:h-9 md:text-sm" />
             </div>
           </div>
         )}
-        {customInvalid && <p className="text-sm text-destructive">结束时间不能早于开始时间</p>}
+        {customInvalid && <p className="text-sm text-destructive">{t.overview.invalidRange}</p>}
       </section>
 
       <Loadable result={stats}>
@@ -197,63 +200,63 @@ export function AdminOverview() {
           const trend = s.trend.map((p) => ({ ...p, day: `${Number(p.day.slice(5, 7))}/${Number(p.day.slice(8))}` }))
           return (
             <>
-              <Section title="用户">
-                <StatCard label="用户总数" value={s.users.total} href="/admin/users" />
-                <StatCard label="管理员" value={s.users.admins} href="/admin/users?role=admin" />
-                <StatCard label="新增用户" value={s.users.new} hint="所选时间范围" href={`/admin/users?${rangeQ}`} />
+              <Section title={t.overview.users}>
+                <StatCard label={t.overview.totalUsers} value={s.users.total} href="/admin/users" />
+                <StatCard label={t.overview.admins} value={s.users.admins} href="/admin/users?role=admin" />
+                <StatCard label={t.overview.newUsers} value={s.users.new} hint={t.overview.inRange} href={`/admin/users?${rangeQ}`} />
               </Section>
 
-              <Section title="内容">
-                <StatCard label="表情包总数" value={s.memes.total} href="/admin/content" />
-                <StatCard label="存储占用" value={formatBytes(s.memes.storage_bytes)} />
-                <StatCard label="公开表情包" value={s.memes.public} href="/admin/content?visibility=public" />
-                <StatCard label="处理完成" value={s.memes.analyzed} href="/admin/content?status=success" />
-                <StatCard label="排队 / 处理中" value={s.memes.pending} href="/admin/content?status=pending" />
-                <StatCard label="处理失败" value={s.memes.failed} tone={s.memes.failed ? 'danger' : undefined} href="/admin/content?status=failed" />
-                <StatCard label="文件夹" value={s.library.folders} />
-                <StatCard label="库中文件" value={s.library.files} />
-                <StatCard label="公开条目" value={s.library.public_nodes} />
-                <StatCard label="标签总数" value={s.library.tags} href="/admin/tags" />
+              <Section title={t.overview.content}>
+                <StatCard label={t.overview.totalMemes} value={s.memes.total} href="/admin/content" />
+                <StatCard label={t.overview.storageUsed} value={formatBytes(s.memes.storage_bytes)} />
+                <StatCard label={t.overview.publicMemes} value={s.memes.public} href="/admin/content?visibility=public" />
+                <StatCard label={t.overview.analyzed} value={s.memes.analyzed} href="/admin/content?status=success" />
+                <StatCard label={t.overview.pending} value={s.memes.pending} href="/admin/content?status=pending" />
+                <StatCard label={t.status.failed} value={s.memes.failed} tone={s.memes.failed ? 'danger' : undefined} href="/admin/content?status=failed" />
+                <StatCard label={t.overview.folders} value={s.library.folders} />
+                <StatCard label={t.overview.files} value={s.library.files} />
+                <StatCard label={t.overview.publicNodes} value={s.library.public_nodes} />
+                <StatCard label={t.overview.tags} value={s.library.tags} href="/admin/tags" />
               </Section>
 
-              <Section title="任务">
+              <Section title={t.overview.tasks}>
                 {states.map((st) => (
                   <StatCard
                     key={st}
-                    label={taskStateLabel[st]}
-                    value={sum(t, st)}
-                    tone={st === 'failed' && sum(t, st) ? 'danger' : undefined}
+                    label={t.admin.taskStates[st]}
+                    value={sum(tasks, st)}
+                    tone={st === 'failed' && sum(tasks, st) ? 'danger' : undefined}
                     href={`/admin/tasks?status=${st}`}
                   />
                 ))}
-                <StatCard label="积压" value={backlog} tone={backlog > 5 ? 'warn' : undefined} hint="排队中 + 等待重试" href="/admin/tasks?status=pending&status=retrying" />
-                <StatCard label="区间完成" value={doneN} href="/admin/tasks?status=completed" />
-                <StatCard label="区间失败率" value={`${rate}%`} hint={`失败 ${failN} 个`} tone={rate > 20 ? 'danger' : undefined} href="/admin/tasks?status=failed" />
+                <StatCard label={t.overview.backlog} value={backlog} tone={backlog > 5 ? 'warn' : undefined} hint={t.overview.backlogHint} href="/admin/tasks?status=pending&status=retrying" />
+                <StatCard label={t.overview.completedInRange} value={doneN} href="/admin/tasks?status=completed" />
+                <StatCard label={t.overview.failRate} value={`${rate}%`} hint={t.overview.failedCount(failN)} tone={rate > 20 ? 'danger' : undefined} href="/admin/tasks?status=failed" />
               </Section>
 
               <section aria-labelledby="by-type" className="flex flex-col gap-3">
                 <h2 id="by-type" className="text-sm font-medium text-muted-foreground">
-                  按任务类型
+                  {t.overview.byType}
                 </h2>
                 <div className="overflow-x-auto rounded-xl border bg-card">
                   <table className="w-full min-w-[520px] text-sm">
                     <thead className="text-left text-xs text-muted-foreground">
                       <tr className="border-b">
-                        <th className="p-3 font-medium">类型</th>
+                        <th className="p-3 font-medium">{t.overview.type}</th>
                         {(['pending', 'running', 'completed', 'failed'] as const).map((st) => (
                           <th key={st} className="p-3 text-right font-medium">
-                            {taskStateLabel[st]}
+                            {t.admin.taskStates[st]}
                           </th>
                         ))}
-                        <th className="p-3 text-right font-medium">区间失败率</th>
+                        <th className="p-3 text-right font-medium">{t.overview.failRate}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {t.map((row) => {
+                      {tasks.map((row) => {
                         const r = failRate(row.failed_in_range, row.completed_in_range)
                         return (
                           <tr key={row.job_type} className="border-b last:border-0">
-                            <td className="p-3">{jobLabel(row.job_type)}</td>
+                            <td className="p-3">{jobLabel(row.job_type, t)}</td>
                             {[row.pending + row.retrying, row.running, row.completed, row.failed].map((n, i) => (
                               <td key={i} className="p-3 text-right tabular-nums">
                                 {n}
@@ -263,10 +266,10 @@ export function AdminOverview() {
                           </tr>
                         )
                       })}
-                      {t.length === 0 && (
+                      {tasks.length === 0 && (
                         <tr>
                           <td colSpan={6} className="p-6 text-center text-muted-foreground">
-                            暂无任务
+                            {t.overview.noTasks}
                           </td>
                         </tr>
                       )}
@@ -277,7 +280,7 @@ export function AdminOverview() {
 
               <section aria-labelledby="trend" className="flex flex-col gap-3">
                 <h2 id="trend" className="text-sm font-medium text-muted-foreground">
-                  每日趋势
+                  {t.overview.trend}
                 </h2>
                 <div className="rounded-xl border bg-card p-3 sm:p-4">
                   <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full sm:h-72">

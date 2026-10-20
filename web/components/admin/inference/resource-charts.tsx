@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TabSwitch } from '@/components/tab-switch'
 import { ChartCard, SYNC_ID, ThresholdLines, TimeTooltip, timeAxis } from './charts'
 import { fmtBytes, fmtPct, type InferenceSnapshot } from '@/lib/inference'
+import { useMessages } from '@/lib/i18n/client'
 
 const gpuColors = ['var(--chart-1)', 'var(--chart-4)', 'var(--chart-3)', 'var(--chart-5)']
 const chartCls = 'aspect-auto h-48 w-full sm:h-64'
@@ -15,12 +16,14 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
   const [gpu, setGpu] = useState('all')
   const gpus = data?.gpus ?? []
   const shown = gpus.map((_, i) => i).filter((i) => gpu === 'all' || gpu === String(i))
+  const t = useMessages()
+  const c = t.inference.charts
 
-  const computeConfig: ChartConfig = { cpu: { label: 'CPU', color: 'var(--chart-2)' }, proc_cpu: { label: '推理进程', color: 'var(--chart-5)' } }
-  const memoryConfig: ChartConfig = { mem: { label: '内存', color: 'var(--chart-2)' }, proc_mem: { label: '推理进程', color: 'var(--chart-5)' } }
+  const computeConfig: ChartConfig = { cpu: { label: 'CPU', color: 'var(--chart-2)' }, proc_cpu: { label: c.process, color: 'var(--chart-5)' } }
+  const memoryConfig: ChartConfig = { mem: { label: t.inference.metrics.memory, color: 'var(--chart-2)' }, proc_mem: { label: c.process, color: 'var(--chart-5)' } }
   gpus.forEach((g, i) => {
     computeConfig[`gpu${i}`] = { label: `GPU ${g.id}`, color: gpuColors[i % gpuColors.length] }
-    memoryConfig[`vram${i}`] = { label: `显存 ${g.id}`, color: gpuColors[i % gpuColors.length] }
+    memoryConfig[`vram${i}`] = { label: c.vram(g.id), color: gpuColors[i % gpuColors.length] }
   })
   const vramTotal = gpus[0]?.vram_total
 
@@ -28,22 +31,22 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
     <section aria-labelledby="res-trend" className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 id="res-trend" className="text-sm font-medium text-muted-foreground">
-          资源趋势
+          {c.trend}
         </h2>
         {gpus.length > 1 && (
           <TabSwitch
             fill
-            label="选择显卡"
+            label={c.pickGpu}
             value={gpu}
             onChange={setGpu}
-            tabs={[['all', '全部'], ...gpus.map((g, i) => [String(i), g.id] as const)]}
+            tabs={[['all', c.all], ...gpus.map((g, i) => [String(i), g.id] as const)]}
             className="[&_button]:h-8 [&_button]:px-3 [&_button]:text-xs"
           />
         )}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <ChartCard title="计算" description={gpus.length ? 'CPU、其中推理进程与 GPU 利用率（%）' : 'CPU 与其中推理进程的利用率（%）'}>
+        <ChartCard title={c.compute} description={gpus.length ? c.computeGpuHint : c.computeHint}>
           {data ? (
             <ChartContainer config={computeConfig} className={chartCls}>
               <LineChart data={data.series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>
@@ -65,7 +68,7 @@ export function ResourceCharts({ data }: { data?: InferenceSnapshot }) {
           )}
         </ChartCard>
 
-        <ChartCard title="内存" description={vramTotal ? '内存、其中推理进程与显存用量；虚线为单卡显存 80% / 95%' : '内存与其中推理进程的用量'}>
+        <ChartCard title={t.inference.metrics.memory} description={vramTotal ? c.memoryVramHint : c.memoryHint}>
           {data ? (
             <ChartContainer config={memoryConfig} className={chartCls}>
               <LineChart data={data.series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>

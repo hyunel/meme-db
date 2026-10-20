@@ -1,7 +1,8 @@
 import { Suspense } from 'react'
 import { InferenceView } from '@/components/admin/inference/inference-view'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '推理服务' }
+export const generateMetadata = pageTitle('inference')
 
 export default function Page() {
   return (

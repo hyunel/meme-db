@@ -1,8 +1,8 @@
-import type { Metadata } from 'next'
 import { RequireAuth } from '@/components/auth-guard'
 import { SharesView } from '@/components/shares-view'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata: Metadata = { title: '我的分享' }
+export const generateMetadata = pageTitle('shares')
 
 export default function SharesPage() {
   return (

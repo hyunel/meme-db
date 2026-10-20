@@ -3,15 +3,17 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { validateQueryImage } from '@/lib/image-query'
+import { useMessages } from '@/lib/i18n/client'
 
 // Only valid images reach onImage.
 export function useImageInput(onImage: (file: File) => void) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+  const t = useMessages()
 
   const accept = (file: File | undefined | null) => {
     if (!file) return
-    const err = validateQueryImage(file)
+    const err = validateQueryImage(file, t)
     if (err) {
       toast.error(err)
       return

@@ -1,9 +1,13 @@
+'use client'
+
 import Link from 'next/link'
+import { useMessages } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
 
 export function Logo({ className, href = '/' }: { className?: string; href?: string }) {
+  const t = useMessages()
   return (
-    <Link href={href} className={cn('flex items-center gap-2 font-semibold tracking-tight', className)} aria-label="MemeDB 首页">
+    <Link href={href} className={cn('flex items-center gap-2 font-semibold tracking-tight', className)} aria-label={t.nav.homeLabel}>
       {/* The mark of public/favicon.svg, whose cells fall on whole pixels at this size */}
       <svg viewBox="0 0 32 32" className="size-8 shrink-0" aria-hidden>
         <path d="M9 3H5Q3 3 3 5V9M23 3H27Q29 3 29 5V9M3 23V27Q3 29 5 29H9M29 23V27Q29 29 27 29H23" fill="none" className="stroke-foreground" strokeWidth="2" strokeLinecap="round" />

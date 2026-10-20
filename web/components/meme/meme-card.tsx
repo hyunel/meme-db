@@ -9,6 +9,7 @@ import { MemeMedia } from './meme-media'
 import { FavoriteButton, MemeMoreMenu } from './meme-actions'
 import { ProcessBadge } from '@/components/status-badges'
 import { cn, qs } from '@/lib/utils'
+import { useMessages } from '@/lib/i18n/client'
 
 // Height over width, bounded so panoramas and long screenshots keep a usable card.
 const ratioOf = (m: Meme) => (m.width && m.height ? Math.min(Math.max(m.height / m.width, 0.5), 2) : 1)
@@ -30,8 +31,9 @@ export const MemeCard = memo(function MemeCard({
   className?: string
 }) {
   const kind = kindOf(meme.mime_type)
-  const shown = [...new Set(meme.tags.filter((t) => !t.rare).map((t) => t.name))].slice(0, 2)
+  const shown = [...new Set(meme.tags.filter((tag) => !tag.rare).map((tag) => tag.name))].slice(0, 2)
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0 // Opened only by the link, so not to be favorited, as on its page
+  const t = useMessages()
 
   return (
     <div className={cn('group relative flex flex-col gap-1.5', className)}>
@@ -43,7 +45,7 @@ export const MemeCard = memo(function MemeCard({
         style={{ aspectRatio: 1 / ratioOf(meme) }}
       >
         <MemeMedia meme={meme} className="size-full transition-[opacity,transform] duration-300 group-hover:scale-[1.03]" />
-        <span className="sr-only">查看详情</span>
+        <span className="sr-only">{t.meme.details}</span>
         {kind !== 'image' && (
           <span className="pointer-events-none absolute top-2 left-2 rounded bg-foreground/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-background uppercase">
             {kind}
@@ -52,7 +54,7 @@ export const MemeCard = memo(function MemeCard({
         {meme.status !== 'success' && <ProcessBadge status={meme.status} className="absolute bottom-2 left-2 bg-background/80" />}
         {similarity !== undefined && (
           <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-brand px-2 py-0.5 text-xs font-medium text-brand-foreground tabular-nums">
-            {Math.round(similarity * 100)}% 相似
+            {t.meme.similarity(Math.round(similarity * 100))}
           </span>
         )}
       </Link>

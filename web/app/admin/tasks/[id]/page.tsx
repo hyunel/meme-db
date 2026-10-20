@@ -1,6 +1,7 @@
 import { AdminTaskDetail } from '@/components/admin/tasks'
+import { pageTitle } from '@/lib/i18n/server'
 
-export const metadata = { title: '任务详情' }
+export const generateMetadata = pageTitle('taskDetail')
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
