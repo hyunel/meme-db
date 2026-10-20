@@ -1,6 +1,7 @@
 # Inference reads VLM settings and download mirrors from .env.
 services:
   web:
+    image: ghcr.io/hyunel/meme-db/web:latest
     build: ./web
     ports: ["3000:3000"]
     environment:
@@ -8,6 +9,7 @@ services:
     depends_on: [server]
 
   server:
+    image: ghcr.io/hyunel/meme-db/server:latest
     build: ./server
     ports: ["8080:8080"]
     volumes:
@@ -34,6 +36,7 @@ services:
 
   # Set TORCH=cpu in .env and remove deploy for a CPU, or TORCH=xpu and devices: [/dev/dri] for Intel.
   inference:
+    image: ghcr.io/hyunel/meme-db/inference:latest
     build:
       context: ./inference
       args:
@@ -42,6 +45,7 @@ services:
     environment:
       TORCH: ${TORCH:-cuda}
     volumes:
+      - ./inference/models.yaml:/app/models.yaml:ro
       - models:/cache
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=3).close()"]
