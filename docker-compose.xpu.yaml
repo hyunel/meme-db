@@ -1,6 +1,14 @@
-# Runs inference on an Intel GPU; .env adds this file.
+# Builds and runs inference for an Intel GPU; .env adds this file.
 services:
   inference:
-    environment:
-      TORCH: xpu
+    image: meme-db-inference:xpu
+    build:
+      args:
+        TORCH: xpu
+        APT_MIRROR:
+        APT_SECURITY_MIRROR:
+        GITHUB_RELEASE_BASE_URL:
+        IGC:
+        NEO:
+        GMM:
     devices: [/dev/dri]

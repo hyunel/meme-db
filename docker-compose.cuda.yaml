@@ -1,8 +1,10 @@
-# Runs inference on an NVIDIA GPU; .env adds this file.
+# Builds and runs inference for an NVIDIA GPU; .env adds this file.
 services:
   inference:
-    environment:
-      TORCH: cuda
+    image: meme-db-inference:cuda
+    build:
+      args:
+        TORCH: cuda
     deploy:
       resources:
         reservations:

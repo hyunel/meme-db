@@ -35,7 +35,7 @@ dev-server:
 	cd server && go run cmd/api/main.go
 
 dev-ai:
-	cd inference && sh start.sh
+	cd inference && uv run --extra cuda python -m app.main
 
 build-all:
 	docker-compose build

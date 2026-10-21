@@ -12,17 +12,18 @@ clip:
   # cpu:
   #   threads: 8  # Requests run at once; by default the models on the CPU split its threads
 
-# On the CPU: microsoft/harrier-oss-v1-270m
 embedding:
   model: "Qwen/Qwen3-Embedding-0.6B"
+  # model: "microsoft/harrier-oss-v1-270m"  # For the CPU
   device: auto
   gpu:
     batch_size: 16
     dtype: bfloat16
 
-# Qwen3-Reranker, or any cross-encoder with a single relevance logit. On the CPU: Horizon-Labs/multilingual-reranker-small
+# Qwen3-Reranker, or any cross-encoder with a single relevance logit
 reranker:
   model: "Qwen/Qwen3-Reranker-0.6B"
+  # model: "Horizon-Labs/multilingual-reranker-small"  # For the CPU
   device: auto
   gpu:
     batch_size: 16

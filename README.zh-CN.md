@@ -116,9 +116,11 @@ cp .env.example .env   # 填入你的 OpenAI 兼容 VLM 服务
 docker compose up -d
 ```
 
-打开 http://localhost:3000。Compose 会拉取发布镜像 `ghcr.io/hyunel/meme-db/{server,web,inference}:latest`（用 `docker compose pull` 更新）；`docker compose up -d --build` 则改为从当前代码构建。首次启动要下载 Python 依赖和模型权重，可能需要一段时间，server 会等它就绪。
+打开 http://localhost:3000。首次启动要构建推理服务并下载模型权重，可能需要一段时间，server 会等它就绪。
 
-推理服务默认跑在 CPU 上。要用 GPU，在 `.env` 里取消注释对应的 `COMPOSE_FILE` 一行：第一行是 NVIDIA，第二行是 Intel。推理服务会自动安装对应的 PyTorch，模型也会改用 GPU。
+推理服务默认在 CPU 上运行。为了让搜索更快，建议取消注释 `inference/models.yaml` 里较小的模型。请在添加表情包之前完成这一步，因为之后更换向量模型，需要为所有表情包重新计算向量。
+
+如果有 GPU，在 `.env` 里取消注释对应的 `COMPOSE_FILE` 一行（第一行是 NVIDIA，第二行是 Intel）。Compose 会用对应的 PyTorch 构建推理服务，让模型在 GPU 上运行。
 
 新注册的账号都是普通用户。注册后，用下面的命令把自己设为管理员：
 

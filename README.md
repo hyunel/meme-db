@@ -116,9 +116,11 @@ cp .env.example .env   # Fill in your OpenAI-compatible VLM provider
 docker compose up -d
 ```
 
-Open http://localhost:3000. Compose pulls the release images `ghcr.io/hyunel/meme-db/{server,web,inference}:latest` (`docker compose pull` updates them); `docker compose up -d --build` builds them from the checkout instead. The first start downloads Python dependencies and model weights, which can take a while; the server waits for it.
+Open http://localhost:3000. The first start builds inference and downloads its model weights, which can take a while; the server waits for it.
 
-Inference runs on the CPU by default. For a GPU, uncomment its `COMPOSE_FILE` line in `.env`, the first for NVIDIA or the second for Intel: inference then installs the matching PyTorch, and the models move to the GPU.
+Inference runs on the CPU by default. To keep searches quick there, uncomment the smaller models in `inference/models.yaml`. Do this before adding memes: changing the embedding model later means re-embedding every meme.
+
+To use a GPU instead, uncomment the matching `COMPOSE_FILE` line in `.env` (the first for NVIDIA, the second for Intel). Compose then builds inference with the right PyTorch and runs the models on the GPU.
 
 Accounts start as users. To make yours an admin after signing up:
 

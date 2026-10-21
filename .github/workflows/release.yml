@@ -16,7 +16,6 @@ jobs:
         include:
           - image: server
           - image: web
-          - image: inference
     steps:
       - uses: actions/checkout@v7
 
@@ -61,7 +60,7 @@ jobs:
           {
             echo "## Images"
             echo
-            for name in server web inference; do echo "- \`$image/$name:${tag#v}\`"; done
+            for name in server web; do echo "- \`$image/$name:${tag#v}\`"; done
             echo
             echo "## Changes"
             echo

@@ -15,14 +15,14 @@ You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 export VLM_MODEL=... VLM_API_KEY=... VLM_BASE_URL=...
-TORCH=cuda sh start.sh   # cpu, cuda or xpu; serves on :50051
+uv run --extra cuda python -m app.main   # cpu, cuda or xpu; serves on :50051
 ```
 
-`start.sh` keeps a virtual environment for each backend under `cache/`, installs the dependencies, and passes its arguments on (`--port`, `-c models.yaml`). Model weights come from Hugging Face on first use. `UV_DEFAULT_INDEX`, `TORCH_INDEX_URL` and `HF_ENDPOINT` point the downloads at mirrors; `../.env.example` lists them all.
+The extra picks the PyTorch build; an Intel GPU also needs Intel's compute runtime on the host. `--port` and `-c models.yaml` set the port and the config. Model weights come from Hugging Face on first use, through `HF_ENDPOINT` if set. The [Dockerfile](Dockerfile) installs the same for its `TORCH` build argument, with the mirrors in `../.env.example`.
 
 ## Models
 
-`models.yaml` gives each role its model and `device` (`auto`, `cpu`, `cuda:1`, `xpu`, `mps`, …), with `gpu` (batch size, dtype) and `cpu` (threads) settings. Its comments suggest smaller models for the CPU. `${VAR}` placeholders are read from the environment.
+`models.yaml` gives each role its model and `device` (`auto`, `cpu`, `cuda:1`, `xpu`, `mps`, …), with `gpu` (batch size, dtype) and `cpu` (threads) settings. Under each default, a commented-out line offers a smaller model for the CPU. `${VAR}` placeholders are read from the environment.
 
 Models on one GPU take turns, each running requests in batches; models on the CPU and the VLM API run requests side by side, the API up to `vlm.openai.concurrency` at once.
 

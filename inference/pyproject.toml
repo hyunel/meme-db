@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# start.sh selects the backend and overrides its index from TORCH_INDEX_URL.
+# PyTorch for each backend: CUDA's from the default index, the others from PyTorch's.
 cuda = ["torch", "torchvision"]
 cpu = ["torch", "torchvision"]
 xpu = ["torch", "torchvision", "triton-xpu"]  # torch.compile's, from the same index as torch
@@ -40,21 +40,14 @@ conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
 
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cuda", extra = "cuda" },
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
-    { index = "pytorch-cuda", extra = "cuda" },
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 triton-xpu = { index = "pytorch-xpu", extra = "xpu" }
-
-[[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://pypi.org/simple"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

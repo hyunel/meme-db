@@ -36,16 +36,18 @@ services:
       interval: 2s
       retries: 30
 
-  # Runs on the CPU unless .env adds docker-compose.cuda.yaml or docker-compose.xpu.yaml.
+  # Built for the CPU unless .env adds docker-compose.cuda.yaml or docker-compose.xpu.yaml.
   inference:
-    image: ghcr.io/hyunel/meme-db/inference:latest
+    image: meme-db-inference:cpu
+    pull_policy: never # Built here, never pulled
     build:
       context: ./inference
       args:
+        TORCH: cpu
         BASE_IMAGE: ${INFERENCE_BASE_IMAGE:-ghcr.io/astral-sh/uv:python3.12-trixie-slim}
+        UV_DEFAULT_INDEX:
+        TORCH_INDEX_URL:
     env_file: .env
-    environment:
-      TORCH: cpu
     volumes:
       - ./inference/models.yaml:/app/models.yaml:ro
       - cache:/cache
@@ -53,7 +55,7 @@ services:
       test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=3).close()"]
       interval: 10s
       timeout: 5s
-      start_period: 30m # First boot may download dependencies and model weights
+      start_period: 30m # First boot downloads model weights
       retries: 3
 
 volumes:
