@@ -17,7 +17,7 @@ class CLIPModel(BaseModel):
         self.model = self.from_pretrained(AutoModel, model_id)
         self.dims = self.model.config.text_config.projection_size  # Images embed to the same size
 
-        self.processor = AutoProcessor.from_pretrained(model_id, use_fast=True)
+        self.processor = AutoProcessor.from_pretrained(model_id, backend="torchvision")
 
         self.get_image_features = self.model.get_image_features
         self.get_text_features = self.model.get_text_features
@@ -27,7 +27,7 @@ class CLIPModel(BaseModel):
 
     def embed(self, get_features: Callable, inputs: BatchFeature) -> List[List[float]]:
         with torch.no_grad():
-            features = get_features(**inputs.to(self.device))
+            features = get_features(**inputs.to(self.device)).pooler_output
             features = F.normalize(features, p=2, dim=1)
             return features.float().cpu().numpy().tolist()
 

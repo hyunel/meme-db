@@ -11,4 +11,10 @@ services:
         IGC:
         NEO:
         GMM:
+        LEVEL_ZERO:
     devices: [/dev/dri]
+    environment:
+      # iGPUs lack the fp64 that PyTorch's dtype casts use, so the compiler emulates it
+      IGC_EnableDPEmulation: 1
+      # iGPUs compile PyTorch's kernels on first use, for minutes; the driver keeps them in $XDG_CACHE_HOME/neo_compiler_cache
+      XDG_CACHE_HOME: /cache
