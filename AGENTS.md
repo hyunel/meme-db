@@ -17,7 +17,7 @@ The system consists of three main components:
 
 3.  **Web (Next.js)**:
     - **Stack**: Next.js 16 (App Router), React 19, SWR, Tailwind v4, shadcn components on Base UI.
-    - **Role**: The site and the admin console; reaches the server through the `/api` rewrite.
+    - **Role**: The site and the admin console; reaches the server through `/api`, which `app/api/[...path]` streams to it.
 
 ## Directory Structure
 

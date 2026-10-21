@@ -96,7 +96,7 @@ prompt:
     Never tag objects, actions, catchphrases or quotes particular to this image (they belong in the title and description), appearance details (hair or eye color, hairstyle, blushing), words true of almost every meme (meme, sticker, funny, silly), or production details (cutout, white background, low resolution, the language of the text).
 
 upload:
-  max_size_mb: 1.0    # Above 10, raise the web's proxyClientMaxBodySize to match, or larger uploads arrive cut short
+  max_size_mb: 1.0
   allowed_types:
     - "image/*"
     - "video/*,.webm,.mp4"

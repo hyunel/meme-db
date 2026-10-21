@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 // Where visitors reach the site, which share cards and canonical links spell out in full.
 export const siteUrl = process.env.SITE_URL ?? 'http://localhost:3000'
-// Where the Next server reaches the API, read at run time; browsers' /api requests are passed to it by proxy.ts.
+// Where the Next server reaches the API, read at run time; app/api/[...path] passes browsers' /api requests to it.
 export const backendBase = process.env.BACKEND_BASE ?? 'http://localhost:8080'
 
 /** The head of a public page: its share card and canonical link, kept out of search results unless index. */
