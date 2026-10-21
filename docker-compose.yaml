@@ -2,7 +2,10 @@
 services:
   web:
     image: ghcr.io/hyunel/meme-db/web:latest
-    build: ./web
+    build:
+      context: ./web
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     ports: ["3000:3000"]
     environment:
       SITE_URL: ${SITE_URL:-http://localhost:3000} # Where visitors reach the site, as share cards link it
@@ -11,7 +14,6 @@ services:
   server:
     image: ghcr.io/hyunel/meme-db/server:latest
     build: ./server
-    ports: ["8080:8080"]
     volumes:
       - ./server/config.docker.yaml:/etc/memedb/config.yaml:ro
       - assets:/data/assets
@@ -46,7 +48,7 @@ services:
       TORCH: cpu
     volumes:
       - ./inference/models.yaml:/app/models.yaml:ro
-      - models:/cache
+      - cache:/cache
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=3).close()"]
       interval: 10s
@@ -57,4 +59,4 @@ services:
 volumes:
   assets:
   db:
-  models:
+  cache:
