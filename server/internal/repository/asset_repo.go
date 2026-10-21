@@ -43,6 +43,11 @@ func (r *AssetRepository) GetByHash(ctx context.Context, hash string) (*model.As
 	return collectOne[model.Asset](r.db.Query(ctx, query, hash))
 }
 
+// StoragePaths lists where every file is stored.
+func (r *AssetRepository) StoragePaths(ctx context.Context) ([]string, error) {
+	return collectScalars[string](r.db.Query(ctx, `SELECT storage_path FROM core.assets ORDER BY created_at`))
+}
+
 func (r *AssetRepository) RecentUploads(ctx context.Context, userID string, limit int) ([]string, error) {
 	query := `SELECT id::text FROM core.assets WHERE uploaded_by = $1::uuid ORDER BY created_at DESC LIMIT $2`
 	return collectScalars[string](r.db.Query(ctx, query, userID, limit))

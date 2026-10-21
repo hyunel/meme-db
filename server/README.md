@@ -4,21 +4,20 @@ The Go API behind MemeDB: accounts and sign-ins, libraries and sharing, file sto
 
 ## Run
 
-You need Go 1.24+, PostgreSQL with pgvector, and a running inference service. A database built from `sql/init.sql`:
+You need Go 1.24+, PostgreSQL with pgvector, and a running inference service. A database:
 
 ```sh
-docker run -d --name memedb-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-  -v "$PWD/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" pgvector/pgvector:pg18-trixie
+docker run -d --name memedb-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg18-trixie
 ```
 
 Then:
 
 ```sh
 cp config.example.yaml config.yaml
-go run ./cmd/api   # Reads config.yaml; serves on :8080
+go run ./cmd/api serve   # Reads config.yaml; serves on :8080
 ```
 
-`init.sql` only builds a fresh database; one that already holds data is migrated by hand.
+`-h` lists the other commands. In Docker Compose: `docker compose exec server memedb -h`.
 
 ## Configuration
 
@@ -50,6 +49,6 @@ internal/repository/  Data access (pgx, pgvector)
 internal/worker/      Task queue
 internal/pkg/         Errors, access control, storage, inference client
 internal/pb/          Generated gRPC code (make gen-proto)
-sql/init.sql          Schema
+internal/db/          Connection, and the schema as numbered migrations
 tests/                Tests (go test ./tests/...)
 ```

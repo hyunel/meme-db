@@ -30,7 +30,6 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - db:/var/lib/postgresql
-      - ./server/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-d", "memedb"]
       interval: 2s

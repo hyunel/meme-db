@@ -28,12 +28,12 @@ MemeDB/
 │   ├── cmd/            # Entry points
 │   ├── internal/       # Application logic
 │   │   ├── config/     # Configuration
+│   │   ├── db/         # Connection; schema migrations
 │   │   ├── handler/    # HTTP Handlers
 │   │   ├── service/    # Business Logic
 │   │   ├── repository/ # Data Access
 │   │   └── worker/     # Async Worker
-│   ├── tests/          # Integration & Unit Tests
-│   └── sql/            # DB Schema
+│   └── tests/          # Integration & Unit Tests
 ├── inference/          # Python Inference Service
 └── web/                # Next.js Frontend
 ```
@@ -60,6 +60,7 @@ MemeDB/
   - Use `pgx/v5` driver.
   - Use `pgvector-go` for vector operations.
 - **Configuration**: Use `config.yaml` and `internal/config` package.
+- **CLI**: `cmd/api/main.go` runs a command: `serve` the API, or maintenance such as `backup export` and `backup restore`.
 
 ### Database & Transaction Management
 - **Repository Pattern**: Repositories must focus solely on data access and query execution.
@@ -70,7 +71,8 @@ MemeDB/
   - For multiple operations requiring atomicity, use the `Transaction` helper (`Provider.Tx`).
 - **Access Control**: Enforced explicitly in repository queries (owner / visibility filters); there is no row-level security. A node is public if it or an ancestor folder is public (`library.public_files`).
 - **Sign-ins**: The web signs in with a session cookie (`iam.sessions`, HttpOnly, revocable), scripts with a personal API token (`mdb_…`), whose scope `rbac` enforces: `read` tokens may only GET signed-in routes, the admin API needs the `admin` scope, and routes under `rbac.RequireSession()` (password, sign-ins, tokens) refuse tokens altogether.
-- **Schema**: `server/sql/init.sql` creates the database.
+- **Schema**: Numbered migrations in `server/internal/db/migrations/` build the database; `serve` applies new ones as it starts, each in a transaction. Change the schema with a new migration, never by editing one that has been applied.
+- **Backups**: `backup export` copies every table of `core`, `iam` and `library` but their vector columns and the tables in `backupSkipped` (`BackupService`); a new table the server works out again belongs there.
 
 ### Protobuf Workflow
 - **Definition**: Protocol buffers are defined in `protos/`.

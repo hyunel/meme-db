@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -31,7 +32,13 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
+	flag.Usage = usage
 	flag.Parse()
+	args := flag.Args()
+	if len(args) == 0 || args[0] != "serve" && args[0] != "backup" {
+		flag.Usage()
+		os.Exit(2)
+	}
 
 	logEntries := logger.Setup()
 
@@ -72,6 +79,15 @@ func main() {
 		MaxSizeMB:    cfg.Upload.MaxSizeMB,
 		AllowedTypes: cfg.Upload.AllowedTypes,
 	}, repo, files, taskWorker)
+
+	if args[0] != "serve" {
+		// The server's workers pick up the tasks a command queues
+		os.Exit(runCommand(ctx, args, service.NewBackupService(repo, files, assetService)))
+	}
+	if err := repo.Migrate(ctx, db.LatestVersion); err != nil {
+		slog.Error("Failed to migrate the database", "error", err)
+		os.Exit(1)
+	}
 
 	limits := cfg.Search.RecallLimits
 	memeService := service.NewMemeService(service.MemeServiceConfig{
@@ -329,4 +345,71 @@ func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
 	admin.POST("/tasks/retry", h.task.Retry)
 	admin.POST("/tasks/:id/run", h.task.RunNow)
 	admin.POST("/tasks/:id/cancel", h.task.Cancel)
+}
+
+func usage() {
+	fmt.Fprintf(flag.CommandLine.Output(), `Usage: %s [-config path] <command>
+
+Commands:
+  serve                  Serve the API, the database's schema brought up to date first
+  backup export <file>   Write the site's data and files to a zip, but for what a new site works out again
+  backup restore <file>  Restore a backup into an empty database
+
+Flags:
+`, filepath.Base(os.Args[0]))
+	flag.PrintDefaults()
+}
+
+// runCommand returns the exit code: 0 on success, 1 on failure, 2 for a misused command.
+func runCommand(ctx context.Context, args []string, backups *service.BackupService) int {
+	if len(args) == 3 && args[0] == "backup" {
+		switch args[1] {
+		case "export":
+			return exportBackup(ctx, args[2], backups)
+		case "restore":
+			return restoreBackup(ctx, args[2], backups)
+		}
+	}
+	flag.Usage()
+	return 2
+}
+
+func exportBackup(ctx context.Context, path string, backups *service.BackupService) int {
+	f, err := os.Create(path)
+	if err != nil {
+		slog.Error("Failed to create the backup", "error", err)
+		return 1
+	}
+	stats, err := backups.Export(ctx, f)
+	if err = errors.Join(err, f.Close()); err != nil {
+		os.Remove(path)
+		slog.Error("Failed to export", "error", err)
+		return 1
+	}
+	fmt.Printf("Exported %d users and %d memes, with %d files (%.1f MB), to %s\n",
+		stats.Rows["iam.users"], stats.Rows["core.assets"], stats.Files, float64(stats.Bytes)/1e6, path)
+	return 0
+}
+
+func restoreBackup(ctx context.Context, path string, backups *service.BackupService) int {
+	f, err := os.Open(path)
+	if err != nil {
+		slog.Error("Failed to open the backup", "error", err)
+		return 1
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		slog.Error("Failed to open the backup", "error", err)
+		return 1
+	}
+	stats, err := backups.Restore(ctx, f, stat.Size())
+	if err != nil {
+		slog.Error("Failed to restore", "error", err)
+		return 1
+	}
+	fmt.Printf("Restored %d users and %d memes, with %d files (%.1f MB).\n",
+		stats.Rows["iam.users"], stats.Rows["core.assets"], stats.Files, float64(stats.Bytes)/1e6)
+	fmt.Println("Once serving, the server works out the embeddings again with its own models, without the VLM.")
+	return 0
 }

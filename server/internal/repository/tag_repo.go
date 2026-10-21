@@ -47,9 +47,9 @@ func (r *TagRepository) Lock(ctx context.Context) error {
 	return err
 }
 
-// Embedded returns the names of the tags with embeddings: the ones the VLM started.
-func (r *TagRepository) Embedded(ctx context.Context) ([]string, error) {
-	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE embedding IS NOT NULL`))
+// VLMTags returns the names of the tags the VLM started, which have embeddings.
+func (r *TagRepository) VLMTags(ctx context.Context) ([]string, error) {
+	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE NOT by_user`))
 }
 
 // SetEmbeddings gives the tags of names the vectors.
@@ -62,12 +62,12 @@ func (r *TagRepository) SetEmbeddings(ctx context.Context, names []string, vecto
 // Create returns the tag with this name, which a concurrent resolve may have created first; embedding is nil for a tag a user starts.
 func (r *TagRepository) Create(ctx context.Context, name string, embedding *pgvector.Vector) (string, error) {
 	query := `
-		INSERT INTO library.tags (name, embedding) VALUES ($1, $2)
+		INSERT INTO library.tags (name, embedding, by_user) VALUES ($1, $2, $3)
 		ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
 		RETURNING id::text
 	`
 	var id string
-	err := r.db.QueryRow(ctx, query, name, embedding).Scan(&id)
+	err := r.db.QueryRow(ctx, query, name, embedding, embedding == nil).Scan(&id)
 	return id, err
 }
 
@@ -134,7 +134,7 @@ func (r *TagRepository) RefreshUsage(ctx context.Context) error {
 
 func (r *TagRepository) List(ctx context.Context, query, sort string, page Page, commonShare float64) ([]*model.TagUsage, int, error) {
 	var w filter
-	w.where("t.embedding IS NOT NULL") // Tags users started are left to them
+	w.where("NOT t.by_user") // Tags users started are left to them
 	if query != "" {
 		w.where("EXISTS (SELECT 1 FROM library.labels l WHERE l.tag_id = t.id AND l.name ILIKE " + w.arg("%"+query+"%") + ")")
 	}
@@ -253,9 +253,9 @@ func (r *TagRepository) SetHidden(ctx context.Context, id string, hidden bool) e
 }
 
 // Merge moves the sources' spellings, and with them their links, to the target.
-// UserTags returns the names of the tags among ids that users started, which have no embedding.
+// UserTags returns the names of the tags among ids that users started.
 func (r *TagRepository) UserTags(ctx context.Context, ids []string) ([]string, error) {
-	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE id = ANY($1::uuid[]) AND embedding IS NULL`, ids))
+	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags WHERE id = ANY($1::uuid[]) AND by_user`, ids))
 }
 
 func (r *TagRepository) Merge(ctx context.Context, sourceIDs []string, targetID string) error {

@@ -32,7 +32,7 @@ dev-web:
 	cd web && bun dev
 
 dev-server:
-	cd server && go run cmd/api/main.go
+	cd server && go run cmd/api/main.go serve
 
 dev-ai:
 	cd inference && uv run --extra cuda python -m app.main

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 
+	"github.com/hyunel/MemeDB/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,7 +25,16 @@ func (p *Provider) Ping(ctx context.Context) error {
 }
 
 func (p *Provider) Tx(ctx context.Context, fn func(*Repos) error) error {
-	tx, err := p.pool.Begin(ctx)
+	return p.tx(ctx, pgx.TxOptions{}, fn)
+}
+
+// Snapshot runs fn in a read-only transaction that sees the database as it was when it began.
+func (p *Provider) Snapshot(ctx context.Context, fn func(*Repos) error) error {
+	return p.tx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, fn)
+}
+
+func (p *Provider) tx(ctx context.Context, opts pgx.TxOptions, fn func(*Repos) error) error {
+	tx, err := p.pool.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -33,4 +44,14 @@ func (p *Provider) Tx(ctx context.Context, fn func(*Repos) error) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// Migrate brings the schema up to migration to, at most db.LatestVersion.
+func (p *Provider) Migrate(ctx context.Context, to int) error {
+	return db.Migrate(ctx, p.pool, to)
+}
+
+// SchemaVersion returns the newest migration applied, 0 for an empty database.
+func (p *Provider) SchemaVersion(ctx context.Context) (int, error) {
+	return db.SchemaVersion(ctx, p.pool)
 }
