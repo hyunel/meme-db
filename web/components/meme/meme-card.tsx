@@ -31,7 +31,7 @@ export const MemeCard = memo(function MemeCard({
   className?: string
 }) {
   const kind = kindOf(meme.mime_type)
-  const shown = [...new Set(meme.tags.filter((tag) => !tag.rare).map((tag) => tag.name))].slice(0, 2)
+  const shown = meme.tags.filter((tag) => !tag.rare).map((tag) => tag.name).slice(0, 2)
   const viaLink = Boolean(share) && !meme.is_public && meme.entries.length === 0 // Opened only by the link, so not to be favorited, as on its page
   const t = useMessages()
 

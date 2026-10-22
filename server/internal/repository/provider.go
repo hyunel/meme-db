@@ -46,12 +46,10 @@ func (p *Provider) tx(ctx context.Context, opts pgx.TxOptions, fn func(*Repos) e
 	return tx.Commit(ctx)
 }
 
-// Migrate brings the schema up to migration to, at most db.LatestVersion.
 func (p *Provider) Migrate(ctx context.Context, to int) error {
 	return db.Migrate(ctx, p.pool, to)
 }
 
-// SchemaVersion returns the newest migration applied, 0 for an empty database.
 func (p *Provider) SchemaVersion(ctx context.Context) (int, error) {
 	return db.SchemaVersion(ctx, p.pool)
 }

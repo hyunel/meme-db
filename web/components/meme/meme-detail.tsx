@@ -156,7 +156,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
     setTagPending(true)
     try {
       const tag = await api<MemeTag>(`/memes/${meme.id}/tags`, { method: 'POST', json: { name } })
-      await mutate({ ...meme, tags: [...meme.tags.filter((x) => x.id !== tag.id || !x.mine), tag] })
+      await mutate({ ...meme, tags: [...meme.tags.filter((x) => x.id !== tag.id), tag] })
       setTagInput('')
     } catch (err) {
       toast.error((err as Error).message)
@@ -168,7 +168,7 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
   const removeTag = async (tag: MemeTag) => {
     try {
       await api(`/memes/${meme.id}/tags/${tag.id}`, { method: 'DELETE' })
-      await mutate({ ...meme, tags: meme.tags.filter((x) => !(x.mine && x.id === tag.id)) })
+      await mutate() // The VLM may have given it too
     } catch (err) {
       toast.error((err as Error).message)
     }

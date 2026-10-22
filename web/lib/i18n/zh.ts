@@ -98,7 +98,6 @@ export const zh = {
     invalid_tag: '标签需为 1–50 个字符',
     tag_name_taken: '已存在同名标签，请改用合并',
     merge_into_source: '目标标签不能是被合并的标签',
-    user_tag_not_mergeable: (p: Params) => `「${p.tag}」是用户添加的标签，不参与合并`,
 
     task_not_found: '任务不存在',
     batch_not_found: '批次不存在',
@@ -1087,7 +1086,7 @@ export const zh = {
     deleteSome: (n: number) => `删除 ${n} 个标签`,
     deleteOne: '删除标签',
     deleteHint: (names: string[], uses: number) =>
-      `会从所有表情包上移除${names.map((n) => `「${n}」`).join('')}，共被使用 ${uses} 次，且无法恢复。之后的分析仍可能重新生成它，若要永久隐藏请改用屏蔽。`,
+      `会从所有表情包上移除识别生成的${names.map((n) => `「${n}」`).join('')}，共被使用 ${uses} 次，且无法恢复；用户自己添加的不受影响。之后的分析仍可能重新生成它，若要永久隐藏请改用屏蔽。`,
     deleted: (n: number) => `已删除 ${n} 个标签`,
     nameRequired: '名称不能为空',
     nameTooLong: '名称最多 50 个字符',

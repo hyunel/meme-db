@@ -162,10 +162,10 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', COALESCE(u.usage, 0) < $4)
 					ORDER BY x.mine, u.usage DESC NULLS LAST, t.name)
 				FROM (
-					SELECT l.tag_id, at.user_id IS NOT NULL AS mine
+					SELECT l.tag_id, bool_or(at.user_id IS NOT NULL) AS mine
 					FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
 					WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
-					GROUP BY l.tag_id, mine
+					GROUP BY l.tag_id
 				) x JOIN library.tags t ON t.id = x.tag_id
 				LEFT JOIN library.tag_usage u ON u.tag_id = x.tag_id -- None for a tag new since the last count
 				WHERE x.mine OR NOT t.hidden

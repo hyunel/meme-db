@@ -99,7 +99,6 @@ export const en: Messages = {
     invalid_tag: 'Tags must be 1–50 characters',
     tag_name_taken: 'A tag with this name exists. Merge them instead.',
     merge_into_source: 'The destination cannot be one of the tags being merged',
-    user_tag_not_mergeable: (p) => `“${p.tag}” was added by a user and is not merged`,
 
     task_not_found: 'Task not found',
     batch_not_found: 'Batch not found',
@@ -1086,7 +1085,7 @@ export const en: Messages = {
     deleteSome: (n) => `Delete ${n} tags`,
     deleteOne: 'Delete tag',
     deleteHint: (names, uses) =>
-      `Removes ${names.map((n) => `“${n}”`).join(', ')} from every meme (${uses} ${uses === 1 ? 'use' : 'uses'}). This cannot be undone. Later analysis may create it again; hide it instead to keep it away for good.`,
+      `Removes ${names.map((n) => `“${n}”`).join(', ')} from every meme the VLM gave it to (${uses} ${uses === 1 ? 'use' : 'uses'}); users’ own tags stay. This cannot be undone. Later analysis may create it again; hide it instead to keep it away for good.`,
     deleted: (n) => `Deleted ${n} ${n === 1 ? 'tag' : 'tags'}`,
     nameRequired: 'Enter a name',
     nameTooLong: 'Names can be at most 50 characters',

@@ -44,7 +44,6 @@ type backupInfo struct {
 	Tables     []*repository.Table `json:"tables"`
 }
 
-// BackupStats tells how much a backup carried.
 type BackupStats struct {
 	Rows  map[string]int64 // By table
 	Files int
@@ -203,7 +202,6 @@ func (s *BackupService) prepare(ctx context.Context, info backupInfo) error {
 	return nil
 }
 
-// restoreFiles stores the backup's files and returns the keys it stored.
 func (s *BackupService) restoreFiles(ctx context.Context, zr *zip.Reader, stats *BackupStats) ([]string, error) {
 	var stored []string
 	for _, f := range zr.File {

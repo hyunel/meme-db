@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
-	"unicode/utf8"
 
 	"github.com/hyunel/MemeDB/internal/config"
 	"github.com/hyunel/MemeDB/internal/db"
@@ -40,7 +39,6 @@ type command struct {
 	run   func(ctx context.Context, a *app, args []string) error
 }
 
-// Commands but serve leave what they queue to the server's workers.
 var commands = []command{
 	{"serve", "Serve the API, the database's schema brought up to date first", serve},
 	{"backup export <file>", "Write the site's data and files to a zip, but for what a new site works out again", exportBackup},
@@ -50,7 +48,6 @@ var commands = []command{
 	{"user password <username>", "Set an account's password, signing it out everywhere", setPassword},
 }
 
-// app is what the commands work with.
 type app struct {
 	cfg        *config.Config
 	logEntries <-chan logger.Entry
@@ -407,7 +404,6 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-// lookup finds the command args call, with the arguments it takes.
 func lookup(args []string) (*command, []string) {
 	for i, c := range commands {
 		words := strings.Fields(c.usage)
@@ -499,9 +495,6 @@ func setRole(ctx context.Context, a *app, args []string) error {
 	return nil
 }
 
-// minPassword is the length the site's forms ask of a password.
-const minPassword = 6
-
 func setPassword(ctx context.Context, a *app, args []string) error {
 	user, err := a.users.GetByUsername(ctx, args[0])
 	if err != nil {
@@ -523,9 +516,6 @@ func setPassword(ctx context.Context, a *app, args []string) error {
 	}
 	if typed[0] != typed[1] {
 		return errors.New("the passwords differ")
-	}
-	if utf8.RuneCountInString(typed[0]) < minPassword {
-		return fmt.Errorf("a password has at least %d characters", minPassword)
 	}
 	if err := a.users.ResetPassword(ctx, operator, user.ID, typed[0]); err != nil {
 		return err

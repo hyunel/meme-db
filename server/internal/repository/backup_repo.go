@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Table is a table a backup holds, with the columns it keeps.
 type Table struct {
 	Name    string   `db:"name" json:"name"` // schema.table
 	Columns []string `db:"columns" json:"columns"`
@@ -37,14 +36,12 @@ func (r *BackupRepository) Tables(ctx context.Context, schemas, skipped []string
 	return collectAll[Table](r.db.Query(ctx, query, schemas, skipped))
 }
 
-// HasRows tells whether the table holds a row.
 func (r *BackupRepository) HasRows(ctx context.Context, t *Table) (bool, error) {
 	var has bool
 	err := r.db.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s)`, t.ident())).Scan(&has)
 	return has, err
 }
 
-// CopyOut writes the table's rows as CSV and returns how many there were.
 func (r *BackupRepository) CopyOut(ctx context.Context, t *Table, w io.Writer) (int64, error) {
 	conn, err := r.conn()
 	if err != nil {
@@ -54,7 +51,6 @@ func (r *BackupRepository) CopyOut(ctx context.Context, t *Table, w io.Writer) (
 	return tag.RowsAffected(), err
 }
 
-// CopyIn adds the rows CopyOut wrote and returns how many there were.
 func (r *BackupRepository) CopyIn(ctx context.Context, t *Table, rd io.Reader) (int64, error) {
 	conn, err := r.conn()
 	if err != nil {
@@ -71,7 +67,6 @@ func (r *BackupRepository) DisableTriggers(ctx context.Context) error {
 	return err
 }
 
-// conn is the transaction's connection, which COPY takes to itself.
 func (r *BackupRepository) conn() (*pgconn.PgConn, error) {
 	tx, ok := r.db.(pgx.Tx)
 	if !ok {

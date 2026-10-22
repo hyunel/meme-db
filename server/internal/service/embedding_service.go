@@ -97,7 +97,7 @@ func (s *EmbeddingService) reset(ctx context.Context, role string, dims int) err
 	if role != "text_embedding" {
 		return s.repo.Tx(ctx, func(r *repository.Repos) error { return r.Embedding.Reset(ctx, role, dims) })
 	}
-	names, err := s.repo.Tag.VLMTags(ctx)
+	names, err := s.repo.Tag.Matchable(ctx)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (s *EmbeddingService) reset(ctx context.Context, role string, dims int) err
 		if err := r.Tag.Lock(ctx); err != nil {
 			return err
 		}
-		names, err := r.Tag.VLMTags(ctx)
+		names, err := r.Tag.Matchable(ctx)
 		if err != nil {
 			return err
 		}

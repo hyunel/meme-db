@@ -47,23 +47,38 @@ func (s *TagService) Resolve(ctx context.Context, names []string, user bool) ([]
 }
 
 // A new spelling joins the tag of one with the same key. Otherwise a system one joins the most similar tag if close enough,
-// else starts a tag; a user's starts a tag without an embedding, which no similarity reaches, so user tags are never merged.
+// else starts a tag; a user's starts a tag without an embedding, which no similarity reaches until the VLM uses it.
 func (s *TagService) resolve(ctx context.Context, name string, user bool) (string, error) {
-	labelID, tagID, err := s.repo.Tag.TagOf(ctx, name)
-	if err != nil || labelID != "" {
-		return labelID, err
+	match, err := s.repo.Tag.TagOf(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if match != nil && !user && !match.Embedded {
+		vec, err := s.embed(ctx, match.TagName)
+		if err != nil {
+			return "", err
+		}
+		if err := s.repo.Tag.SetEmbeddings(ctx, []string{match.TagName}, []pgvector.Vector{vec}); err != nil {
+			return "", err
+		}
+	}
+	if match != nil && match.LabelID != "" {
+		return match.LabelID, nil
 	}
 
-	if tagID == "" && user {
+	var tagID string
+	switch {
+	case match != nil:
+		tagID = match.TagID
+	case user:
 		if tagID, err = s.repo.Tag.Create(ctx, name, nil); err != nil {
 			return "", err
 		}
-	} else if tagID == "" {
-		emb, err := s.inferClient.TextEmbedding(ctx, name, s.cfg.Prompt)
+	default:
+		vec, err := s.embed(ctx, name)
 		if err != nil {
-			return "", fmt.Errorf("failed to embed tag: %w", err)
+			return "", err
 		}
-		vec := pgvector.NewVector(emb)
 		var similarity float64
 		if tagID, similarity, err = s.repo.Tag.Nearest(ctx, vec); err != nil {
 			return "", err
@@ -75,6 +90,14 @@ func (s *TagService) resolve(ctx context.Context, name string, user bool) (strin
 		}
 	}
 	return s.repo.Tag.SetLabel(ctx, name, tagID)
+}
+
+func (s *TagService) embed(ctx context.Context, name string) (pgvector.Vector, error) {
+	emb, err := s.inferClient.TextEmbedding(ctx, name, s.cfg.Prompt)
+	if err != nil {
+		return pgvector.Vector{}, fmt.Errorf("failed to embed tag: %w", err)
+	}
+	return pgvector.NewVector(emb), nil
 }
 
 func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeID, name string) (*model.MemeTag, error) {
@@ -245,11 +268,11 @@ func cosine(a, b []float32) float64 {
 // Rename also makes the name a spelling of the tag, so it must not already mean another tag.
 func (s *TagService) Rename(ctx context.Context, id, name string) error {
 	return s.repo.Tx(ctx, func(r *repository.Repos) error {
-		_, owner, err := r.Tag.TagOf(ctx, name)
+		match, err := r.Tag.TagOf(ctx, name)
 		if err != nil {
 			return err
 		}
-		if owner != "" && owner != id {
+		if match != nil && match.TagID != id {
 			return apperror.Conflict("tag_name_taken", "a tag of that name exists; merge them instead")
 		}
 		if err := r.Tag.Rename(ctx, id, name); err != nil {
@@ -268,18 +291,9 @@ func (s *TagService) Merge(ctx context.Context, sourceIDs []string, targetID str
 	if slices.Contains(sourceIDs, targetID) {
 		return apperror.BadRequest("merge_into_source", "the target tag cannot be one of those merged")
 	}
-	return s.repo.Tx(ctx, func(r *repository.Repos) error {
-		names, err := r.Tag.UserTags(ctx, append(slices.Clone(sourceIDs), targetID))
-		if err != nil {
-			return err
-		}
-		if len(names) > 0 {
-			return apperror.BadRequest("user_tag_not_mergeable", fmt.Sprintf("%q is a tag users started, which never merges", names[0])).With("tag", names[0])
-		}
-		return r.Tag.Merge(ctx, sourceIDs, targetID)
-	})
+	return s.repo.Tx(ctx, func(r *repository.Repos) error { return r.Tag.Merge(ctx, sourceIDs, targetID) })
 }
 
 func (s *TagService) Delete(ctx context.Context, ids []string) error {
-	return s.repo.Tag.Delete(ctx, ids)
+	return s.repo.Tx(ctx, func(r *repository.Repos) error { return r.Tag.Delete(ctx, ids) })
 }

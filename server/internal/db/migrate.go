@@ -11,15 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// The schema is built by these migrations, applied in the order of their numbers. One that has been applied is
-// never edited: a change to the schema is a new migration.
-//
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
 var migrations, _ = migrationFS.ReadDir("migrations") // Sorted by name; an embedded directory always reads
 
-// LatestVersion is the number of the newest migration.
 var LatestVersion = len(migrations)
 
 // Migrate applies the migrations after the database's version, up to version to, each with its record in one

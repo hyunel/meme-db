@@ -28,8 +28,8 @@ func (r *StatsRepository) Counts(ctx context.Context, from, to time.Time) (*mode
 			(SELECT count(*) FROM library.nodes WHERE type = 'FOLDER'),
 			(SELECT count(*) FROM library.nodes WHERE type = 'FILE'),
 			(SELECT count(*) FROM library.nodes WHERE is_public),
-			(SELECT count(*) FROM library.tags)
-	`, memePublic)
+			(SELECT count(*) FROM library.tags t WHERE %s)
+	`, memePublic, vlmUses)
 
 	var o model.Overview
 	err := r.db.QueryRow(ctx, query, from, to).Scan(
