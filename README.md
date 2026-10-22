@@ -125,7 +125,7 @@ To use a GPU instead, uncomment the matching `COMPOSE_FILE` line in `.env` (the 
 Accounts start as users. To make yours an admin after signing up:
 
 ```sh
-docker compose exec server memedb user role you admin
+docker compose exec server memedb user role <username> admin
 ```
 
 > [!NOTE]

@@ -125,7 +125,7 @@ docker compose up -d
 新注册的账号都是普通用户。注册后，用下面的命令把自己设为管理员：
 
 ```sh
-docker compose exec server memedb user role you admin
+docker compose exec server memedb user role <你的用户名> admin
 ```
 
 > [!NOTE]
