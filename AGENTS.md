@@ -93,7 +93,7 @@ MemeDB/
 
 ### Inference Service
 - Models subclass `BaseModel` and expose `inference_methods` as `(prepare, run)` pairs. Each runs on its `device` (auto by default), and the service keeps a `ResourceManager` per GPU, per model on the CPU, and for the API. Models on one GPU take turns, batched by `BatchScheduler`, which prepares a batch (tokenizing, preprocessing) on a CPU thread before it waits for the GPU. On the CPU, and for `remote` (API) models, `SimpleScheduler` runs requests side by side on executor threads (one torch thread each on the CPU), so `run` must be thread-safe; a task's `prepare` runs one at a time, as tokenizers aren't.
-- `models.yaml` gives each role its model, `device`, and how it runs on a GPU (`gpu`: batching, precision) or the CPU (`cpu`: threads); `vlm.openai` sets the API's concurrency. The server keeps the stored embeddings (CLIP, and text for memes and tags) from the inference service's models: when one changes, it resizes their columns, embeds the tags anew and rebuilds the memes' (`EmbeddingService`).
+- `models.yaml` gives each role its model, `device`, and how it runs on a GPU (`gpu`: batching, precision) or the CPU (`cpu`: threads); `vlm.openai` sets the API's concurrency. The server keeps the stored embeddings (CLIP, and text for memes and tags) from the inference service's models: when one changes, it resizes their columns and queues `embed_meme` for the memes, which fills in what each lacks, its tags' from the VLM included (`EmbeddingService`). A restore queues it too once the site has adopted its models.
 - The VLM in `models.yaml` may be a paid API: anything that triggers ingestion (uploads, reprocessing) costs money.
 
 ## Key Features

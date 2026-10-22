@@ -210,7 +210,7 @@ func (h *AdminHandler) ListMemes(c echo.Context) error {
 type ReprocessMemesRequest struct {
 	IDs    []string          `json:"ids" validate:"max=1000,dive,uuid"`
 	Filter *MemeFilterParams `json:"filter"`
-	Job    string            `json:"job" validate:"omitempty,oneof=analyze_meme embed_clip embed_text"` // Defaults to analyze_meme
+	Job    string            `json:"job" validate:"omitempty,oneof=analyze_meme embed_clip embed_text embed_meme"` // Defaults to analyze_meme
 }
 
 type BatchResponse struct {

@@ -166,11 +166,12 @@ func serve(ctx context.Context, a *app, _ []string) error {
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, a.infer, a.files)
 	logService := service.NewLogService(repo)
-	embeddingService := service.NewEmbeddingService(cfg.Prompt.Tag, repo, a.memes, a.infer.WithPriority(inference.PriorityBackground))
+	embeddingService := service.NewEmbeddingService(repo, a.infer.WithPriority(inference.PriorityBackground))
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 	taskWorker.RegisterHandler(model.JobEmbedClip, worker.HandlerFunc(ingestService.EmbedClip))
 	taskWorker.RegisterHandler(model.JobEmbedText, worker.HandlerFunc(ingestService.EmbedText))
+	taskWorker.RegisterHandler(model.JobEmbedMeme, worker.HandlerFunc(ingestService.EmbedMeme))
 	taskWorker.RegisterHandler(model.JobRefreshTags, worker.HandlerFunc(tagService.Refresh))
 	taskWorker.RegisterHandler(model.JobPurgeLogs, worker.HandlerFunc(logService.Purge))
 	taskWorker.RegisterHandler(model.JobPurgeTasks, worker.HandlerFunc(taskService.Purge))

@@ -50,15 +50,14 @@ func (r *TagRepository) Nearest(ctx context.Context, embedding pgvector.Vector) 
 	return
 }
 
-// Lock holds off changes to the tags until the transaction ends.
-func (r *TagRepository) Lock(ctx context.Context) error {
-	_, err := r.db.Exec(ctx, `LOCK TABLE library.tags IN SHARE MODE`)
-	return err
-}
-
-// Matchable returns the names of the tags the VLM uses.
-func (r *TagRepository) Matchable(ctx context.Context) ([]string, error) {
-	return collectScalars[string](r.db.Query(ctx, `SELECT name FROM library.tags t WHERE `+vlmUses))
+// Unembedded returns the names of the meme's tags from the VLM that have no embedding.
+func (r *TagRepository) Unembedded(ctx context.Context, assetID string) ([]string, error) {
+	query := `
+		SELECT DISTINCT t.name FROM library.asset_tags at
+		JOIN library.labels l ON l.id = at.label_id JOIN library.tags t ON t.id = l.tag_id
+		WHERE at.asset_id = $1::uuid AND at.user_id IS NULL AND t.embedding IS NULL
+	`
+	return collectScalars[string](r.db.Query(ctx, query, assetID))
 }
 
 // SetEmbeddings gives the tags of names the vectors.

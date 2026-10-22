@@ -5,30 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/repository"
-	"github.com/pgvector/pgvector-go"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// The job embedding a meme anew, by the inference service's role whose embeddings it stores
-var embeddingJobs = map[string]string{"clip": model.JobEmbedClip, "text_embedding": model.JobEmbedText}
+// The inference service's roles whose embeddings the server stores
+var embeddedRoles = []string{"clip", "text_embedding"}
 
 // EmbeddingService keeps the stored embeddings from the inference service's models.
 type EmbeddingService struct {
-	tagPrompt   string
 	repo        *repository.Provider
-	memes       *MemeService
 	inferClient inference.InferenceService
 }
 
-func NewEmbeddingService(tagPrompt string, repo *repository.Provider, memes *MemeService, inferClient inference.InferenceService) *EmbeddingService {
-	return &EmbeddingService{tagPrompt: tagPrompt, repo: repo, memes: memes, inferClient: inferClient}
+func NewEmbeddingService(repo *repository.Provider, inferClient inference.InferenceService) *EmbeddingService {
+	return &EmbeddingService{repo: repo, inferClient: inferClient}
 }
 
 // Run adopts the inference service's embedding models, checking every minute, as the service may restart with others.
@@ -67,85 +64,37 @@ func (s *EmbeddingService) adopt(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	changed := snapshot.Models[:0]
 	for _, m := range snapshot.Models {
-		if job, ok := embeddingJobs[m.Role]; ok && stored[m.Role] != m.Name {
-			if err := s.embedAnew(ctx, m.Role, m.Name, m.Dims, job); err != nil {
+		if slices.Contains(embeddedRoles, m.Role) && stored[m.Role] != m.Name {
+			changed = append(changed, m)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	// Their embeddings are emptied, sized for the new models, and made anew meme by meme
+	err = s.repo.Tx(ctx, func(r *repository.Repos) error {
+		for _, m := range changed {
+			if err := r.Embedding.Reset(ctx, m.Role, m.Dims); err != nil {
 				return fmt.Errorf("%s: %w", m.Role, err)
 			}
-			slog.Info("Adopted an embedding model", "role", m.Role, "from", stored[m.Role], "to", m.Name)
+			if err := r.Embedding.SetModel(ctx, m.Role, m.Name); err != nil {
+				return err
+			}
 		}
+		ids, _, err := r.Meme.FilterIDs(ctx, repository.MemeFilter{}, nil)
+		if err != nil {
+			return err
+		}
+		_, _, err = rebuild(ctx, r, model.JobEmbedMeme, ids)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	for _, m := range changed {
+		slog.Info("Adopted an embedding model", "role", m.Role, "from", stored[m.Role], "to", m.Name)
 	}
 	return nil
-}
-
-// embedAnew empties a role's embeddings, sized for its new model, and embeds them anew, the memes' in the background.
-// The model is recorded last, so a step that fails is retried with the rest.
-func (s *EmbeddingService) embedAnew(ctx context.Context, role, name string, dims int, job string) error {
-	if err := s.reset(ctx, role, dims); err != nil {
-		return err
-	}
-	if _, _, err := s.memes.RebuildMatching(ctx, job, repository.MemeFilter{}); err != nil {
-		return err
-	}
-	return s.repo.Embedding.SetModel(ctx, role, name)
-}
-
-// reset empties a role's embeddings, giving the tags theirs at once, as new tags are matched against them and those
-// of users have none. The tags are embedded before being locked, which then holds off changes only while those started
-// or renamed since are.
-func (s *EmbeddingService) reset(ctx context.Context, role string, dims int) error {
-	if role != "text_embedding" {
-		return s.repo.Tx(ctx, func(r *repository.Repos) error { return r.Embedding.Reset(ctx, role, dims) })
-	}
-	names, err := s.repo.Tag.Matchable(ctx)
-	if err != nil {
-		return err
-	}
-	vectors, err := s.embedTags(ctx, names, nil)
-	if err != nil {
-		return err
-	}
-	made := make(map[string]pgvector.Vector, len(names))
-	for i, n := range names {
-		made[n] = vectors[i]
-	}
-	return s.repo.Tx(ctx, func(r *repository.Repos) error {
-		if err := r.Tag.Lock(ctx); err != nil {
-			return err
-		}
-		names, err := r.Tag.Matchable(ctx)
-		if err != nil {
-			return err
-		}
-		vectors, err := s.embedTags(ctx, names, made)
-		if err != nil {
-			return err
-		}
-		if err := r.Embedding.Reset(ctx, role, dims); err != nil {
-			return err
-		}
-		return r.Tag.SetEmbeddings(ctx, names, vectors)
-	})
-}
-
-// embedTags embeds the tag names, but for those already made.
-func (s *EmbeddingService) embedTags(ctx context.Context, names []string, made map[string]pgvector.Vector) ([]pgvector.Vector, error) {
-	vectors := make([]pgvector.Vector, len(names))
-	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(32)
-	for i, tag := range names {
-		if v, ok := made[tag]; ok {
-			vectors[i] = v
-			continue
-		}
-		g.Go(func() error {
-			emb, err := s.inferClient.TextEmbedding(gCtx, tag, s.tagPrompt)
-			vectors[i] = pgvector.NewVector(emb)
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to embed tags: %w", err)
-	}
-	return vectors, nil
 }

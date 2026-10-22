@@ -108,6 +108,29 @@ func (s *IngestService) EmbedClip(ctx context.Context, task *model.Task) error {
 	return s.repo.Meme.SetClipVector(ctx, asset.ID, pgvector.NewVector(emb))
 }
 
+// EmbedMeme gives an analyzed meme the embeddings it lacks, and its tags from the VLM theirs.
+func (s *IngestService) EmbedMeme(ctx context.Context, task *model.Task) error {
+	payload, err := memePayload(task)
+	if err != nil {
+		return err
+	}
+	missing, err := s.repo.Meme.Missing(ctx, payload.AssetID)
+	if err != nil || missing == nil {
+		return err
+	}
+	if missing.Clip {
+		if err := s.EmbedClip(ctx, task); err != nil {
+			return err
+		}
+	}
+	if missing.Text {
+		if err := s.EmbedText(ctx, task); err != nil {
+			return err
+		}
+	}
+	return s.tags.EmbedMissing(ctx, payload.AssetID)
+}
+
 // EmbedText rebuilds a meme's text embeddings from its stored VLM output.
 func (s *IngestService) EmbedText(ctx context.Context, task *model.Task) error {
 	payload, err := memePayload(task)

@@ -20,7 +20,7 @@ import { kindOf } from '@/lib/media'
 import type { MediaKind, Meme, Page, ProcessStatus } from '@/lib/types'
 import { useMessages } from '@/lib/i18n/client'
 
-const jobs = ['analyze_meme', 'embed_clip', 'embed_text'] as const
+const jobs = ['analyze_meme', 'embed_clip', 'embed_text', 'embed_meme'] as const
 type Job = (typeof jobs)[number]
 
 type Pending = { kind: 'retry'; ids: string[] } | { kind: 'retryFilter' } | { kind: 'retryAll' } | { kind: 'delete'; memes: Meme[] } | null
@@ -52,7 +52,7 @@ export function AdminContent() {
     const { count, batch_id } = await api<{ count: number; batch_id: string }>('/admin/memes/reprocess', { method: 'POST', json: { ...body, job } })
     await refresh()
     toast.success(c.queued(count), {
-      description: count ? undefined : job === 'analyze_meme' ? c.skippedBusy : c.onlyProcessed,
+      description: count ? undefined : job === 'analyze_meme' ? c.skippedBusy : job === 'embed_meme' ? c.noneMissing : c.onlyProcessed,
       action: count ? { label: c.progress, onClick: () => router.push(`/admin/tasks/batches/${batch_id}`) } : undefined,
     })
     sel.clear()

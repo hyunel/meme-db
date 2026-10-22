@@ -451,15 +451,30 @@ func (s *MemeService) Retry(ctx context.Context, viewer *rbac.Identity, id strin
 }
 
 // Rebuild runs a job over memes as one batch. Analysis sets them pending again; the embedding rebuilds leave them
-// searchable, and skip the memes not analyzed.
-func (s *MemeService) Rebuild(ctx context.Context, job string, ids []string) (int, string, error) {
+// searchable, and skip the memes not analyzed, as filling in embeddings skips those lacking none.
+func (s *MemeService) Rebuild(ctx context.Context, job string, ids []string) (n int, batch string, err error) {
+	err = s.repo.Tx(ctx, func(r *repository.Repos) error {
+		n, batch, err = rebuild(ctx, r, job, ids)
+		return err
+	})
+	if err == nil && n > 0 {
+		s.notifier.Notify()
+	}
+	return n, batch, err
+}
+
+// rebuild is Rebuild in the caller's transaction.
+func rebuild(ctx context.Context, r *repository.Repos, job string, ids []string) (int, string, error) {
 	batch := uuid.Must(uuid.NewV7()).String()
 	opts := repository.TaskOpts{Priority: model.PriorityLow, BatchID: &batch} // Behind new uploads
 	if job == model.JobAnalyzeMeme {
 		opts.Priority = model.PriorityNormal
 	}
-	n, err := s.queue(ctx, job, ids, opts, model.ProcessingStatusSuccess, model.ProcessingStatusFailed)
-	return n, batch, err
+	queued, err := applicable(ctx, r, job, ids, model.ProcessingStatusSuccess, model.ProcessingStatusFailed)
+	if err != nil {
+		return 0, "", err
+	}
+	return len(queued), batch, enqueueMemeTasks(ctx, r, job, opts, queued...)
 }
 
 func (s *MemeService) RebuildMatching(ctx context.Context, job string, f repository.MemeFilter) (int, string, error) {
@@ -470,17 +485,11 @@ func (s *MemeService) RebuildMatching(ctx context.Context, job string, f reposit
 	return s.Rebuild(ctx, job, ids)
 }
 
-// queue enqueues the job for the memes it applies to: an analysis for those in one of the from statuses, which it
-// sets pending, and a rebuild for those analyzed.
+// queue enqueues the job for the memes it applies to.
 func (s *MemeService) queue(ctx context.Context, job string, ids []string, opts repository.TaskOpts, from ...string) (int, error) {
 	var queued []string
 	err := s.repo.Tx(ctx, func(r *repository.Repos) (err error) {
-		if job == model.JobAnalyzeMeme {
-			queued, err = r.Meme.ResetForAnalysis(ctx, ids, from)
-		} else {
-			queued, err = r.Meme.Analyzed(ctx, ids)
-		}
-		if err != nil {
+		if queued, err = applicable(ctx, r, job, ids, from...); err != nil {
 			return err
 		}
 		return enqueueMemeTasks(ctx, r, job, opts, queued...)
@@ -492,6 +501,19 @@ func (s *MemeService) queue(ctx context.Context, job string, ids []string, opts 
 		s.notifier.Notify()
 	}
 	return len(queued), nil
+}
+
+// applicable keeps the memes a job applies to: for analysis those in one of the from statuses, which it sets pending,
+// for filling in embeddings those lacking some, and for a rebuild those analyzed.
+func applicable(ctx context.Context, r *repository.Repos, job string, ids []string, from ...string) ([]string, error) {
+	switch job {
+	case model.JobAnalyzeMeme:
+		return r.Meme.ResetForAnalysis(ctx, ids, from)
+	case model.JobEmbedMeme:
+		return r.Meme.Unembedded(ctx, ids)
+	default:
+		return r.Meme.Analyzed(ctx, ids)
+	}
 }
 
 func (s *MemeService) List(ctx context.Context, viewer *rbac.Identity, f repository.MemeFilter, page repository.Page) (*model.Page[*model.Meme], error) {

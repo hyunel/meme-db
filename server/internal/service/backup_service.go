@@ -134,8 +134,8 @@ func (s *BackupService) exportFile(ctx context.Context, zw *zip.Writer, key stri
 	return nil
 }
 
-// Restore loads a backup into an empty database, whose schema it brings to the backup's and then up to date. The
-// server works out the embeddings again once it finds none recorded. On an error the database gets none of the rows.
+// Restore loads a backup into an empty database, whose schema it brings to the backup's and then up to date. On an
+// error the database gets none of the rows.
 func (s *BackupService) Restore(ctx context.Context, r io.ReaderAt, size int64) (*BackupStats, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
@@ -243,8 +243,8 @@ func copyIn(ctx context.Context, r *repository.Repos, t *repository.Table, f *zi
 	return r.Backup.CopyIn(ctx, t, rc)
 }
 
-// resume queues again the analyses under way when the backup was made, as the task queue isn't carried, and counts
-// the tags' usage.
+// resume queues again the analyses under way when the backup was made, as the task queue isn't carried, and the
+// embeddings it leaves out; it counts the tags' usage.
 func (s *BackupService) resume(ctx context.Context) error {
 	unfinished := []string{model.ProcessingStatusPending, model.ProcessingStatusProcessing}
 	var ids []string
@@ -260,7 +260,19 @@ func (s *BackupService) resume(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return enqueueMemeTasks(ctx, r, model.JobAnalyzeMeme, repository.TaskOpts{Priority: model.PriorityNormal}, queued...)
+		if err := enqueueMemeTasks(ctx, r, model.JobAnalyzeMeme, repository.TaskOpts{Priority: model.PriorityNormal}, queued...); err != nil {
+			return err
+		}
+		// A site yet to adopt its models embeds every meme as it does
+		if models, err := r.Embedding.Models(ctx); err != nil || len(models) == 0 {
+			return err
+		}
+		all, _, err := r.Meme.FilterIDs(ctx, repository.MemeFilter{}, nil)
+		if err != nil {
+			return err
+		}
+		_, _, err = rebuild(ctx, r, model.JobEmbedMeme, all)
+		return err
 	})
 	if err != nil {
 		return err

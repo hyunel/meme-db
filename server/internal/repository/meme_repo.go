@@ -81,6 +81,32 @@ func (r *MemeRepository) SetTextVectors(ctx context.Context, assetID string, met
 	return err
 }
 
+type MissingEmbeddings struct {
+	Clip bool `db:"clip"`
+	Text bool `db:"text"`
+}
+
+// Missing returns the embeddings an analyzed meme lacks; nil for one not analyzed.
+func (r *MemeRepository) Missing(ctx context.Context, assetID string) (*MissingEmbeddings, error) {
+	query := `
+		SELECT clip_vector IS NULL AS clip, metaphor_vector IS NULL OR semantic_vector IS NULL AS text
+		FROM core.meme_info WHERE asset_id = $1::uuid AND processing_status = 'success'
+	`
+	return collectOne[MissingEmbeddings](r.db.Query(ctx, query, assetID))
+}
+
+// Unembedded keeps the analyzed memes lacking an embedding, their tags' from the VLM included.
+func (r *MemeRepository) Unembedded(ctx context.Context, assetIDs []string) ([]string, error) {
+	query := `
+		SELECT asset_id::text FROM core.meme_info m
+		WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'success' AND (
+			clip_vector IS NULL OR metaphor_vector IS NULL OR semantic_vector IS NULL OR EXISTS (
+				SELECT 1 FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id JOIN library.tags t ON t.id = l.tag_id
+				WHERE at.asset_id = m.asset_id AND at.user_id IS NULL AND t.embedding IS NULL))
+	`
+	return collectScalars[string](r.db.Query(ctx, query, assetIDs))
+}
+
 // Analyzed keeps the memes whose analysis succeeded.
 func (r *MemeRepository) Analyzed(ctx context.Context, assetIDs []string) ([]string, error) {
 	query := `SELECT asset_id::text FROM core.meme_info WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'success'`

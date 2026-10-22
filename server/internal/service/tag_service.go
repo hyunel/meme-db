@@ -100,6 +100,21 @@ func (s *TagService) embed(ctx context.Context, name string) (pgvector.Vector, e
 	return pgvector.NewVector(emb), nil
 }
 
+// EmbedMissing embeds the meme's tags from the VLM that have no embedding.
+func (s *TagService) EmbedMissing(ctx context.Context, assetID string) error {
+	names, err := s.repo.Tag.Unembedded(ctx, assetID)
+	if err != nil || len(names) == 0 {
+		return err
+	}
+	vectors := make([]pgvector.Vector, len(names))
+	for i, name := range names {
+		if vectors[i], err = s.embed(ctx, name); err != nil {
+			return err
+		}
+	}
+	return s.repo.Tag.SetEmbeddings(ctx, names, vectors)
+}
+
 func (s *TagService) AddToMeme(ctx context.Context, viewer *rbac.Identity, memeID, name string) (*model.MemeTag, error) {
 	if _, err := s.memes.Get(ctx, viewer, memeID, ""); err != nil {
 		return nil, err
