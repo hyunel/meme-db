@@ -125,7 +125,7 @@ docker compose up -d
 新注册的账号都是普通用户。注册后，用下面的命令把自己设为管理员：
 
 ```sh
-docker compose exec db psql -U postgres -d memedb -c "UPDATE iam.users SET role = 'admin' WHERE username = 'you'"
+docker compose exec server memedb user role you admin
 ```
 
 > [!NOTE]

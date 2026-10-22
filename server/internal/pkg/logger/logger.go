@@ -145,7 +145,7 @@ type Entry struct {
 }
 
 func Setup() <-chan Entry {
-	handler := NewColorHandler(os.Stdout, &slog.HandlerOptions{
+	handler := NewColorHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
 	entries := make(chan Entry, 4096)

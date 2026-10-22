@@ -59,6 +59,14 @@ func (s *UserService) Get(ctx context.Context, viewer *rbac.Identity, id string)
 	return &UserDetail{AdminUser: model.AdminUser{User: *user, UserStats: *stats}, Recent: recent, Sessions: sessions}, nil
 }
 
+func (s *UserService) GetByUsername(ctx context.Context, username string) (*model.User, error) {
+	user, err := s.repo.User.GetByUsername(ctx, username)
+	if err == nil && user == nil {
+		err = apperror.NotFound("user_not_found", "user not found")
+	}
+	return user, err
+}
+
 func (s *UserService) Stats(ctx context.Context, id string) (*model.UserStats, error) {
 	return s.repo.User.Stats(ctx, id)
 }

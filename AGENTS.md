@@ -60,7 +60,7 @@ MemeDB/
   - Use `pgx/v5` driver.
   - Use `pgvector-go` for vector operations.
 - **Configuration**: Use `config.yaml` and `internal/config` package.
-- **CLI**: `cmd/api/main.go` runs a command: `serve` the API, or maintenance such as `backup export` and `backup restore`.
+- **CLI**: `cmd/api/main.go` runs one of its `commands`: `serve` the API, or maintenance such as backups and accounts.
 
 ### Database & Transaction Management
 - **Repository Pattern**: Repositories must focus solely on data access and query execution.
