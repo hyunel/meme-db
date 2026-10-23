@@ -11,6 +11,7 @@ from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
 from .schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
 from .metrics import Monitor
+from .gpus import open_gpus
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         self.monitor = Monitor(
             self.schedulers,
             [{'role': t.value, 'name': m.name, 'device': str(m.device or 'API'), 'dims': m.dims} for t, m in self.model_manager],
-            gpus=sorted({m.device.index for _, m in self.model_manager if m.device and m.device.type == 'cuda'}),
+            open_gpus(sorted({m.device for _, m in self.model_manager if m.device}, key=str)),
         )
 
     def _resource(self, model_type: ModelType, model: BaseModel) -> ResourceManager:

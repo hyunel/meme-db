@@ -13,8 +13,12 @@ services:
         GMM:
         LEVEL_ZERO:
     devices: [/dev/dri]
+    # Lets Level Zero Sysman read the GPU's utilization from the kernel's perf events
+    cap_add: [PERFMON]
     environment:
       # iGPUs lack the fp64 that PyTorch's dtype casts use, so the compiler emulates it
       IGC_EnableDPEmulation: 1
       # iGPUs compile PyTorch's kernels on first use, for minutes; the driver keeps them in $XDG_CACHE_HOME/neo_compiler_cache
       XDG_CACHE_HOME: /cache
+      # Turns on Level Zero Sysman, which reports the GPU's utilization
+      ZES_ENABLE_SYSMAN: 1

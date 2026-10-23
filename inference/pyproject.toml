@@ -27,7 +27,8 @@ dependencies = [
 # PyTorch for each backend: CUDA's from the default index, the others from PyTorch's.
 cuda = ["torch", "torchvision"]
 cpu = ["torch", "torchvision"]
-xpu = ["torch", "torchvision", "triton-xpu"]  # torch.compile's, from the same index as torch
+# triton-xpu runs torch.compile, from the same index as torch; pyzes reads the GPU's utilization
+xpu = ["torch", "torchvision", "triton-xpu", "pyzes"]
 
 [dependency-groups]
 dev = [

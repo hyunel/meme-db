@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 import psutil
 
+from .gpus import Gpu, GpuReading
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_SECONDS = 15
@@ -95,33 +97,22 @@ class Sample:
     mem: int
     proc_cpu: float  # This process's share of all cores
     proc_mem: int  # This process's resident memory
-    gpus: list[tuple[float, int]]  # Utilization % and memory used, per device
+    gpus: list[GpuReading]  # Per device
     tasks: dict[str, Window]
 
 
-def _gpu_handles(indices: list[int]):
-    if not indices:
-        return None, []
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        return pynvml, [(i, pynvml.nvmlDeviceGetHandleByIndex(i)) for i in indices]
-    except Exception as e:  # No NVIDIA driver, or no GPU at all
-        logger.info(f"GPU metrics unavailable: {e}")
-        return None, []
-
-
 def _mean(values):
-    return sum(values) / len(values)
+    values = [v for v in values if v is not None]  # A GPU's utilization may be unknown
+    return sum(values) / len(values) if values else None
 
 
 class Monitor:
-    def __init__(self, schedulers: dict, models: list[dict], gpus: list[int]):
+    def __init__(self, schedulers: dict, models: list[dict], gpus: list[Gpu]):
         self.schedulers = schedulers  # Task type -> scheduler
         self.models = models
         self.started_at = time.time()
         self.samples: deque[Sample] = deque(maxlen=HISTORY)
-        self.nvml, self.handles = _gpu_handles(gpus)  # The CUDA GPUs models run on
+        self.gpus = gpus  # The GPUs models run on
         self.task: asyncio.Task | None = None
         self.process = psutil.Process()
         psutil.cpu_percent(None)  # The first readings only start the measurement
@@ -150,9 +141,9 @@ class Monitor:
             tasks[kind] = w
 
         vm = psutil.virtual_memory()
-        gpus = [(self.nvml.nvmlDeviceGetUtilizationRates(h).gpu, self.nvml.nvmlDeviceGetMemoryInfo(h).used) for _, h in self.handles]
         return Sample(t=time.time(), cpu=psutil.cpu_percent(None), mem=vm.total - vm.available,
-                      proc_cpu=self.process.cpu_percent(None) / psutil.cpu_count(), proc_mem=self.process.memory_info().rss, gpus=gpus, tasks=tasks)
+                      proc_cpu=self.process.cpu_percent(None) / psutil.cpu_count(), proc_mem=self.process.memory_info().rss,
+                      gpus=[g.read() for g in self.gpus], tasks=tasks)
 
     def snapshot(self, span: int, step: int) -> dict:
         now = time.time()
@@ -170,7 +161,7 @@ class Monitor:
         for i, group in enumerate(steps):
             t = int((first + i * step) * 1000)
             if not group:  # Not running then; charts break the line here
-                series.append({'t': t, 'cpu': None, 'mem': None, 'proc_cpu': None, 'proc_mem': None, 'gpus': [{'util': None, 'vram': None} for _ in self.handles],
+                series.append({'t': t, 'cpu': None, 'mem': None, 'proc_cpu': None, 'proc_mem': None, 'gpus': [{'util': None, 'vram': None} for _ in self.gpus],
                                'throughput': None, 'p95': None, 'error_rate': None, 'queued': None})
                 for points in task_series.values():
                     points.append({'t': t, 'p50': None, 'p95': None, 'p99': None, 'queue_ms': None, 'exec_ms': None, 'queue': None, 'throughput': None, 'errors': None})
@@ -186,7 +177,7 @@ class Monitor:
                 'mem': _mean([s.mem for s in group]),
                 'proc_cpu': _mean([s.proc_cpu for s in group]),
                 'proc_mem': _mean([s.proc_mem for s in group]),
-                'gpus': [{'util': _mean([s.gpus[d][0] for s in group]), 'vram': _mean([s.gpus[d][1] for s in group])} for d in range(len(self.handles))],
+                'gpus': [{'util': _mean([s.gpus[d].util for s in group]), 'vram': _mean([s.gpus[d].vram for s in group])} for d in range(len(self.gpus))],
                 'throughput': total.requests / seconds,
                 'p95': _percentile(interactive.latency, 0.95),
                 'error_rate': total.errors / total.requests * 100 if total.requests else 0,
@@ -209,7 +200,7 @@ class Monitor:
             'now': int(now * 1000),
             'started_at': int(self.started_at * 1000),
             'mem_total': psutil.virtual_memory().total,
-            'gpus': [{'id': f'cuda:{i}', 'name': self.nvml.nvmlDeviceGetName(h), 'vram_total': self.nvml.nvmlDeviceGetMemoryInfo(h).total} for i, h in self.handles],
+            'gpus': [{'id': g.id, 'name': g.name, 'vram_total': g.vram_total} for g in self.gpus],
             'models': self.models,
             'series': series,
             'tasks': [self._task(kind, scheduler, samples, start) for kind, scheduler in self.schedulers.items()],
