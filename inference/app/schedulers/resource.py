@@ -16,7 +16,7 @@ class Task(Generic[T]):
     id: str = field(compare=False)
     item: T = field(compare=False)
     future: Future = field(compare=False, default_factory=Future)
-    created_at: float = field(compare=False, default_factory=time.time)
+    created_at: float = field(default_factory=time.time)  # Equal priorities run in arrival order; a heap alone starves some
 
 @dataclass(order=True)
 class BatchRequest:
@@ -25,6 +25,7 @@ class BatchRequest:
     batch: List[Any] = field(compare=False)
     future: Future = field(compare=False, default_factory=Future)
     on_start: Optional[Callable[[], None]] = field(compare=False, default=None)
+    created_at: float = field(default_factory=time.time)  # Equal priorities run in arrival order; a heap alone starves some
 
 class ResourceManager:
     def __init__(self, concurrency: int = 1, post_execution_callback: Optional[Callable[[], None]] = None):

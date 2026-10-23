@@ -2,7 +2,7 @@ from typing import List, Tuple, Dict, Callable, Type
 import logging
 import torch
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, BatchEncoding, DynamicCache
-from .base import BaseModel, DEFAULT_TASK
+from .base import BaseModel, DEFAULT_TASK, PAD_MULTIPLE
 from ..config import ModelConfig, ModelType
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class CrossEncoderReranker(BaseModel):
 
     def tokenize(self, items: List[Tuple[Tuple[str, str], str]]) -> BatchEncoding:
         queries, docs = zip(*(pair for pair, _ in items))  # Cross-encoders take no task description
-        return self.tokenizer(list(queries), list(docs), padding=True, truncation=True, max_length=self.MAX_LENGTH, return_tensors='pt')
+        return self.tokenizer(list(queries), list(docs), padding=True, pad_to_multiple_of=PAD_MULTIPLE, truncation=True, max_length=self.MAX_LENGTH, return_tensors='pt')
 
     def predict(self, inputs: BatchEncoding) -> List[float]:
         with torch.no_grad():

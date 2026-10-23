@@ -3,7 +3,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer, BatchEncoding
-from .base import BaseModel, DEFAULT_TASK
+from .base import BaseModel, DEFAULT_TASK, PAD_MULTIPLE
 from ..config import ModelType
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class TextEmbeddingModel(BaseModel):
 
     def tokenize(self, items: List[tuple[str, str]]) -> BatchEncoding:
         texts = [f'Instruct: {desc or DEFAULT_TASK}\nQuery: {text}' for text, desc in items]
-        return self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=self.MAX_LENGTH)
+        return self.tokenizer(texts, return_tensors='pt', padding=True, pad_to_multiple_of=PAD_MULTIPLE, truncation=True, max_length=self.MAX_LENGTH)
 
     def get_embedding(self, inputs: BatchEncoding) -> List[List[float]]:
         with torch.no_grad():

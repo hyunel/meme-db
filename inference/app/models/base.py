@@ -4,6 +4,9 @@ import torch
 from ..config import LocalModelConfig, ModelConfig, ModelType
 
 DEFAULT_TASK = "Given a web search query, retrieve relevant passages that answer the query"
+# Batches of text pad to a multiple of this many tokens. Intel GPUs compile kernels for each input shape, a second
+# or more apiece, so lengths in steps keep the shapes few; the padding is masked and changes no output.
+PAD_MULTIPLE = 8
 
 
 def resolve_device(name: str) -> torch.device:

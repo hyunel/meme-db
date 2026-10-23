@@ -13,6 +13,7 @@ import (
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/repository"
 	"github.com/pgvector/pgvector-go"
+	"golang.org/x/sync/errgroup"
 )
 
 type TagServiceConfig struct {
@@ -107,10 +108,15 @@ func (s *TagService) EmbedMissing(ctx context.Context, assetID string) error {
 		return err
 	}
 	vectors := make([]pgvector.Vector, len(names))
+	g, gCtx := errgroup.WithContext(ctx) // Side by side, so they batch
 	for i, name := range names {
-		if vectors[i], err = s.embed(ctx, name); err != nil {
+		g.Go(func() (err error) {
+			vectors[i], err = s.embed(gCtx, name)
 			return err
-		}
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 	return s.repo.Tag.SetEmbeddings(ctx, names, vectors)
 }

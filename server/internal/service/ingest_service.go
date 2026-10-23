@@ -118,17 +118,16 @@ func (s *IngestService) EmbedMeme(ctx context.Context, task *model.Task) error {
 	if err != nil || missing == nil {
 		return err
 	}
+	// Side by side, so the inference service batches them with other memes'; one failing keeps the others
+	var g errgroup.Group
 	if missing.Clip {
-		if err := s.EmbedClip(ctx, task); err != nil {
-			return err
-		}
+		g.Go(func() error { return s.EmbedClip(ctx, task) })
 	}
 	if missing.Text {
-		if err := s.EmbedText(ctx, task); err != nil {
-			return err
-		}
+		g.Go(func() error { return s.EmbedText(ctx, task) })
 	}
-	return s.tags.EmbedMissing(ctx, payload.AssetID)
+	g.Go(func() error { return s.tags.EmbedMissing(ctx, payload.AssetID) })
+	return g.Wait()
 }
 
 // EmbedText rebuilds a meme's text embeddings from its stored VLM output.

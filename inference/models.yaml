@@ -1,6 +1,7 @@
 # device: auto (the first GPU, or the CPU without one), cpu, cuda:1, xpu (Intel), mps, ...
 # On a GPU, fp32 would double the memory and run 2-3x slower. SigLIP matches it exactly in float16;
-# the Qwen models were trained in bfloat16. On the CPU, models run in float32.
+# the Qwen models were trained in bfloat16. On the CPU, models run in float32. Intel's integrated GPUs
+# lack bfloat16 hardware, so there the embedding and reranker models run about twice as fast in float32.
 
 # A SigLIP model
 clip:
