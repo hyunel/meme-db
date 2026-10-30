@@ -3,7 +3,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer, BatchEncoding
-from .base import BaseModel, ModelMetric, DEFAULT_TASK, PAD_MULTIPLE
+from .base import BaseModel, ModelMetric, NumberMetric, RatioMetric, DEFAULT_TASK, PAD_MULTIPLE
 from ..config import ModelType
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,8 @@ class TextEmbeddingModel(BaseModel):
     async def metrics(self) -> list[ModelMetric]:
         count, tokens, slots = self.token_counts
         return [
-            ModelMetric(id='avg_input_tokens', label_key='avg_input_tokens', type='number', value=tokens / count if count else None, unit='tokens'),
-            ModelMetric(id='padding_ratio', label_key='padding_ratio', type='ratio', value=(slots - tokens) / slots if slots else None),
+            NumberMetric(id='avg_input_tokens', label_key='avg_input_tokens', type='number', value=tokens / count if count else None, unit='tokens'),
+            RatioMetric(id='padding_ratio', label_key='padding_ratio', type='ratio', value=(slots - tokens) / slots if slots else None),
         ]
 
     def get_embedding(self, inputs: BatchEncoding) -> List[List[float]]:

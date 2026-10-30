@@ -1,5 +1,5 @@
 import { api } from './api'
-import { formatBytes, formatDateTime } from './format'
+import { formatBytes } from './format'
 import type { Locale, Messages } from './i18n'
 
 const MIN = 60 * 1000
@@ -78,11 +78,11 @@ export type ModelMetric = {
   id: string
   label_key: string
   group?: string
-  unit?: string
   level?: Level
 } & (
-  | { type: 'number' | 'ratio' | 'timestamp'; value: number | null }
-  | { type: 'status'; value: string | null }
+  | { type: 'number'; value: number | null; unit?: string }
+  | { type: 'ratio'; value: number | null }
+  | { type: 'quota'; remaining_fraction: number | null; resets_at: number | null }
 )
 
 export interface InferenceModel {
@@ -148,15 +148,14 @@ export function inferenceAlerts(s: InferenceSnapshot, t: Messages) {
 }
 
 export function fmtModelMetric(metric: ModelMetric, t: Messages, locale: Locale) {
-  if (metric.value === null) return '—'
-  if (metric.type === 'status') return (t.inference.modelMetrics.states as Record<string, string>)[metric.value] ?? metric.value
-  if (metric.type === 'ratio') return `${(metric.value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`
-  if (metric.type === 'timestamp') return formatDateTime(metric.value)
-  if (metric.unit === 'bytes') return formatBytes(metric.value)
-  if (metric.unit === 'ms') return fmtLatency(metric.value)
-  const value = metric.value.toLocaleString(locale, { maximumFractionDigits: 2 })
+  const value = metric.type === 'quota' ? metric.remaining_fraction : metric.value
+  if (value === null) return '—'
+  if (metric.type === 'ratio' || metric.type === 'quota') return `${(value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`
+  if (metric.unit === 'bytes') return formatBytes(value)
+  if (metric.unit === 'ms') return fmtLatency(value)
   const unit = (t.inference.modelMetrics.units as Record<string, string>)[metric.unit ?? ''] ?? metric.unit
-  return unit ? `${value} ${unit}` : value
+  const number = value.toLocaleString(locale, { maximumFractionDigits: 2 })
+  return unit ? `${number} ${unit}` : number
 }
 
 export const fmtPct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`)

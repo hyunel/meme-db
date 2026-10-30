@@ -22,14 +22,31 @@ class Busy(Exception):
     pass
 
 
-class ModelMetric(TypedDict):
+class MetricBase(TypedDict):
     id: str
     label_key: str
-    type: Literal['number', 'ratio', 'status', 'timestamp']
-    value: float | str | None  # Ratios are 0–1; timestamps are epoch milliseconds
     group: NotRequired[str]
-    unit: NotRequired[str]
     level: NotRequired[Literal['ok', 'warn', 'danger']]
+
+
+class NumberMetric(MetricBase):
+    type: Literal['number']
+    value: float | None
+    unit: NotRequired[str]
+
+
+class RatioMetric(MetricBase):
+    type: Literal['ratio']
+    value: float | None  # 0–1
+
+
+class QuotaMetric(MetricBase):
+    type: Literal['quota']
+    remaining_fraction: float | None
+    resets_at: float | None  # Epoch milliseconds
+
+
+ModelMetric = NumberMetric | RatioMetric | QuotaMetric
 
 
 class BaseModel(ABC):

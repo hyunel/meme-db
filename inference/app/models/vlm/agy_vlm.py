@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List
 from PIL import Image
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter
-from ..base import Busy, ModelMetric
+from ..base import Busy, ModelMetric, QuotaMetric
 from .base import VLMModel
 
 logger = logging.getLogger(__name__)
@@ -141,12 +141,11 @@ class AgyVLM(VLMModel):
             for bucket in group.buckets:
                 name = f'{group.name} · {bucket.window or bucket.name or bucket.id}'
                 key = f'{group.name}/{bucket.id}'
-                items.extend([
-                    ModelMetric(id=f'{key}/remaining', label_key='quota_remaining', type='ratio', value=bucket.remaining_fraction,
-                                group=name, level='danger' if bucket.remaining_fraction < 0.01 else 'ok'),
-                    ModelMetric(id=f'{key}/reset', label_key='resets_at', type='timestamp',
-                                value=bucket.reset_time.timestamp() * 1000 if bucket.reset_time else None, group=name),
-                ])
+                items.append(QuotaMetric(
+                    id=key, label_key='quota_remaining', type='quota', group=name,
+                    remaining_fraction=bucket.remaining_fraction,
+                    resets_at=bucket.reset_time.timestamp() * 1000 if bucket.reset_time else None,
+                    level='danger' if bucket.remaining_fraction < 0.01 else 'ok'))
         return items
 
     async def _usage(self) -> list[QuotaGroup]:

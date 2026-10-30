@@ -3,7 +3,7 @@ from typing import List
 from PIL import Image
 from io import BytesIO
 from base64 import b64encode
-from ..base import ModelMetric
+from ..base import ModelMetric, NumberMetric
 from .base import VLMModel
 
 
@@ -63,7 +63,7 @@ class OpenAIVLM(VLMModel):
 
     async def metrics(self) -> list[ModelMetric]:
         return [
-            ModelMetric(id='input_tokens_total', label_key='input_tokens_total', type='number', value=self.input_tokens, unit='tokens'),
-            ModelMetric(id='output_tokens_total', label_key='output_tokens_total', type='number', value=self.output_tokens, unit='tokens'),
-            ModelMetric(id='rate_limits_total', label_key='rate_limits_total', type='number', value=self.rate_limits, unit='requests'),
+            NumberMetric(id='input_tokens_total', label_key='input_tokens_total', type='number', value=self.input_tokens, unit='tokens'),
+            NumberMetric(id='output_tokens_total', label_key='output_tokens_total', type='number', value=self.output_tokens, unit='tokens'),
+            NumberMetric(id='rate_limits_total', label_key='rate_limits_total', type='number', value=self.rate_limits, unit='requests'),
         ]

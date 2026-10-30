@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/states'
 import { toneText } from '../admin-ui'
 import { ChartCard, SYNC_ID, TimeTooltip, timeAxis } from './charts'
 import { formatDateTime } from '@/lib/format'
-import { fmtClockSec, fmtLatency, fmtModelMetric, fmtRate, kindLabel, scheduleLabel, type InferenceModel, type InferenceSnapshot, type ModelMetric } from '@/lib/inference'
+import { fmtClockSec, fmtLatency, fmtModelMetric, fmtRate, kindLabel, scheduleLabel, type InferenceModel, type InferenceSnapshot, type Level, type ModelMetric } from '@/lib/inference'
 import { cn } from '@/lib/utils'
 import { useLocale, useMessages } from '@/lib/i18n/client'
 
@@ -201,7 +201,6 @@ function Body({ data, kind, now }: { data: InferenceSnapshot; kind: string; now:
 
 function ModelMetrics({ model, now }: { model?: InferenceModel; now: number }) {
   const t = useMessages()
-  const locale = useLocale()
   const s = t.inference.modelMetrics
   const metrics = model?.metrics
   if (!model || !metrics) return null
@@ -227,30 +226,58 @@ function ModelMetrics({ model, now }: { model?: InferenceModel; now: number }) {
         {[...groups].map(([group, items]) => (
           <div key={group} className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/30 p-2.5">
             {group && <h4 className="break-words text-xs font-medium text-muted-foreground">{group}</h4>}
-            <dl className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               {items.map((metric) => {
                 const level = stale || metrics.error ? 'ok' : metric.level ?? 'ok'
                 const label = (s.labels as Record<string, string>)[metric.label_key] ?? metric.label_key
-                return (
-                  <div key={metric.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1.5 text-sm">
-                    <dt className="min-w-0 break-words text-xs text-muted-foreground">{label}</dt>
-                    <dd className={cn('ml-auto min-w-0 break-words text-right tabular-nums', metric.type === 'ratio' ? 'text-xl font-semibold' : metric.type === 'timestamp' && 'text-xs', level !== 'ok' && toneText[level])}>
-                      {fmtModelMetric(metric, t, locale)}
-                      {level !== 'ok' && <span className="sr-only">{t.admin.tones[level]}</span>}
-                    </dd>
-                    {metric.type === 'ratio' && metric.value !== null && (
-                      <dd className="w-full">
-                        <Progress value={Math.max(0, Math.min(1, metric.value)) * 100} aria-label={label}
-                          className={cn(level === 'danger' && '[&_[data-slot=progress-indicator]]:bg-destructive', level === 'warn' && '[&_[data-slot=progress-indicator]]:bg-warning')} />
-                      </dd>
-                    )}
-                  </div>
-                )
+                return metric.type === 'quota'
+                  ? <QuotaMetric key={metric.id} metric={metric} label={label} level={level} />
+                  : <StatMetric key={metric.id} metric={metric} label={label} level={level} />
               })}
-            </dl>
+            </div>
           </div>
         ))}
       </div>
     </ChartCard>
+  )
+}
+
+function StatMetric({ metric, label, level }: { metric: Exclude<ModelMetric, { type: 'quota' }>; label: string; level: Level }) {
+  const t = useMessages()
+  const locale = useLocale()
+  return (
+    <dl className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1.5 text-sm">
+      <dt className="min-w-0 break-words text-xs text-muted-foreground">{label}</dt>
+      <dd className={cn('ml-auto min-w-0 font-semibold break-words text-right tabular-nums', level !== 'ok' && toneText[level])}>
+        {fmtModelMetric(metric, t, locale)}
+        {level !== 'ok' && <span className="sr-only">{t.admin.tones[level]}</span>}
+      </dd>
+    </dl>
+  )
+}
+
+function QuotaMetric({ metric, label, level }: { metric: Extract<ModelMetric, { type: 'quota' }>; label: string; level: Level }) {
+  const t = useMessages()
+  const locale = useLocale()
+  return (
+    <div className="flex flex-col gap-2">
+      <dl className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1.5 text-sm">
+        <dt className="min-w-0 break-words text-xs text-muted-foreground">{label}</dt>
+        <dd className={cn('ml-auto min-w-0 text-xl font-semibold break-words text-right tabular-nums', level !== 'ok' && toneText[level])}>
+          {fmtModelMetric(metric, t, locale)}
+          {level !== 'ok' && <span className="sr-only">{t.admin.tones[level]}</span>}
+        </dd>
+      </dl>
+      {metric.remaining_fraction !== null && (
+        <Progress value={Math.max(0, Math.min(1, metric.remaining_fraction)) * 100} aria-label={label}
+          className={cn(level === 'danger' && '[&_[data-slot=progress-indicator]]:bg-destructive', level === 'warn' && '[&_[data-slot=progress-indicator]]:bg-warning')} />
+      )}
+      <dl className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1.5 text-xs">
+        <dt className="min-w-0 break-words text-muted-foreground">{t.inference.modelMetrics.resetsAt}</dt>
+        <dd className="ml-auto min-w-0 break-words text-right tabular-nums">
+          {metric.resets_at === null ? '—' : formatDateTime(metric.resets_at)}
+        </dd>
+      </dl>
+    </div>
   )
 }

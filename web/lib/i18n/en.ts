@@ -255,16 +255,15 @@ export const en: Messages = {
       stale: 'Data is stale',
       noData: 'No readings yet',
       collectionFailed: 'Metric collection failed. Any readings shown are from the last successful collection.',
+      resetsAt: 'Resets at',
       labels: {
         quota_remaining: 'Quota remaining',
-        resets_at: 'Resets at',
         input_tokens_total: 'Input tokens since start',
         output_tokens_total: 'Output tokens since start',
         rate_limits_total: 'Rate limits since start',
         avg_input_tokens: 'Mean effective tokens since start',
         padding_ratio: 'Padding ratio since start',
       },
-      states: { available: 'Available', paused: 'Paused', unknown: 'Unknown' },
       units: { tokens: 'tokens', requests: 'requests', seconds: 's' },
     },
     metrics: {
