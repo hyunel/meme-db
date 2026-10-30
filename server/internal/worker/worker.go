@@ -18,7 +18,8 @@ import (
 
 // Store transitions out of 'running' are fenced by the attempts value from Claim, so they are no-ops once the lease is taken over.
 type Store interface {
-	Claim(ctx context.Context, limit int) ([]*model.Task, error)
+	// Claim leases up to limit due tasks, of a job type in rooms no more than its room.
+	Claim(ctx context.Context, limit int, rooms map[string]int) ([]*model.Task, error)
 	Finish(ctx context.Context, id string, attempts int, status string, errorMessage *string) error
 	Retry(ctx context.Context, id string, attempts int, runAt time.Time, errorMessage string) error
 	Release(ctx context.Context, id string, attempts int) error
@@ -40,14 +41,27 @@ type Worker struct {
 	handlers  map[string]TaskHandler
 	schedules []config.TaskConfig
 	wake      chan struct{}
+
+	mu        sync.Mutex
+	running   map[string]int       // Tasks in flight, by job type
+	throttles map[string]*throttle // Job types a dependency is turning tasks of away
+}
+
+// throttle holds a job type to as many tasks at once as its dependency let in when it last turned one away, raised by
+// one each round of them let in at that. It lapses once the type has nothing left to claim.
+type throttle struct {
+	limit  float64
+	paused time.Time // It let none in: none is tried until the next poll
 }
 
 func NewWorker(cfg config.WorkerConfig, store Store) *Worker {
 	return &Worker{
-		cfg:      cfg,
-		store:    store,
-		handlers: make(map[string]TaskHandler),
-		wake:     make(chan struct{}, 1),
+		cfg:       cfg,
+		store:     store,
+		handlers:  make(map[string]TaskHandler),
+		wake:      make(chan struct{}, 1),
+		running:   make(map[string]int),
+		throttles: make(map[string]*throttle),
 	}
 }
 
@@ -236,7 +250,7 @@ func (w *Worker) Run(ctx context.Context) {
 			return
 		}
 
-		tasks, err := w.store.Claim(ctx, cap(slots)-len(slots)+1)
+		tasks, err := w.claim(ctx, cap(slots)-len(slots)+1)
 		if err != nil && ctx.Err() == nil {
 			slog.Error("Failed to claim tasks", "error", err)
 		}
@@ -284,6 +298,56 @@ func (w *Worker) process(ctx context.Context, task *model.Task) {
 		// The lease expiring is the fallback: the task will be claimed again.
 		slog.Error("Failed to settle task", "id", task.ID, "error", err)
 	}
+	w.ended(task.JobType, busy(err))
+}
+
+func (w *Worker) claim(ctx context.Context, limit int) ([]*model.Task, error) {
+	w.mu.Lock()
+	rooms := make(map[string]int, len(w.throttles))
+	for jobType, t := range w.throttles {
+		rooms[jobType] = 0
+		if time.Now().After(t.paused) {
+			rooms[jobType] = max(0, int(t.limit)-w.running[jobType])
+		}
+	}
+	w.mu.Unlock()
+
+	tasks, err := w.store.Claim(ctx, limit, rooms)
+	if err != nil {
+		return nil, err
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, task := range tasks {
+		w.running[task.JobType]++
+	}
+	if len(tasks) == 0 {
+		for jobType, room := range rooms {
+			if room > 0 { // It had room, yet nothing to claim
+				delete(w.throttles, jobType)
+			}
+		}
+	}
+	return tasks, nil
+}
+
+func (w *Worker) ended(jobType string, turnedAway bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.running[jobType]--
+	inFlight, t := w.running[jobType], w.throttles[jobType]
+	switch {
+	case turnedAway:
+		t = &throttle{limit: float64(max(1, inFlight))} // As many as it let in
+		if inFlight == 0 {
+			t.paused = time.Now().Add(w.cfg.PollInterval)
+		}
+		w.throttles[jobType] = t
+	case t != nil && inFlight+1 >= int(t.limit): // Let in at its limit
+		t.limit += 1 / t.limit
+		w.Notify()
+	}
 }
 
 func (w *Worker) handle(ctx context.Context, handler TaskHandler, task *model.Task) (err error) {
@@ -309,6 +373,9 @@ func (w *Worker) settle(ctx context.Context, handler TaskHandler, task *model.Ta
 		return w.finish(dbCtx, task, model.TaskStatusCompleted, nil)
 	case ctx.Err() != nil:
 		log.Info("Task interrupted by shutdown, releasing", "error", cause)
+		return w.store.Release(dbCtx, task.ID, task.Attempts)
+	case busy(cause):
+		log.Debug("Task turned away by a busy dependency, waiting its turn again", "error", cause)
 		return w.store.Release(dbCtx, task.ID, task.Attempts)
 	case !errors.As(cause, new(*permanentError)) && task.Attempts < task.MaxAttempts:
 		runAt := time.Now().Add(retryBackoff(task.Attempts))

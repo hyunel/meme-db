@@ -41,6 +41,8 @@ export interface TaskPoint {
   queue: number | null
   throughput: number | null
   errors: number | null
+  refused: number | null
+  abandoned: number | null
 }
 
 export interface TaskStats {
@@ -58,6 +60,10 @@ export interface TaskStats {
   p99: number | null
   errors: number
   error_rate: number | null
+  /** Turned away by a full model, for their callers to retry */
+  refused: number
+  /** Left by their callers before a result */
+  abandoned: number
   batch_dist: { size: string; count: number }[]
   recent_errors: { at: number; message: string }[]
 }
@@ -105,6 +111,7 @@ export function inferenceAlerts(s: InferenceSnapshot, t: Messages) {
   })
   push('err', errLevel(c.error_rate), alerts.errors(fmtPct(c.error_rate)))
   s.tasks.forEach((task) => task.queue_growing && out.push({ key: `q-${task.kind}`, level: 'warn', text: alerts.queue(kindLabel(task.kind, t), task.queue) }))
+  s.tasks.forEach((task) => task.abandoned > 0 && out.push({ key: `a-${task.kind}`, level: 'warn', text: alerts.abandoned(kindLabel(task.kind, t), task.abandoned) }))
 
   return out
 }

@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from typing import Any, List, Callable, Optional
@@ -16,6 +17,8 @@ class SimpleScheduler(Scheduler[T, R]):
         super().__init__(resource_manager, process_func, prepare_func, metrics=TaskMetrics('concurrent', resource_manager.concurrency))
         self.prepare_lock = threading.Lock()  # Tokenizers aren't thread-safe
         self.waiting = 0
+        # A coroutine (a remote model's call) takes no prepare
+        self.run = process_func if asyncio.iscoroutinefunction(process_func) else self._process
 
     def queued(self) -> int:
         return self.waiting
@@ -38,15 +41,16 @@ class SimpleScheduler(Scheduler[T, R]):
         self.waiting += 1
         error = None
         try:
-            results = await self.resource_manager.execute(self._process, [item], priority, on_start)
-        except Exception as e:
+            results = await self.resource_manager.execute(self.run, [item], priority, on_start)
+        except BaseException as e:  # Cancellation too, so a run cut short isn't timed as done
             error = e
             raise
         finally:
             if started:
                 self.metrics.finish([started - submitted], time.time() - started, error)
-            else:
+            else:  # Its caller left while it waited
                 self.waiting -= 1
+                self.metrics.window.abandoned += 1
 
         if not results:
             raise RuntimeError("SimpleScheduler: no results returned")

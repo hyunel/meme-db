@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from PIL import Image
 from io import BytesIO
@@ -9,24 +10,23 @@ class OpenAIVLM(VLMModel):
     remote: bool = True
 
     def _load_model(self) -> None:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
         self.model_name = self.name = self.config.vlm.openai.model
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=self.config.vlm.openai.api_key,
             base_url=self.config.vlm.openai.base_url,
             max_retries=self.config.vlm.openai.max_retries,
         )
 
-    def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:
-        # Runs on the scheduler's executor threads, hence the thread-safe sync client.
+    async def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:
         captions = []
         for img, prompt in items:
             with BytesIO() as buffer:
-                img.save(buffer, format='PNG')
+                await asyncio.to_thread(img.save, buffer, format='PNG')
                 img_b64 = b64encode(buffer.getvalue()).decode('utf-8')
 
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
                     {"role": "user", "content": [

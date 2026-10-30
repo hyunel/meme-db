@@ -45,6 +45,8 @@ class Window:
     exec_ms: float = 0  # Summed over requests
     batches: Counter = field(default_factory=Counter)  # Batch size -> batches
     queued: int = 0  # Queue length when the window closed
+    refused: int = 0  # Turned away by a full queue, for their callers to retry
+    abandoned: int = 0  # By their callers, before a result
 
     def add(self, other: "Window"):
         self.requests += other.requests
@@ -53,6 +55,8 @@ class Window:
         self.queue_ms += other.queue_ms
         self.exec_ms += other.exec_ms
         self.batches.update(other.batches)
+        self.refused += other.refused
+        self.abandoned += other.abandoned
 
 
 def _merge(windows) -> Window:
@@ -78,6 +82,9 @@ class TaskMetrics:
         self.running -= n
 
         w = self.window
+        if isinstance(error, asyncio.CancelledError):  # Its caller left mid-run
+            w.abandoned += n
+            return
         w.requests += n
         w.batches[n] += 1
         w.queue_ms += sum(waits) * 1000
@@ -164,7 +171,8 @@ class Monitor:
                 series.append({'t': t, 'cpu': None, 'mem': None, 'proc_cpu': None, 'proc_mem': None, 'gpus': [{'util': None, 'vram': None} for _ in self.gpus],
                                'throughput': None, 'p95': None, 'error_rate': None, 'queued': None})
                 for points in task_series.values():
-                    points.append({'t': t, 'p50': None, 'p95': None, 'p99': None, 'queue_ms': None, 'exec_ms': None, 'queue': None, 'throughput': None, 'errors': None})
+                    points.append({'t': t, 'p50': None, 'p95': None, 'p99': None, 'queue_ms': None, 'exec_ms': None, 'queue': None, 'throughput': None, 'errors': None,
+                                   'refused': None, 'abandoned': None})
                 continue
 
             seconds = len(group) * SAMPLE_SECONDS
@@ -194,6 +202,8 @@ class Monitor:
                     'queue': max(s.tasks[kind].queued for s in group),
                     'throughput': w.requests / seconds,
                     'errors': w.errors,
+                    'refused': w.refused,
+                    'abandoned': w.abandoned,
                 })
 
         return {
@@ -235,6 +245,8 @@ class Monitor:
             'p99': _percentile(w.latency, 0.99),
             'errors': w.errors,
             'error_rate': w.errors / w.requests * 100 if w.requests else None,
+            'refused': w.refused,
+            'abandoned': w.abandoned,
             'batch_dist': dist if m.schedule == 'batch' else [],
             'recent_errors': [{'at': int(t * 1000), 'message': msg} for t, msg in reversed(m.errors) if t >= start],
         }

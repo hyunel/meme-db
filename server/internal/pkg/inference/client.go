@@ -7,7 +7,9 @@ import (
 
 	pb "github.com/hyunel/MemeDB/internal/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -33,8 +35,22 @@ type ImageAnalysis struct {
 	ClipEmbedding []float32
 }
 
+// busyError is the service refusing a request it would not finish before the deadline.
+type busyError struct{ err error }
+
+func (e *busyError) Error() string { return e.err.Error() }
+func (e *busyError) Unwrap() error { return e.err }
+func (e *busyError) Busy() bool    { return true } // Read by the task worker
+
 func NewClient(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			err := invoker(ctx, method, req, reply, cc, opts...)
+			if status.Code(err) == codes.ResourceExhausted {
+				return &busyError{err: err}
+			}
+			return err
+		}))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to inference service: %w", err)
 	}

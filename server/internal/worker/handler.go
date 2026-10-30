@@ -2,12 +2,14 @@ package worker
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hyunel/MemeDB/internal/model"
 )
 
 type TaskHandler interface {
-	// A nil error completes the task; others are retried unless Permanent or out of attempts.
+	// A nil error completes the task; a busy one waits its turn again, not as an attempt; others are retried unless
+	// Permanent or out of attempts.
 	Handle(ctx context.Context, task *model.Task) error
 }
 
@@ -33,4 +35,10 @@ func (e *permanentError) Unwrap() error { return e.err }
 
 func Permanent(err error) error {
 	return &permanentError{err: err}
+}
+
+// busy is an error by which a dependency turned the task away for now, as it has enough to do.
+func busy(err error) bool {
+	var b interface{ Busy() bool }
+	return errors.As(err, &b) && b.Busy()
 }

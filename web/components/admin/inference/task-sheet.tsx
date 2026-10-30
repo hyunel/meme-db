@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, Inbox } from 'lucide-react'
-import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart, XAxis, YAxis } from 'recharts'
+import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts'
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
@@ -32,7 +32,7 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
   const stats = data.tasks.find((task) => task.kind === kind)!
   const series = data.task_series[kind]
   const errors = stats.recent_errors
-  const has = stats.requests > 0
+  const has = stats.requests + stats.refused + stats.abandoned > 0
   const axis = timeAxis(data.start, data.now)
   // The server logs its failed inference calls as gRPC errors.
   const logsHref = `/admin/logs?level=warn&q=${encodeURIComponent('rpc error')}`
@@ -45,7 +45,11 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
     queue_ms: { label: s.queueTime, color: 'var(--chart-3)' },
     exec_ms: { label: s.execTime, color: 'var(--chart-5)' },
   } satisfies ChartConfig
-  const queueConfig = { queue: { label: s.queueLength, color: 'var(--chart-1)' } } satisfies ChartConfig
+  const queueConfig = {
+    queue: { label: s.queueLength, color: 'var(--chart-1)' },
+    refused: { label: s.refused, color: 'var(--chart-3)' },
+    abandoned: { label: s.abandoned, color: 'var(--warning)' },
+  } satisfies ChartConfig
   const batchConfig = { count: { label: s.batches, color: 'var(--chart-1)' } } satisfies ChartConfig
   const tpConfig = {
     throughput: { label: t.inference.metrics.throughput, color: 'var(--chart-1)' },
@@ -65,18 +69,22 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
           <EmptyState icon={Inbox} title={s.noRequests} description={s.noRequestsHint} />
         ) : (
           <>
-            <dl className="grid grid-cols-3 gap-2 text-sm">
-              {[
-                ['P50', fmtLatency(stats.p50)],
-                ['P95', fmtLatency(stats.p95)],
-                ['P99', fmtLatency(stats.p99)],
-              ].map(([k, v]) => (
-                <div key={k} className="flex flex-col gap-0.5 rounded-lg border bg-muted/30 p-2.5">
-                  <dt className="text-xs text-muted-foreground">{k}</dt>
-                  <dd className="font-semibold tabular-nums">{v}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="flex flex-col gap-2">
+              <dl className="grid grid-cols-4 gap-2 text-sm">
+                {[
+                  ['P50', fmtLatency(stats.p50)],
+                  ['P95', fmtLatency(stats.p95)],
+                  ['P99', fmtLatency(stats.p99)],
+                  [s.refusedAbandoned, `${stats.refused} / ${stats.abandoned}`],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex flex-col gap-0.5 rounded-lg border bg-muted/30 p-2.5">
+                    <dt className="text-xs text-muted-foreground">{k}</dt>
+                    <dd className="font-semibold tabular-nums">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-xs text-muted-foreground">{s.admissionHint}</p>
+            </div>
 
             <ChartCard
               title={s.latency}
@@ -107,15 +115,19 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
             </ChartCard>
 
             <div className={cn('grid gap-4', stats.schedule === 'batch' && 'sm:grid-cols-2')}>
-              <ChartCard title={s.queueLength}>
+              <ChartCard title={s.queueRefusals} description={s.queueRefusalsHint}>
                 <ChartContainer config={queueConfig} className={chartCls}>
-                  <LineChart data={series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 8, top: 4 }}>
+                  <ComposedChart data={series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 0, top: 4 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis {...axis} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} />
-                    <TimeTooltip config={queueConfig} format={(v) => String(v)} />
-                    <Line dataKey="queue" type="stepAfter" stroke="var(--color-queue)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
-                  </LineChart>
+                    <YAxis yAxisId="queue" allowDecimals={false} tickLine={false} axisLine={false} width={40} />
+                    <YAxis yAxisId="count" orientation="right" allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <TimeTooltip config={queueConfig} format={(v, k) => (k === 'queue' ? String(v) : s.count(v))} />
+                    <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
+                    <Bar yAxisId="count" dataKey="refused" fill="var(--color-refused)" radius={2} maxBarSize={6} isAnimationActive={false} />
+                    <Bar yAxisId="count" dataKey="abandoned" fill="var(--color-abandoned)" radius={2} maxBarSize={6} isAnimationActive={false} />
+                    <Line yAxisId="queue" dataKey="queue" type="stepAfter" stroke="var(--color-queue)" strokeWidth={1.75} dot={false} isAnimationActive={false} />
+                  </ComposedChart>
                 </ChartContainer>
               </ChartCard>
 

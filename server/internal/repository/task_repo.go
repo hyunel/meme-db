@@ -104,15 +104,32 @@ func (r *TaskRepository) LatestScheduled(ctx context.Context, names []string) ([
 }
 
 // Claim leases due tasks, and running ones whose lease ran out: twice their timeout, so a live attempt is never reclaimed.
-func (r *TaskRepository) Claim(ctx context.Context, limit int) ([]*model.Task, error) {
+// Each job type's are read on their own, so a backlog held back is never scanned through.
+func (r *TaskRepository) Claim(ctx context.Context, limit int, rooms map[string]int) ([]*model.Task, error) {
+	jobTypes, counts := make([]string, 0, len(rooms)), make([]int, 0, len(rooms))
+	for jobType, n := range rooms {
+		jobTypes = append(jobTypes, jobType)
+		counts = append(counts, n)
+	}
 	query := fmt.Sprintf(`
-		WITH picked AS MATERIALIZED (
-			SELECT id AS task_id, status AS task_status FROM jobs.tasks
-			WHERE (status = 'pending' AND run_at <= CURRENT_TIMESTAMP)
-			   OR (status = 'running' AND started_at < CURRENT_TIMESTAMP - make_interval(secs => 2 * timeout_secs))
-			ORDER BY priority DESC, run_at ASC
+		WITH RECURSIVE job_types AS (
+			SELECT min(job_type) AS job_type FROM jobs.tasks_active
+			UNION ALL
+			SELECT (SELECT min(job_type) FROM jobs.tasks_active WHERE job_type > j.job_type) FROM job_types j WHERE j.job_type IS NOT NULL
+		), picked AS MATERIALIZED (
+			SELECT c.id AS task_id, c.status AS task_status
+			FROM job_types j
+			LEFT JOIN unnest($2::text[], $3::int[]) AS room(job_type, n) ON room.job_type = j.job_type,
+			LATERAL (
+				SELECT id, status, priority, run_at FROM jobs.tasks_active
+				WHERE job_type = j.job_type AND ((status = 'pending' AND run_at <= CURRENT_TIMESTAMP)
+					OR (status = 'running' AND started_at < CURRENT_TIMESTAMP - make_interval(secs => 2 * timeout_secs)))
+				ORDER BY priority DESC, run_at ASC
+				LIMIT COALESCE(room.n, $1)
+				FOR UPDATE SKIP LOCKED
+			) c
+			ORDER BY c.priority DESC, c.run_at ASC
 			LIMIT $1
-			FOR UPDATE SKIP LOCKED
 		)
 		UPDATE jobs.tasks t
 		SET status = 'running', attempts = t.attempts + 1, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -121,7 +138,7 @@ func (r *TaskRepository) Claim(ctx context.Context, limit int) ([]*model.Task, e
 		RETURNING %s
 	`, taskSelectColumns)
 
-	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, limit))
+	tasks, err := collectAll[model.Task](r.db.Query(ctx, query, limit, jobTypes, counts))
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim tasks: %w", err)
 	}

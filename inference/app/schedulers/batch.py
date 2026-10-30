@@ -64,6 +64,7 @@ class BatchScheduler(Scheduler[T, R]):
             logger.debug(f"Task {task_id} cancelled")
             if not task.future.done():
                 task.future.cancel()
+                self.metrics.window.abandoned += 1
 
     def queued(self) -> int:
         return max(0, len(self.active_tasks) - self.metrics.running)

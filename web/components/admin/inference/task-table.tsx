@@ -83,6 +83,14 @@ export function TaskTable({ data, onOpen }: { data?: InferenceSnapshot; onOpen: 
       className: 'text-right',
       cell: (r) => dash(has(r), <Flag level={errLevel(r.error_rate)}>{r.errors}</Flag>),
     },
+    { key: 'refused', header: c.refused, mobile: 'hidden', sortValue: (r) => r.refused, className: 'text-right tabular-nums', cell: (r) => r.refused },
+    {
+      key: 'abandoned',
+      header: c.abandoned,
+      sortValue: (r) => r.abandoned,
+      className: 'text-right',
+      cell: (r) => <Flag level={r.abandoned > 0 ? 'warn' : 'ok'}>{r.abandoned}</Flag>,
+    },
   ]
 
   return (

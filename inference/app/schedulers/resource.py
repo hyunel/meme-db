@@ -70,10 +70,16 @@ class ResourceManager:
             try:
                 await self.semaphore.acquire()
                 request = await self.queue.get()
+                if request.future.done():  # Its caller left while it waited
+                    self.queue.task_done()
+                    self.semaphore.release()
+                    continue
 
                 task = asyncio.create_task(self._execute_request(request))
                 self.running_tasks.add(task)
                 task.add_done_callback(self.running_tasks.discard)
+                if asyncio.iscoroutinefunction(request.func):  # Unlike a thread, it stops when its caller leaves
+                    request.future.add_done_callback(lambda f, task=task: task.cancel() if f.cancelled() else None)
 
             except asyncio.CancelledError:
                 break
@@ -87,7 +93,10 @@ class ResourceManager:
             try:
                 if request.on_start:
                     request.on_start()
-                results = await loop.run_in_executor(None, request.func, request.batch)
+                if asyncio.iscoroutinefunction(request.func):
+                    results = await request.func(request.batch)
+                else:
+                    results = await loop.run_in_executor(None, request.func, request.batch)
                 if not request.future.done():
                     request.future.set_result(results)
             except Exception as e:

@@ -2,12 +2,29 @@ import asyncio
 import pytest
 import threading
 import time
+from app.config import ModelType
 from app.schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
+from app.service import InferenceService
+
+class Aborted(Exception):
+    pass
+
 
 class MockContext:
-    def __init__(self):
+    def __init__(self, time_remaining=None, peer="ipv4:127.0.0.1:1"):
         self._done = False
         self._callbacks = []
+        self._time_remaining = time_remaining
+        self._peer = peer
+
+    def time_remaining(self):
+        return self._time_remaining
+
+    def peer(self):
+        return self._peer
+
+    async def abort(self, code, details):
+        raise Aborted(code)  # gRPC's raises too, ending the call
 
     def cancel(self):
         self._done = True
@@ -209,6 +226,7 @@ async def test_scheduler_cancellation_lazy():
 
     assert len(processed_batches) == 1
     assert processed_batches[0] == ["item3"]
+    assert scheduler.metrics.window.abandoned == 2
 
     await scheduler.stop()
     await rm.stop()
@@ -386,4 +404,111 @@ async def test_simple_scheduler_concurrency():
     assert max_concurrent == CONCURRENCY_LIMIT
 
     await scheduler.stop()
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_simple_scheduler_drops_abandoned():
+    rm = ResourceManager(concurrency=1)
+    await rm.start()
+
+    processed = []
+    started = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def process_func(items):
+        loop.call_soon_threadsafe(started.set)
+        release.wait()
+        processed.extend(items)
+        return items
+
+    scheduler = SimpleScheduler(resource_manager=rm, process_func=process_func)
+
+    t1 = asyncio.create_task(scheduler.submit("item1"))
+    await started.wait()
+    t2 = asyncio.create_task(scheduler.submit("item2"))
+    await asyncio.sleep(0.01)
+    t2.cancel()  # Its caller leaves while it waits, as on a deadline
+    await asyncio.sleep(0.01)
+    release.set()
+
+    assert await t1 == "item1"
+    assert await scheduler.submit("item3") == "item3"
+    assert processed == ["item1", "item3"]
+    assert scheduler.queued() == 0
+    assert scheduler.metrics.running == 0
+    assert scheduler.metrics.window.abandoned == 1
+
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_simple_scheduler_cancels_coroutine_run():
+    rm = ResourceManager(concurrency=1)
+    await rm.start()
+
+    cancelled = asyncio.Event()
+
+    async def process_func(items):  # As a remote model's call
+        if items == ["hang"]:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+        return items
+
+    scheduler = SimpleScheduler(resource_manager=rm, process_func=process_func)
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(scheduler.submit("hang"), 0.05)  # Its caller leaves, as on a deadline
+    await asyncio.wait_for(cancelled.wait(), 1)
+
+    # Its slot is free again, and the run cut short counts as abandoned, not as done or failed
+    assert await asyncio.wait_for(scheduler.submit("next"), 1) == "next"
+    assert scheduler.metrics.running == 0
+    assert scheduler.metrics.window.abandoned == 1
+    assert scheduler.metrics.window.errors == 0
+    assert scheduler.metrics.window.requests == 1
+
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_service_shares_full_queue_between_callers():
+    rm = ResourceManager(concurrency=1)
+    await rm.start()
+
+    release = threading.Event()
+
+    def process_func(items):
+        release.wait()
+        return items
+
+    service = InferenceService([], None)
+    scheduler = service.schedulers[ModelType.TEXT_EMBEDDING] = SimpleScheduler(resource_manager=rm, process_func=process_func)
+
+    async def call(peer, deadline=60):
+        context = MockContext(deadline, peer=peer)
+        async with service._admit(context, ModelType.TEXT_EMBEDDING):
+            return await scheduler.submit("item", context=context)
+
+    a = [asyncio.create_task(call("a")) for _ in range(2)]
+    await asyncio.sleep(0.01)
+    assert scheduler.queued() == 1
+    with pytest.raises(Aborted, match="RESOURCE_EXHAUSTED"):
+        await call("a")
+
+    b = [asyncio.create_task(call("b")) for _ in range(2)]
+    await asyncio.sleep(0.01)
+    for peer in ("a", "b"):
+        with pytest.raises(Aborted, match="RESOURCE_EXHAUSTED"):
+            await call(peer)
+
+    c = asyncio.create_task(call("a", deadline=None))
+    await asyncio.sleep(0.01)
+
+    release.set()
+    assert await asyncio.gather(*a, *b, c) == ["item"] * 5
+    assert scheduler.metrics.window.refused == 3
+    assert not service.callers[ModelType.TEXT_EMBEDDING]
+
     await rm.stop()

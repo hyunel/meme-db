@@ -4,6 +4,8 @@ import psutil
 import torch
 import logging
 import asyncio
+from collections import Counter, defaultdict
+from contextlib import asynccontextmanager
 from .manager import ModelManager
 from .models.base import BaseModel
 from .config import ModelType, ModelConfig
@@ -22,6 +24,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         self.config = config
         self.schedulers: dict[ModelType, Scheduler] = {}
         self.resources: dict[str, ResourceManager] = {}  # Each GPU, each model on the CPU, and the API
+        self.callers: defaultdict[ModelType, Counter[str]] = defaultdict(Counter)  # In flight to each model
 
         if any(m.cpu for _, m in self.model_manager):
             # For the whole process: on the CPU, requests run side by side, one thread each, as past a few threads a
@@ -85,62 +88,86 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Unreadable image")
         return frames
 
+    @asynccontextmanager
+    async def _admit(self, context: grpc.aio.ServicerContext, *kinds: ModelType):
+        # Two rounds (a batch, or as many as run at once) keep a model busy
+        caller = context.peer()
+        if context.time_remaining() is not None:
+            for kind in kinds:
+                scheduler, callers = self.schedulers[kind], self.callers[kind]
+                m = scheduler.metrics
+                if scheduler.queued() + m.running >= 2 * m.limit and callers[caller] * len(callers) >= callers.total():
+                    scheduler.metrics.window.refused += 1
+                    await context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Busy: enough is queued")
+        for kind in kinds:
+            self.callers[kind][caller] += 1
+        try:
+            yield
+        finally:
+            for kind in kinds:
+                self.callers[kind] -= Counter({caller: 1})  # Drops it at zero
+
     async def TextEmbedding(self, request: inference_pb2.TextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.TextEmbeddingResponse:
         priority = request.options.priority
-        embedding = await self.schedulers[ModelType.TEXT_EMBEDDING].submit(
-            (request.text, request.task_description),
-            priority=priority,
-            context=context
-        )
+        async with self._admit(context, ModelType.TEXT_EMBEDDING):
+            embedding = await self.schedulers[ModelType.TEXT_EMBEDDING].submit(
+                (request.text, request.task_description),
+                priority=priority,
+                context=context
+            )
         return inference_pb2.TextEmbeddingResponse(
             embedding=inference_pb2.Embedding(values=embedding)
         )
 
     async def ClipImageEmbedding(self, request: inference_pb2.ClipImageEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipImageEmbeddingResponse:
-        frames = await self._load_frames(request.image, context)
-        image = frames[len(frames) // 2]
+        async with self._admit(context, ModelType.CLIP_IMAGE):
+            frames = await self._load_frames(request.image, context)
+            image = frames[len(frames) // 2]
 
-        priority = request.options.priority
-        embedding = await self.schedulers[ModelType.CLIP_IMAGE].submit(
-            image,
-            priority=priority,
-            context=context
-        )
+            priority = request.options.priority
+            embedding = await self.schedulers[ModelType.CLIP_IMAGE].submit(
+                image,
+                priority=priority,
+                context=context
+            )
         return inference_pb2.ClipImageEmbeddingResponse(
             embedding=inference_pb2.Embedding(values=embedding)
         )
 
     async def ClipTextEmbedding(self, request: inference_pb2.ClipTextEmbeddingRequest, context: grpc.ServicerContext) -> inference_pb2.ClipTextEmbeddingResponse:
         priority = request.options.priority
-        embedding = await self.schedulers[ModelType.CLIP_TEXT].submit(
-            request.text,
-            priority=priority,
-            context=context
-        )
+        async with self._admit(context, ModelType.CLIP_TEXT):
+            embedding = await self.schedulers[ModelType.CLIP_TEXT].submit(
+                request.text,
+                priority=priority,
+                context=context
+            )
         return inference_pb2.ClipTextEmbeddingResponse(
             embedding=inference_pb2.Embedding(values=embedding)
         )
 
     async def Rerank(self, request: inference_pb2.RerankRequest, context: grpc.ServicerContext) -> inference_pb2.RerankResponse:
         priority = request.options.priority
-        score = await self.schedulers[ModelType.RERANKER].submit(
-            ((request.query, request.document), request.task_description),
-            priority=priority,
-            context=context
-        )
+        async with self._admit(context, ModelType.RERANKER):
+            score = await self.schedulers[ModelType.RERANKER].submit(
+                ((request.query, request.document), request.task_description),
+                priority=priority,
+                context=context
+            )
         return inference_pb2.RerankResponse(score=score)
 
     async def AnalyzeImage(self, request: inference_pb2.AnalyzeImageRequest, context: grpc.ServicerContext) -> inference_pb2.AnalyzeImageResponse:
         if request.caption_prompt and ModelType.VLM not in self.schedulers:
             await context.abort(grpc.StatusCode.UNIMPLEMENTED, "VLM model not configured")
 
-        frames = await self._load_frames(request.image, context)
-        priority = request.options.priority
+        async with self._admit(context, ModelType.CLIP_IMAGE, *([ModelType.VLM] if request.caption_prompt else [])):
+            frames = await self._load_frames(request.image, context)
+            priority = request.options.priority
 
-        submits = [self.schedulers[ModelType.CLIP_IMAGE].submit(frames[len(frames) // 2], priority=priority, context=context)]
-        if request.caption_prompt:
-            submits.append(self.schedulers[ModelType.VLM].submit((draw_stitch(frames), request.caption_prompt), priority=priority, context=context))
-        clip_embedding, *caption = await asyncio.gather(*submits)
+            submits = [self.schedulers[ModelType.CLIP_IMAGE].submit(frames[len(frames) // 2], priority=priority, context=context)]
+            if request.caption_prompt:
+                submits.append(self.schedulers[ModelType.VLM].submit((draw_stitch(frames), request.caption_prompt), priority=priority, context=context))
+            clip_embedding, *caption = await asyncio.gather(*submits)
 
         return inference_pb2.AnalyzeImageResponse(
             caption=caption[0] if caption else '',
