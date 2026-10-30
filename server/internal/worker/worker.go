@@ -47,11 +47,10 @@ type Worker struct {
 	throttles map[string]*throttle // Job types a dependency is turning tasks of away
 }
 
-// throttle holds a job type to as many tasks at once as its dependency let in when it last turned one away, raised by
-// one each round of them let in at that. It lapses once the type has nothing left to claim.
 type throttle struct {
-	limit  float64
-	paused time.Time // It let none in: none is tried until the next poll
+	limit     int
+	successes int       // Count a full round even when its tasks finish together
+	paused    time.Time // It let none in: none is tried until the next poll
 }
 
 func NewWorker(cfg config.WorkerConfig, store Store) *Worker {
@@ -273,6 +272,7 @@ func (w *Worker) Run(ctx context.Context) {
 			go func() {
 				defer func() {
 					<-slots
+					w.Notify()
 					wg.Done()
 				}()
 				w.process(ctx, task)
@@ -294,11 +294,12 @@ func (w *Worker) process(ctx context.Context, task *model.Task) {
 		err = w.handle(ctx, handler, task)
 	}
 
-	if err := w.settle(ctx, handler, task, err); err != nil {
+	if settleErr := w.settle(ctx, handler, task, err); settleErr != nil {
 		// The lease expiring is the fallback: the task will be claimed again.
-		slog.Error("Failed to settle task", "id", task.ID, "error", err)
+		slog.Error("Failed to settle task", "id", task.ID, "error", settleErr)
+		err = errors.Join(err, settleErr)
 	}
-	w.ended(task.JobType, busy(err))
+	w.ended(task.JobType, err)
 }
 
 func (w *Worker) claim(ctx context.Context, limit int) ([]*model.Task, error) {
@@ -307,7 +308,7 @@ func (w *Worker) claim(ctx context.Context, limit int) ([]*model.Task, error) {
 	for jobType, t := range w.throttles {
 		rooms[jobType] = 0
 		if time.Now().After(t.paused) {
-			rooms[jobType] = max(0, int(t.limit)-w.running[jobType])
+			rooms[jobType] = max(0, t.limit-w.running[jobType])
 		}
 	}
 	w.mu.Unlock()
@@ -325,6 +326,10 @@ func (w *Worker) claim(ctx context.Context, limit int) ([]*model.Task, error) {
 	if len(tasks) == 0 {
 		for jobType, room := range rooms {
 			if room > 0 { // It had room, yet nothing to claim
+				if t := w.throttles[jobType]; t.limit != w.cfg.Concurrency {
+					slog.Info("Worker concurrency limit changed", "type", jobType, "old_limit", t.limit,
+						"limit", w.cfg.Concurrency, "in_flight", w.running[jobType], "reason", "idle")
+				}
 				delete(w.throttles, jobType)
 			}
 		}
@@ -332,21 +337,37 @@ func (w *Worker) claim(ctx context.Context, limit int) ([]*model.Task, error) {
 	return tasks, nil
 }
 
-func (w *Worker) ended(jobType string, turnedAway bool) {
+func (w *Worker) ended(jobType string, cause error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.running[jobType]--
 	inFlight, t := w.running[jobType], w.throttles[jobType]
+	previous := w.cfg.Concurrency
+	if t != nil {
+		previous = t.limit
+	}
+	reason := "busy"
 	switch {
-	case turnedAway:
-		t = &throttle{limit: float64(max(1, inFlight))} // As many as it let in
+	case busy(cause):
+		t = &throttle{limit: max(1, inFlight)} // As many as it let in
 		if inFlight == 0 {
 			t.paused = time.Now().Add(w.cfg.PollInterval)
 		}
 		w.throttles[jobType] = t
-	case t != nil && inFlight+1 >= int(t.limit): // Let in at its limit
-		t.limit += 1 / t.limit
-		w.Notify()
+	case cause == nil && t != nil && t.limit < w.cfg.Concurrency:
+		t.successes++
+		if t.successes < t.limit {
+			return
+		}
+		t.limit = min(w.cfg.Concurrency, t.limit+max(1, (t.limit+3)/4))
+		t.successes = 0
+		reason = "recovery"
+	default:
+		return
+	}
+	if t.limit != previous {
+		slog.Info("Worker concurrency limit changed", "type", jobType, "old_limit", previous,
+			"limit", t.limit, "in_flight", inFlight, "reason", reason)
 	}
 }
 
