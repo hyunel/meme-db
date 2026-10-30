@@ -15,6 +15,7 @@ import { LevelBadge } from './labels'
 import { rangeOptions, rangeStart, type RangeKey } from './shared'
 import { api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { useIntersection } from '@/hooks/use-intersection'
 import { useMessages } from '@/lib/i18n/client'
 import type { LogEntry, LogLevel } from '@/lib/types'
 import { cn, qs } from '@/lib/utils'
@@ -146,13 +147,9 @@ export function AdminLogs() {
     }
   }, [live, frozenId, latestId])
 
-  useEffect(() => {
-    const el = sentinel.current
-    if (!el || !hasMore) return
-    const io = new IntersectionObserver((entries) => entries[0].isIntersecting && void loadOlder(), { rootMargin: '200px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [hasMore, loadOlder, logs.length])
+  useIntersection(hasMore ? sentinel : null, useCallback((entry) => {
+    if (logs.length && entry.isIntersecting) void loadOlder()
+  }, [loadOlder, logs.length]), { rootMargin: '200px' })
 
   const resume = () => {
     window.getSelection()?.removeAllRanges()

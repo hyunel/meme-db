@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { kindOf, memeAlt } from '@/lib/media'
 import { LottiePlayer } from './lottie-player'
 import type { MemeThumb } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/lib/i18n/client'
+import { useIntersection } from '@/hooks/use-intersection'
 
 // As large as fits in the box, up to its own size, with the checkerboard behind the meme alone; size-full fills a box of its ratio.
 // Hidden until reveal marks it loaded (or failed, to show the broken image), then faded in.
@@ -29,36 +30,30 @@ function AutoVideo({ src, className, controls, label }: { src: string; className
     // React drops media events from before it mounts, which a video the browser holds, as on coming back to a page, may already have fired.
     if (el.readyState >= el.HAVE_METADATA || el.error) el.dataset.loaded = ''
     if (controls) return
-    // Set before playing: a source set after play() reloads the video paused.
-    const load = () => {
-      if (!el.hasAttribute('src')) el.src = src
-    }
-    const release = () => {
+    return () => el.pause()
+  }, [src, controls])
+  // Set before playing: a source set after play() reloads the video paused.
+  const load = useCallback((el: HTMLVideoElement) => {
+    if (!el.hasAttribute('src')) el.src = src
+  }, [src])
+  useIntersection(controls ? null : ref, useCallback((entry) => {
+    if (!entry.isIntersecting) return
+    const el = entry.target as HTMLVideoElement
+    load(el)
+    return () => {
       if (!el.hasAttribute('src')) return
       el.removeAttribute('src')
       el.load() // Frees its decoder and connection, which a video keeps until collected otherwise
       delete el.dataset.loaded // Fades in again once it comes back
     }
-    // Videos load only within a screen of the viewport, so a long grid holds a few dozen players however many it has.
-    const near = new IntersectionObserver(([entry]) => (entry.isIntersecting ? load() : release()), { rootMargin: '100% 0px' })
-    const visible = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          load()
-          el.play().catch(() => {})
-        } else el.pause()
-      },
-      { threshold: 0.25 },
-    )
-    near.observe(el)
-    visible.observe(el)
-    return () => {
-      near.disconnect()
-      visible.disconnect()
-      el.pause() // Also when hidden, as by an inactive tab
-      release()
-    }
-  }, [src, controls])
+  }, [load]), { rootMargin: '100% 0px' })
+  useIntersection(controls ? null : ref, useCallback((entry) => {
+    const el = entry.target as HTMLVideoElement
+    if (entry.isIntersecting) {
+      load(el)
+      el.play().catch(() => {})
+    } else el.pause()
+  }, [load]), { threshold: 0.25 })
   return (
     <video
       ref={ref}

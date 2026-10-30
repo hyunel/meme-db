@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -53,6 +53,7 @@ import { UploadDialog } from './upload-dialog'
 import { ROOT, useDragMove } from './use-drag-move'
 import { api, refresh } from '@/lib/api'
 import { toMs } from '@/lib/format'
+import { useIntersection } from '@/hooks/use-intersection'
 import { isProcessing, memeHref, memeTitle } from '@/lib/media'
 import { downloadMany } from '@/lib/meme-transfer'
 import type { Entry, Folder, LibraryView as Library } from '@/lib/types'
@@ -100,9 +101,8 @@ export function LibraryView() {
   )
 }
 
-/** opening tells that another folder is on its way, which this one dims for if it takes a moment. */
 // What an item shows, kept apart from the controls around it, as selecting and dragging rerender every item.
-const TileBody = memo(function TileBody({ item }: { item: Item }) {
+const TileBody = memo(function TileBody({ item, loadPreview }: { item: Item; loadPreview: boolean }) {
   const node = nodeOf(item)
   const meme = item.type === 'entry' ? item.entry.meme : null
   const t = useMessages()
@@ -110,7 +110,7 @@ const TileBody = memo(function TileBody({ item }: { item: Item }) {
     <>
       <div className="relative aspect-square overflow-hidden rounded-lg">
         <div data-thumb className={cn('flex size-full items-center justify-center bg-muted/60', item.type === 'folder' && 'p-2')}>
-          {item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />}
+          {loadPreview && (item.type === 'entry' ? <MemeMedia meme={item.entry.meme} /> : <FolderMosaic previews={item.folder.previews} className="size-full" />)}
         </div>
         {item.type === 'folder' && (
           <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs shadow-sm tabular-nums">
@@ -128,6 +128,75 @@ const TileBody = memo(function TileBody({ item }: { item: Item }) {
   )
 })
 
+function LibraryTile({
+  item, selecting, checked, dropTarget, href, onToggle, children, ...props
+}: ComponentPropsWithoutRef<'li'> & {
+  item: Item
+  selecting: boolean
+  checked: boolean
+  dropTarget: string | false
+  href: string
+  onToggle: () => void
+}) {
+  const [loadPreview, setLoadPreview] = useState(false)
+  const ref = useRef<HTMLLIElement>(null)
+  useIntersection(ref, useCallback((entry) => setLoadPreview(entry.isIntersecting), []), { rootMargin: '200px 0px' })
+  const node = nodeOf(item)
+  const t = useMessages()
+  const body = <TileBody item={item} loadPreview={loadPreview} />
+
+  return (
+    <li {...props} ref={ref}>
+      {selecting ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-pressed={checked}
+          className={cn(
+            'flex w-full flex-col gap-2 rounded-xl border bg-card p-2 text-left transition',
+            checked ? 'border-foreground ring-2 ring-foreground/15' : 'hover:border-foreground/30',
+            dropTarget,
+          )}
+        >
+          {body}
+          {/* Drawn like a checkbox, without the cost of one on every item */}
+          <span
+            aria-hidden
+            className={cn(
+              'absolute top-3 left-3 flex size-5 items-center justify-center rounded-[4px] border border-input bg-background',
+              checked && 'border-primary bg-primary text-primary-foreground',
+            )}
+          >
+            {checked && <Check className="size-3.5" />}
+          </span>
+          <span className="sr-only">
+            {checked ? t.library.deselect(node.name) : t.library.selectItem(node.name)}
+          </span>
+        </button>
+      ) : (
+        <ContextMenu
+          // On touch screens a long press opens it, with a tap where the phone can vibrate
+          onOpenChange={(open, { event }) => {
+            if (open && (event.type.startsWith('touch') || (event as PointerEvent).pointerType === 'touch')) navigator.vibrate?.(10)
+          }}
+        >
+          <ContextMenuTrigger
+            render={<Link href={href} />}
+            className={cn(
+              'flex flex-col gap-2 rounded-xl border bg-card p-2 transition select-none hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-popup-open:border-foreground/30',
+              dropTarget,
+            )}
+          >
+            {body}
+          </ContextMenuTrigger>
+          {children}
+        </ContextMenu>
+      )}
+    </li>
+  )
+}
+
+// Opening another folder dims this one until its data arrives.
 function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -391,99 +460,59 @@ function LibraryContent({ lib, opening }: { lib: Library; opening: boolean }) {
             const isPublicSelf = node.visibility === 'public'
             const dropTarget = drag.isOver(node.id) && 'border-foreground bg-brand/30 ring-2 ring-foreground/20'
 
-            const body = <TileBody item={item} />
-
             return (
-              <li
+              <LibraryTile
                 key={node.id}
+                item={item}
+                selecting={selecting}
+                checked={checked}
+                dropTarget={dropTarget}
+                href={href}
+                onToggle={() => toggle(node.id)}
                 data-node-id={node.id}
                 {...drag.source(node.id)}
                 {...(item.type === 'folder' ? drag.target(node.id) : {})}
                 className={cn('relative transition-opacity', drag.isDragging(node.id) && 'opacity-50')}
               >
-                {selecting ? (
-                  <button
-                    type="button"
-                    onClick={() => toggle(node.id)}
-                    aria-pressed={checked}
-                    className={cn(
-                      'flex w-full flex-col gap-2 rounded-xl border bg-card p-2 text-left transition',
-                      checked ? 'border-foreground ring-2 ring-foreground/15' : 'hover:border-foreground/30',
-                      dropTarget,
-                    )}
-                  >
-                    {body}
-                    {/* Drawn like a checkbox, without the cost of one on every item */}
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'absolute top-3 left-3 flex size-5 items-center justify-center rounded-[4px] border border-input bg-background',
-                        checked && 'border-primary bg-primary text-primary-foreground',
-                      )}
-                    >
-                      {checked && <Check className="size-3.5" />}
-                    </span>
-                    <span className="sr-only">
-                      {checked ? t.library.deselect(node.name) : t.library.selectItem(node.name)}
-                    </span>
-                  </button>
-                ) : (
-                  <ContextMenu
-                    // On touch screens a long press opens it, with a tap where the phone can vibrate
-                    onOpenChange={(open, { event }) => {
-                      if (open && (event.type.startsWith('touch') || (event as PointerEvent).pointerType === 'touch')) navigator.vibrate?.(10)
+                <ContextMenuContent className="w-44">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setRename(item)
+                      setRenameValue(node.name)
                     }}
                   >
-                    <ContextMenuTrigger
-                      render={<Link href={href} />}
-                      className={cn(
-                        'flex flex-col gap-2 rounded-xl border bg-card p-2 transition select-none hover:border-foreground/30 hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none data-popup-open:border-foreground/30',
-                        dropTarget,
-                      )}
-                    >
-                      {body}
-                    </ContextMenuTrigger>
-                    <ContextMenuContent className="w-44">
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setRename(item)
-                          setRenameValue(node.name)
-                        }}
-                      >
-                        <Pencil />
-                        {t.library.rename}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setPicker({ mode: 'move', items: [item] })}>
-                        <FolderInput />
-                        {t.library.moveTo}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setPicker({ mode: 'copy', items: [item] })}>
-                        <Copy />
-                        {t.library.copyTo}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
-                        {isPublicSelf ? <Lock /> : <Globe />}
-                        {isPublicSelf ? t.library.makePrivate : t.library.makePublic}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => share(item)}>
-                        <Share2 />
-                        {t.shares.share}
-                      </DropdownMenuItem>
-                      {item.type === 'entry' && (
-                        <DropdownMenuItem onClick={() => download([item])}>
-                          <Download />
-                          {t.meme.download}
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete([item])}>
-                        <Trash2 />
-                        {t.library.delete}
-                      </DropdownMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                )}
-              </li>
+                    <Pencil />
+                    {t.library.rename}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setPicker({ mode: 'move', items: [item] })}>
+                    <FolderInput />
+                    {t.library.moveTo}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setPicker({ mode: 'copy', items: [item] })}>
+                    <Copy />
+                    {t.library.copyTo}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setPublic([item], !isPublicSelf)}>
+                    {isPublicSelf ? <Lock /> : <Globe />}
+                    {isPublicSelf ? t.library.makePrivate : t.library.makePublic}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => share(item)}>
+                    <Share2 />
+                    {t.shares.share}
+                  </DropdownMenuItem>
+                  {item.type === 'entry' && (
+                    <DropdownMenuItem onClick={() => download([item])}>
+                      <Download />
+                      {t.meme.download}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete([item])}>
+                    <Trash2 />
+                    {t.library.delete}
+                  </DropdownMenuItem>
+                </ContextMenuContent>
+              </LibraryTile>
             )
           })}
         </ul>

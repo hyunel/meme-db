@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { DotLottieWorker } from '@lottiefiles/dotlottie-web'
 import { Sparkles } from 'lucide-react'
 import { fetchAnimation } from '@/lib/media'
 import { useMessages } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
+import { useIntersection } from '@/hooks/use-intersection'
 
 // Served with the app rather than fetched from the player's CDN.
 const wasmUrl = new URL('@lottiefiles/dotlottie-web/dotlottie-player.wasm', import.meta.url).href
@@ -17,26 +18,24 @@ export function LottiePlayer({ url, mime, label, className }: { url: string; mim
   const [failed, setFailed] = useState(false)
   const t = useMessages()
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    let ctrl: AbortController | undefined
+  useIntersection(failed ? null : ref, useCallback((entry) => {
+    if (!entry.isIntersecting) return
+    const el = entry.target as HTMLDivElement
+    const ctrl = new AbortController()
     let player: DotLottieWorker | undefined
     let canvas: HTMLCanvasElement | undefined
 
     const stop = () => {
-      ctrl?.abort()
-      ctrl = undefined
+      ctrl.abort()
       void player?.destroy()
       player = undefined
       canvas?.remove() // A canvas handed to a worker cannot be handed over again
       canvas = undefined
     }
     const start = async () => {
-      const c = (ctrl = new AbortController())
       try {
-        const [data, { DotLottieWorker }] = await Promise.all([fetchAnimation(url, mime, c.signal), import('@lottiefiles/dotlottie-web')])
-        if (c.signal.aborted) return
+        const [data, { DotLottieWorker }] = await Promise.all([fetchAnimation(url, mime, ctrl.signal), import('@lottiefiles/dotlottie-web')])
+        if (ctrl.signal.aborted) return
         DotLottieWorker.setWasmUrl(wasmUrl)
         canvas = document.createElement('canvas')
         canvas.className = 'size-full'
@@ -48,24 +47,13 @@ export function LottiePlayer({ url, mime, label, className }: { url: string; mim
           setFailed(true)
         })
       } catch {
-        if (!c.signal.aborted) setFailed(true)
+        if (!ctrl.signal.aborted) setFailed(true)
       }
     }
 
-    // Players exist only within a screen of the viewport, so a long grid holds a few dozen however many memes it has.
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) stop()
-        else if (!ctrl) void start()
-      },
-      { rootMargin: '100% 0px' },
-    )
-    io.observe(el)
-    return () => {
-      io.disconnect()
-      stop()
-    }
-  }, [url, mime])
+    void start()
+    return stop
+  }, [url, mime]), { rootMargin: '100% 0px' })
 
   if (failed) {
     return (
