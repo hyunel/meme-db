@@ -38,7 +38,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
         self.monitor = Monitor(
             self.schedulers,
-            [{'role': t.value, 'name': m.name, 'device': str(m.device or 'API'), 'dims': m.dims} for t, m in self.model_manager],
+            dict(self.model_manager),
             open_gpus(sorted({m.device for _, m in self.model_manager if m.device}, key=str)),
         )
 

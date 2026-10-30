@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 from PIL import Image
-from ..base import Busy
+from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter
+from ..base import Busy, ModelMetric
 from .base import VLMModel
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,19 @@ Each request gives a directory and the names of some images in it. Call view_fil
 """
 
 
+class QuotaBucket(BaseModel):
+    id: str
+    name: str = ''
+    window: str = ''
+    remaining_fraction: float = Field(ge=0, le=1, allow_inf_nan=False)
+    reset_time: AwareDatetime | None = None
+
+
+class QuotaGroup(BaseModel):
+    name: str
+    buckets: list[QuotaBucket]
+
+
 class AgyVLM(VLMModel):
     remote: bool = True
 
@@ -45,6 +59,7 @@ class AgyVLM(VLMModel):
         self.batch_size, self.batch_latency, self.concurrency = cfg.batch_size, cfg.batch_latency, cfg.concurrency
         self.workspace = tempfile.TemporaryDirectory(prefix='memedb-agy-')  # Outside any folder whose AGENTS.md agy would load
         self.paused_until = 0.0  # While a quota the model draws on is spent
+        self.quota_task: asyncio.Task[list[QuotaGroup]] | None = None
 
     async def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str | Exception]:
         results: List[str | None] = [None] * len(items)
@@ -119,22 +134,51 @@ class AgyVLM(VLMModel):
             return captions, None
         return captions, result.get('error') or next(reversed(notes), f"agy exited with {proc.returncode}")
 
-    async def _out_of_quota(self) -> bool:
+    async def metrics(self) -> list[ModelMetric]:
+        groups = await self._usage()
+        items: list[ModelMetric] = []
+        for group in groups:
+            for bucket in group.buckets:
+                name = f'{group.name} · {bucket.window or bucket.name or bucket.id}'
+                key = f'{group.name}/{bucket.id}'
+                items.extend([
+                    ModelMetric(id=f'{key}/remaining', label_key='quota_remaining', type='ratio', value=bucket.remaining_fraction,
+                                group=name, level='danger' if bucket.remaining_fraction < 0.01 else 'ok'),
+                    ModelMetric(id=f'{key}/reset', label_key='resets_at', type='timestamp',
+                                value=bucket.reset_time.timestamp() * 1000 if bucket.reset_time else None, group=name),
+                ])
+        return items
+
+    async def _usage(self) -> list[QuotaGroup]:
+        task = self.quota_task
+        if task is None or task.done():
+            task = self.quota_task = asyncio.create_task(self._query_usage())
+            # Retrieve failures even when all callers have stopped waiting.
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return await asyncio.shield(task)
+
+    async def _query_usage(self) -> list[QuotaGroup]:
         proc = await asyncio.create_subprocess_exec(self.command, '-p=/usage', '--output-format', 'json', cwd=self.workspace.name,
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 60)
-            family = self.model_name.split('-')[0]
-            buckets = next(g['buckets'] for g in json.loads(out)['command']['data']['groups'] if family in g['name'].lower().split())
-        except Exception as e:
-            logger.warning(f"Failed to read agy's quota: {e!r}")
-            return False
+            if proc.returncode:
+                raise RuntimeError(f'agy quota query exited with {proc.returncode}')
+            return TypeAdapter(list[QuotaGroup]).validate_python(json.loads(out)['command']['data']['groups'])
         finally:
             if proc.returncode is None:
                 proc.kill()
                 await proc.wait()
 
-        if spent := [b for b in buckets if b['remaining_fraction'] < 0.01]:
-            self.paused_until = max(self.paused_until, *(datetime.fromisoformat(b['reset_time']).timestamp() for b in spent))
+    async def _out_of_quota(self) -> bool:
+        try:
+            groups = await self._usage()
+        except Exception as error:
+            logger.warning("Failed to read agy's quota: %r", error)
+            return False
+        family = self.model_name.split('-')[0]
+        buckets = next((g.buckets for g in groups if family in g.name.lower().split()), [])
+        if spent := [b for b in buckets if b.remaining_fraction < 0.01 and b.reset_time is not None]:
+            self.paused_until = max(self.paused_until, *(b.reset_time.timestamp() for b in spent if b.reset_time is not None))
             logger.warning(f"agy quota spent: captioning paused until {datetime.fromtimestamp(self.paused_until):%Y-%m-%d %H:%M}")
         return bool(spent)

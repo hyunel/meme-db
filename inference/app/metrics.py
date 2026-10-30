@@ -1,19 +1,29 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import math
 import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Mapping, TypedDict
 
 import psutil
 
 from .gpus import Gpu, GpuReading
+
+if TYPE_CHECKING:
+    from .config import ModelType
+    from .models.base import BaseModel, ModelMetric
+    from .scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
 
 SAMPLE_SECONDS = 15
 HISTORY = 24 * 3600 // SAMPLE_SECONDS
 RECENT_ERRORS = 20
+MODEL_REFRESH_SECONDS = 60
+MODEL_STALE_SECONDS = 3 * MODEL_REFRESH_SECONDS
 
 # Latency histogram bucket i holds latencies up to BASE_MS * RATIO**i, so percentiles merge across any range.
 BASE_MS = 0.5
@@ -110,24 +120,51 @@ def _mean(values):
     return sum(values) / len(values) if values else None
 
 
+class ModelMetricsSnapshot(TypedDict):
+    updated_at: int | None
+    expires_at: int | None
+    error: str | None
+    items: list[ModelMetric]
+
+
 class Monitor:
-    def __init__(self, schedulers: dict, models: list[dict], gpus: list[Gpu]):
+    def __init__(self, schedulers: Mapping[ModelType, Scheduler], models: Mapping[ModelType, BaseModel], gpus: list[Gpu]):
         self.schedulers = schedulers  # Task type -> scheduler
         self.models = models
         self.started_at = time.time()
         self.samples: deque[Sample] = deque(maxlen=HISTORY)
         self.gpus = gpus  # The GPUs models run on
         self.task: asyncio.Task | None = None
+        self.model_tasks: list[asyncio.Task[None]] = []
+        self.model_metrics: dict[ModelType, ModelMetricsSnapshot] = {}
         self.process = psutil.Process()
         psutil.cpu_percent(None)  # The first readings only start the measurement
         self.process.cpu_percent(None)
 
     async def start(self):
         self.task = asyncio.create_task(self._loop())
+        self.model_tasks = [asyncio.create_task(self._model_loop(role, model)) for role, model in self.models.items()]
 
     async def stop(self):
-        if self.task:
-            self.task.cancel()
+        tasks = self.model_tasks + ([self.task] if self.task else [])
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _model_loop(self, role: ModelType, model: BaseModel) -> None:
+        while True:
+            try:
+                items = await model.metrics()
+                if items is None:  # No custom metrics for this model
+                    return
+                now = int(time.time() * 1000)
+                self.model_metrics[role] = ModelMetricsSnapshot(
+                    updated_at=now, expires_at=now + MODEL_STALE_SECONDS * 1000, error=None, items=items)
+            except Exception as error:
+                reading = self.model_metrics.setdefault(role, ModelMetricsSnapshot(updated_at=None, expires_at=None, error=None, items=[]))
+                reading['error'] = str(error) or type(error).__name__
+                logger.warning('Failed to collect metrics for %s: %s', model.name, reading['error'])
+            await asyncio.sleep(MODEL_REFRESH_SECONDS)
 
     async def _loop(self):
         while True:
@@ -208,7 +245,10 @@ class Monitor:
             'started_at': int(self.started_at * 1000),
             'mem_total': psutil.virtual_memory().total,
             'gpus': [{'id': g.id, 'name': g.name, 'vram_total': g.vram_total} for g in self.gpus],
-            'models': self.models,
+            'models': [{
+                'role': role, 'name': model.name, 'device': str(model.device or 'API'), 'dims': model.dims,
+                'tasks': list(model.inference_methods), 'metrics': self.model_metrics.get(role),
+            } for role, model in self.models.items()],
             'series': series,
             'tasks': [self._task(kind, scheduler, samples, start) for kind, scheduler in self.schedulers.items()],
             'task_series': task_series,

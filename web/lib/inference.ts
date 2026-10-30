@@ -1,6 +1,6 @@
 import { api } from './api'
-import { formatBytes } from './format'
-import type { Messages } from './i18n'
+import { formatBytes, formatDateTime } from './format'
+import type { Locale, Messages } from './i18n'
 
 const MIN = 60 * 1000
 const HOUR = 60 * MIN
@@ -74,6 +74,31 @@ export interface TaskStats {
   recent_errors: { at: number; message: string }[]
 }
 
+export type ModelMetric = {
+  id: string
+  label_key: string
+  group?: string
+  unit?: string
+  level?: Level
+} & (
+  | { type: 'number' | 'ratio' | 'timestamp'; value: number | null }
+  | { type: 'status'; value: string | null }
+)
+
+export interface InferenceModel {
+  role: string
+  name: string
+  device: string
+  dims: number | null
+  tasks?: string[]
+  metrics?: {
+    updated_at: number | null
+    expires_at: number | null
+    error: string | null
+    items: ModelMetric[]
+  } | null
+}
+
 export interface InferenceSnapshot {
   now: number
   start: number
@@ -81,7 +106,7 @@ export interface InferenceSnapshot {
   mem_total: number
   gpus: { id: string; name: string; vram_total: number }[]
   /** dims: of an embedding model's embeddings */
-  models: { role: string; name: string; device: string; dims: number | null }[]
+  models: InferenceModel[]
   series: ResourcePoint[]
   /** The latest sample */
   current: ResourcePoint
@@ -120,6 +145,18 @@ export function inferenceAlerts(s: InferenceSnapshot, t: Messages) {
   s.tasks.forEach((task) => task.abandoned > 0 && out.push({ key: `a-${task.kind}`, level: 'warn', text: alerts.abandoned(kindLabel(task.kind, t), task.abandoned) }))
 
   return out
+}
+
+export function fmtModelMetric(metric: ModelMetric, t: Messages, locale: Locale) {
+  if (metric.value === null) return '—'
+  if (metric.type === 'status') return (t.inference.modelMetrics.states as Record<string, string>)[metric.value] ?? metric.value
+  if (metric.type === 'ratio') return `${(metric.value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`
+  if (metric.type === 'timestamp') return formatDateTime(metric.value)
+  if (metric.unit === 'bytes') return formatBytes(metric.value)
+  if (metric.unit === 'ms') return fmtLatency(metric.value)
+  const value = metric.value.toLocaleString(locale, { maximumFractionDigits: 2 })
+  const unit = (t.inference.modelMetrics.units as Record<string, string>)[metric.unit ?? ''] ?? metric.unit
+  return unit ? `${value} ${unit}` : value
 }
 
 export const fmtPct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`)

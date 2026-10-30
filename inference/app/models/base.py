@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Callable, Optional, Tuple
+from typing import Dict, Callable, Literal, NotRequired, Optional, Tuple, TypedDict
 import torch
 from ..config import LocalModelConfig, ModelConfig, ModelType
 
@@ -20,6 +20,16 @@ def resolve_device(name: str) -> torch.device:
 # A model turning requests away for now, for their callers to retry later without counting an attempt
 class Busy(Exception):
     pass
+
+
+class ModelMetric(TypedDict):
+    id: str
+    label_key: str
+    type: Literal['number', 'ratio', 'status', 'timestamp']
+    value: float | str | None  # Ratios are 0–1; timestamps are epoch milliseconds
+    group: NotRequired[str]
+    unit: NotRequired[str]
+    level: NotRequired[Literal['ok', 'warn', 'danger']]
 
 
 class BaseModel(ABC):
@@ -48,6 +58,9 @@ class BaseModel(ABC):
     @abstractmethod
     def _load_model(self) -> None:
         pass
+
+    async def metrics(self) -> list[ModelMetric] | None:
+        return None
 
     @property
     def inference_methods(self) -> Dict[ModelType, Tuple[Optional[Callable], Callable]]:
