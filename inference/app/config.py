@@ -16,7 +16,7 @@ class ModelType(str, Enum):
 class GPUConfig(BaseModel):
     # Models on one GPU take turns, a batch at a time
     batch_size: int = 32
-    max_latency: float = 0.1  # Seconds a batch waits to fill
+    batch_latency: float = 0.1  # Seconds a batch waits to fill
     dtype: Optional[str] = None
     attn_implementation: str = "sdpa"
     compile: bool = False
@@ -43,15 +43,22 @@ class OpenAIConfig(BaseModel):
     model: str = "gpt-4o"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-    max_retries: int = 3
     concurrency: int = 8  # Requests in flight
+
+class AgyConfig(BaseModel):
+    model: str = "gemini-3.8-flash-low"
+    command: str = "agy"
+    batch_size: int = 8  # Images per run: more saves tokens but shortens captions
+    batch_latency: float = 10  # Seconds a batch waits to fill; a run takes far longer
+    concurrency: int = 4  # Runs at once
 
 class LocalVLMConfig(LocalModelConfig):
     model: str = "Qwen/Qwen3-VL-2B-Instruct"
 
 class VLMConfig(BaseModel):
-    provider: Literal["openai", "local"] = "openai"
+    provider: Literal["openai", "local", "agy"] = "openai"
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
+    agy: AgyConfig = Field(default_factory=AgyConfig)
     local: LocalVLMConfig = Field(default_factory=LocalVLMConfig)
 
 class ModelConfig(BaseModel):

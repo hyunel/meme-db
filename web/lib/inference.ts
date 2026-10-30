@@ -11,6 +11,11 @@ export const isRange = (v: string | null): v is InferenceRange => !!v && v in ra
 
 export const kindLabel = (kind: string, t: Messages) => (t.inference.kinds as Record<string, string>)[kind] ?? kind
 export const roleLabel = (role: string, t: Messages) => (t.inference.roles as Record<string, string>)[role] ?? role
+// A limit of 1 goes unsaid, unless both are
+export const scheduleLabel = (r: TaskStats, t: Messages) =>
+  [r.batch_size > 1 && t.inference.batchLimit(r.batch_size), (r.concurrency > 1 || r.batch_size === 1) && t.inference.concurrencyLimit(r.concurrency)]
+    .filter(Boolean)
+    .join(' · ')
 
 export type Level = 'ok' | 'warn' | 'danger'
 export const pctLevel = (pct: number | null): Level => (pct === null ? 'ok' : pct >= 95 ? 'danger' : pct >= 80 ? 'warn' : 'ok')
@@ -47,8 +52,9 @@ export interface TaskPoint {
 
 export interface TaskStats {
   kind: string
-  schedule: 'batch' | 'concurrent'
-  limit: number
+  /** Requests per call of the model, and calls running at once */
+  batch_size: number
+  concurrency: number
   requests: number
   queue: number
   queue_growing: boolean

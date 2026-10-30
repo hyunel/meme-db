@@ -2,8 +2,13 @@ import asyncio
 import pytest
 import threading
 import time
+from io import BytesIO
+from PIL import Image
 from app.config import ModelType
-from app.schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
+from app.models.base import Busy
+from app.pb import inference_pb2
+from app.scheduler import Scheduler
+from app.resource import ResourceManager
 from app.service import InferenceService
 
 class Aborted(Exception):
@@ -48,11 +53,11 @@ async def test_scheduler_batching():
         processed_batches.append(items)
         return [f"processed_{i}" for i in items]
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func,
         batch_size=3,
-        max_latency=0.1
+        batch_latency=0.1
     )
     await scheduler.start()
 
@@ -80,11 +85,11 @@ async def test_scheduler_latency():
         processed_batches.append(items)
         return [f"processed_{i}" for i in items]
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func,
         batch_size=10,
-        max_latency=0.1
+        batch_latency=0.1
     )
     await scheduler.start()
 
@@ -115,11 +120,11 @@ async def test_scheduler_priority_local():
         return [f"processed_{i}" for i in items]
 
     # Batch size 1, so every item is its own batch
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func,
         batch_size=1,
-        max_latency=0.01
+        batch_latency=0.01
     )
     await scheduler.start()
 
@@ -162,8 +167,8 @@ async def test_global_priority():
         events.append(f"processed_{items[0]}")
         return items
 
-    s1 = BatchScheduler(rm, process_slow, 1, 0.01)
-    s2 = BatchScheduler(rm, process_fast, 1, 0.01)
+    s1 = Scheduler(rm, process_slow)
+    s2 = Scheduler(rm, process_fast)
 
     await s1.start()
     await s2.start()
@@ -197,11 +202,11 @@ async def test_scheduler_cancellation_lazy():
         processed_batches.append(items)
         return items
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func,
         batch_size=10,
-        max_latency=0.2
+        batch_latency=0.2
     )
     await scheduler.start()
 
@@ -239,11 +244,11 @@ async def test_scheduler_error_propagation():
     def process_func_error(items):
         raise ValueError("Simulated Error")
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func_error,
         batch_size=1,
-        max_latency=0.01
+        batch_latency=0.01
     )
     await scheduler.start()
 
@@ -268,11 +273,11 @@ async def test_scheduler_result_mismatch():
     def process_func_bad_count(items):
         return [f"processed_{i}" for i in items[:-1]]
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func_bad_count,
         batch_size=2,
-        max_latency=0.01
+        batch_latency=0.01
     )
     await scheduler.start()
 
@@ -299,11 +304,11 @@ async def test_scheduler_shutdown_handling():
     def process_func(items):
         return items
 
-    scheduler = BatchScheduler(
+    scheduler = Scheduler(
         resource_manager=rm,
         process_func=process_func,
         batch_size=10,
-        max_latency=10.0  # Tasks sit in the queue until stop
+        batch_latency=10.0  # Tasks sit in the queue until stop
     )
     await scheduler.start()
 
@@ -320,12 +325,9 @@ async def test_scheduler_shutdown_handling():
     await rm.stop()
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scheduler_class, options", [
-    (BatchScheduler, {"batch_size": 2, "max_latency": 0.01}),
-    (SimpleScheduler, {}),
-])
-async def test_scheduler_prepare(scheduler_class, options):
-    rm = ResourceManager()
+@pytest.mark.parametrize("batch_size, concurrency", [(2, 1), (1, 2)])  # A batch, or requests side by side
+async def test_scheduler_prepare(batch_size, concurrency):
+    rm = ResourceManager(concurrency=concurrency)
 
     def prepare(items):
         return {"items": [f"prepared_{item}" for item in items]}
@@ -333,7 +335,7 @@ async def test_scheduler_prepare(scheduler_class, options):
     def process(prepared):
         return [f"processed_{item}" for item in prepared["items"]]
 
-    scheduler: Scheduler[str, str] = scheduler_class(rm, process, prepare_func=prepare, **options)
+    scheduler: Scheduler[str, str] = Scheduler(rm, process, prepare_func=prepare, batch_size=batch_size, batch_latency=0.01)
     await rm.start()
     await scheduler.start()
     try:
@@ -345,32 +347,9 @@ async def test_scheduler_prepare(scheduler_class, options):
         await scheduler.stop()
         await rm.stop()
 
-@pytest.mark.asyncio
-async def test_simple_scheduler_basic():
-    rm = ResourceManager(concurrency=2)
-    await rm.start()
-
-    processed_items = []
-
-    def process_func(items):
-        processed_items.extend(items)
-        return [f"processed_{i}" for i in items]
-
-    scheduler = SimpleScheduler(
-        resource_manager=rm,
-        process_func=process_func,
-    )
-    await scheduler.start()
-
-    res = await scheduler.submit("item1")
-    assert res == "processed_item1"
-    assert processed_items == ["item1"]
-
-    await scheduler.stop()
-    await rm.stop()
 
 @pytest.mark.asyncio
-async def test_simple_scheduler_concurrency():
+async def test_scheduler_concurrency():
     CONCURRENCY_LIMIT = 2
     rm = ResourceManager(concurrency=CONCURRENCY_LIMIT)
     await rm.start()
@@ -391,10 +370,7 @@ async def test_simple_scheduler_concurrency():
             processed_count -= 1
         return [f"processed_{i}" for i in items]
 
-    scheduler = SimpleScheduler(
-        resource_manager=rm,
-        process_func=process_func,
-    )
+    scheduler = Scheduler(resource_manager=rm, process_func=process_func)
     await scheduler.start()
 
     tasks = [asyncio.create_task(scheduler.submit(f"item{i}")) for i in range(5)]
@@ -402,12 +378,65 @@ async def test_simple_scheduler_concurrency():
     await asyncio.gather(*tasks)
 
     assert max_concurrent == CONCURRENCY_LIMIT
+    assert scheduler.capacity == CONCURRENCY_LIMIT
 
     await scheduler.stop()
     await rm.stop()
 
 @pytest.mark.asyncio
-async def test_simple_scheduler_drops_abandoned():
+async def test_scheduler_concurrent_batches():
+    rm = ResourceManager(concurrency=2)
+    await rm.start()
+
+    started = []
+    release = threading.Event()
+
+    def process_func(items):
+        started.append(items)
+        release.wait()
+        return items
+
+    # A long latency window: batches start as soon as they fill, not when it ends
+    scheduler = Scheduler(rm, process_func, batch_size=2, batch_latency=10)
+    await scheduler.start()
+
+    tasks = [asyncio.create_task(scheduler.submit(i)) for i in range(6)]
+    await asyncio.sleep(0.1)
+    assert sorted(started) == [[0, 1], [2, 3]]  # As many batches run as the resource allows; the rest wait
+    assert scheduler.queued() == 2
+    assert scheduler.capacity == 4
+
+    release.set()
+    assert await asyncio.wait_for(asyncio.gather(*tasks), 1) == list(range(6))
+    assert started[2] == [4, 5]  # The backlog fills the next batch at once
+
+    await scheduler.stop()
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_scheduler_item_errors():
+    rm = ResourceManager()
+    await rm.start()
+
+    def process_func(items):
+        return [ValueError(f"bad {i}") if i == "bad" else i for i in items]
+
+    scheduler = Scheduler(rm, process_func, batch_size=3, batch_latency=0.05)
+    await scheduler.start()
+
+    results = await asyncio.gather(*(scheduler.submit(i) for i in ("a", "bad", "b")), return_exceptions=True)
+
+    # Only the item that failed fails
+    assert results[0] == "a" and results[2] == "b"
+    assert isinstance(results[1], ValueError)
+    assert (scheduler.metrics.window.requests, scheduler.metrics.window.errors) == (3, 1)
+    assert [message for _, message in scheduler.metrics.errors] == ["bad bad"]
+
+    await scheduler.stop()
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_scheduler_drops_abandoned():
     rm = ResourceManager(concurrency=1)
     await rm.start()
 
@@ -422,7 +451,8 @@ async def test_simple_scheduler_drops_abandoned():
         processed.extend(items)
         return items
 
-    scheduler = SimpleScheduler(resource_manager=rm, process_func=process_func)
+    scheduler = Scheduler(resource_manager=rm, process_func=process_func)
+    await scheduler.start()
 
     t1 = asyncio.create_task(scheduler.submit("item1"))
     await started.wait()
@@ -439,10 +469,11 @@ async def test_simple_scheduler_drops_abandoned():
     assert scheduler.metrics.running == 0
     assert scheduler.metrics.window.abandoned == 1
 
+    await scheduler.stop()
     await rm.stop()
 
 @pytest.mark.asyncio
-async def test_simple_scheduler_cancels_coroutine_run():
+async def test_scheduler_cancels_coroutine_run():
     rm = ResourceManager(concurrency=1)
     await rm.start()
 
@@ -457,7 +488,8 @@ async def test_simple_scheduler_cancels_coroutine_run():
                 raise
         return items
 
-    scheduler = SimpleScheduler(resource_manager=rm, process_func=process_func)
+    scheduler = Scheduler(resource_manager=rm, process_func=process_func)
+    await scheduler.start()
 
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(scheduler.submit("hang"), 0.05)  # Its caller leaves, as on a deadline
@@ -470,6 +502,43 @@ async def test_simple_scheduler_cancels_coroutine_run():
     assert scheduler.metrics.window.errors == 0
     assert scheduler.metrics.window.requests == 1
 
+    await scheduler.stop()
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_scheduler_cancels_batch_once_its_callers_leave():
+    rm = ResourceManager(concurrency=1)
+    await rm.start()
+
+    started, cancelled, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def process_func(items):  # As a remote model's call
+        if items != ["next"]:
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+        return items
+
+    scheduler = Scheduler(rm, process_func, batch_size=2, batch_latency=0.05)
+    await scheduler.start()
+
+    first = asyncio.create_task(scheduler.submit("first"))
+    second = asyncio.create_task(scheduler.submit("second"))
+    await started.wait()
+    first.cancel()  # The run goes on for the caller still there
+    await asyncio.sleep(0.01)
+    assert not cancelled.is_set()
+    second.cancel()  # Then nobody waits for it
+    await asyncio.wait_for(cancelled.wait(), 1)
+
+    assert await asyncio.wait_for(scheduler.submit("next"), 1) == "next"
+    m = scheduler.metrics
+    assert (m.running, m.window.abandoned, m.window.requests, m.window.errors) == (0, 2, 1, 0)
+
+    await scheduler.stop()
     await rm.stop()
 
 @pytest.mark.asyncio
@@ -483,8 +552,9 @@ async def test_service_shares_full_queue_between_callers():
         release.wait()
         return items
 
-    service = InferenceService([], None)
-    scheduler = service.schedulers[ModelType.TEXT_EMBEDDING] = SimpleScheduler(resource_manager=rm, process_func=process_func)
+    service = InferenceService([])
+    scheduler = service.schedulers[ModelType.TEXT_EMBEDDING] = Scheduler(resource_manager=rm, process_func=process_func)
+    await scheduler.start()
 
     async def call(peer, deadline=60):
         context = MockContext(deadline, peer=peer)
@@ -511,4 +581,29 @@ async def test_service_shares_full_queue_between_callers():
     assert scheduler.metrics.window.refused == 3
     assert not service.callers[ModelType.TEXT_EMBEDDING]
 
+    await scheduler.stop()
+    await rm.stop()
+
+@pytest.mark.asyncio
+async def test_service_answers_busy_vlm_as_exhausted():
+    rm = ResourceManager()
+    await rm.start()
+
+    async def caption(items):  # As agy while its quota is spent
+        return [Busy("quota resets later")] * len(items)
+
+    service = InferenceService([])
+    service.schedulers[ModelType.CLIP_IMAGE] = Scheduler(rm, lambda images: [[0.0]] * len(images))
+    service.schedulers[ModelType.VLM] = Scheduler(rm, caption)
+    for scheduler in service.schedulers.values():
+        await scheduler.start()
+
+    with BytesIO() as png:
+        Image.new('RGB', (4, 4)).save(png, format='PNG')
+        request = inference_pb2.AnalyzeImageRequest(image=inference_pb2.Image(data=png.getvalue(), file_format='png'), caption_prompt='Caption it')
+    with pytest.raises(Aborted, match="RESOURCE_EXHAUSTED"):
+        await service.AnalyzeImage(request, MockContext(60))
+
+    for scheduler in service.schedulers.values():
+        await scheduler.stop()
     await rm.stop()

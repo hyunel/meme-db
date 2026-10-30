@@ -13,10 +13,11 @@ class OpenAIVLM(VLMModel):
         from openai import AsyncOpenAI
 
         self.model_name = self.name = self.config.vlm.openai.model
+        self.concurrency = self.config.vlm.openai.concurrency
         self.client = AsyncOpenAI(
             api_key=self.config.vlm.openai.api_key,
             base_url=self.config.vlm.openai.base_url,
-            max_retries=self.config.vlm.openai.max_retries,
+            max_retries=0,
         )
 
     async def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str]:

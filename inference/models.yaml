@@ -61,3 +61,12 @@ vlm:
     api_key: "${VLM_API_KEY}"
     base_url: "${VLM_BASE_URL}"
     concurrency: 8  # Requests in flight; change it according to your API rate limits
+
+  # Option 3: the agy CLI, on its subscription's quota, captioning a batch of images per run; it must be installed and
+  # signed in where this service runs. Set the server's worker.concurrency to at least batch_size x concurrency.
+  # provider: "agy"
+  # agy:
+  #   model: "gemini-3.8-flash-low"
+  #   batch_size: 8       # Images per run: more saves tokens but shortens captions
+  #   batch_latency: 2   # Seconds a batch waits to fill
+  #   concurrency: 4      # Runs at once

@@ -17,10 +17,18 @@ def resolve_device(name: str) -> torch.device:
     return torch.device(device.type, torch.accelerator.current_device_index()) if device.type != 'cpu' and device.index is None else device
 
 
+# A model turning requests away for now, for their callers to retry later without counting an attempt
+class Busy(Exception):
+    pass
+
+
 class BaseModel(ABC):
     remote: bool = False  # Served by an API instead of run here
     name: str = ''  # The loaded model, for monitoring
     dims: Optional[int] = None  # Of the embeddings it makes, which the server stores
+    batch_size: int = 1  # Requests per call of run
+    batch_latency: float = 0.0  # Seconds a batch waits to fill
+    concurrency: int = 1  # Calls at once, for a remote model; a local model's follow its device
 
     def __init__(self, config: ModelConfig, settings: Optional[LocalModelConfig]):
         self.config = config
@@ -28,6 +36,8 @@ class BaseModel(ABC):
         # How it runs where it is, on a GPU or the CPU
         self.gpu = settings.gpu if self.device and self.device.type != 'cpu' else None
         self.cpu = settings.cpu if self.device and self.device.type == 'cpu' else None
+        if self.gpu:  # A GPU runs requests in batches
+            self.batch_size, self.batch_latency = self.gpu.batch_size, self.gpu.batch_latency
         self._load_model()
 
     def from_pretrained(self, model_class, model_id: str, **kwargs):

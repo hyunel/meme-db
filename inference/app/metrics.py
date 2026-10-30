@@ -67,9 +67,7 @@ def _merge(windows) -> Window:
 
 
 class TaskMetrics:
-    def __init__(self, schedule: str, limit: int):
-        self.schedule = schedule  # batch | concurrent
-        self.limit = limit  # Batch size or concurrency
+    def __init__(self):
         self.running = 0
         self.window = Window()
         self.errors: deque[tuple[float, str]] = deque(maxlen=RECENT_ERRORS)
@@ -77,24 +75,23 @@ class TaskMetrics:
     def start(self, n: int):
         self.running += n
 
-    def finish(self, waits: list[float], exec_seconds: float, error: Exception | None = None):
-        n = len(waits)
+    def finish(self, n: int, waits: list[float], exec_seconds: float, errors: list[Exception]):
+        # A run of n requests ends; waits are those of its callers still there, and errors what failed of theirs
         self.running -= n
+        if not waits:  # Its callers all left, counted as abandoned
+            return
 
         w = self.window
-        if isinstance(error, asyncio.CancelledError):  # Its caller left mid-run
-            w.abandoned += n
-            return
-        w.requests += n
+        w.requests += len(waits)
         w.batches[n] += 1
         w.queue_ms += sum(waits) * 1000
-        w.exec_ms += exec_seconds * 1000 * n
+        w.exec_ms += exec_seconds * 1000 * len(waits)
         for wait in waits:
             w.latency[_bucket((wait + exec_seconds) * 1000)] += 1
 
-        if error:
-            w.errors += n
-            self.errors.append((time.time(), str(error) or type(error).__name__))
+        w.errors += len(errors)
+        for message in dict.fromkeys(str(e) or type(e).__name__ for e in errors):  # A batch's failure once
+            self.errors.append((time.time(), message))
 
 
 @dataclass
@@ -223,22 +220,23 @@ class Monitor:
         seconds = len(samples) * SAMPLE_SECONDS
         recent = [s.tasks[kind].queued for s in samples[-5:]]
         batches = sum(w.batches.values())
+        batched = scheduler.batch_size > 1
 
         sizes = [1]
-        while sizes[-1] < m.limit:
-            sizes.append(min(sizes[-1] * 2, m.limit))
+        while sizes[-1] < scheduler.batch_size:
+            sizes.append(min(sizes[-1] * 2, scheduler.batch_size))
         dist = [{'size': str(hi) if lo == hi else f'{lo}–{hi}', 'count': sum(c for size, c in w.batches.items() if lo <= size <= hi)}
                 for lo, hi in zip([1] + [s + 1 for s in sizes[:-1]], sizes)]
 
         return {
             'kind': kind,
-            'schedule': m.schedule,
-            'limit': m.limit,
+            'batch_size': scheduler.batch_size,
+            'concurrency': scheduler.concurrency,
             'requests': w.requests,
             'queue': scheduler.queued(),
             'queue_growing': len(recent) == 5 and all(q > 0 for q in recent) and recent[-1] > recent[0],
             'running': m.running,
-            'avg_batch': sum(size * c for size, c in w.batches.items()) / batches if m.schedule == 'batch' and batches else None,
+            'avg_batch': sum(size * c for size, c in w.batches.items()) / batches if batched and batches else None,
             'throughput': w.requests / seconds if w.requests else None,
             'p50': _percentile(w.latency, 0.5),
             'p95': _percentile(w.latency, 0.95),
@@ -247,6 +245,6 @@ class Monitor:
             'error_rate': w.errors / w.requests * 100 if w.requests else None,
             'refused': w.refused,
             'abandoned': w.abandoned,
-            'batch_dist': dist if m.schedule == 'batch' else [],
+            'batch_dist': dist if batched else [],
             'recent_errors': [{'at': int(t * 1000), 'message': msg} for t, msg in reversed(m.errors) if t >= start],
         }

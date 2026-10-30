@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ChevronRight, TrendingUp } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DataList, sortRows, toneText, type Column, type SortState } from '../admin-ui'
-import { errLevel, fmtLatency, fmtRate, kindLabel, type InferenceSnapshot, type Level, type TaskStats } from '@/lib/inference'
+import { errLevel, fmtLatency, fmtRate, kindLabel, scheduleLabel, type InferenceSnapshot, type Level, type TaskStats } from '@/lib/inference'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/lib/i18n/client'
 
@@ -45,12 +45,12 @@ export function TaskTable({ data, onOpen }: { data?: InferenceSnapshot; onOpen: 
           className="flex w-full min-w-0 items-center gap-2 rounded text-left font-medium hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <span className="truncate">{kindLabel(r.kind, t)}</span>
-          <span className="shrink-0 text-xs font-normal text-muted-foreground md:hidden">{t.inference.schedules[r.schedule]}</span>
+          <span className="shrink-0 text-xs font-normal text-muted-foreground md:hidden">{scheduleLabel(r, t)}</span>
           <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground md:hidden" aria-hidden />
         </button>
       ),
     },
-    { key: 'sched', header: c.schedule, mobile: 'hidden', sortValue: (r) => r.schedule, cell: (r) => <span className="text-muted-foreground">{t.inference.schedules[r.schedule]}</span> },
+    { key: 'sched', header: c.schedule, mobile: 'hidden', sortValue: (r) => r.batch_size * r.concurrency, cell: (r) => <span className="text-muted-foreground">{scheduleLabel(r, t)}</span> },
     {
       key: 'queue',
       header: c.queue,
@@ -70,7 +70,7 @@ export function TaskTable({ data, onOpen }: { data?: InferenceSnapshot; onOpen: 
       mobile: 'hidden',
       sortValue: (r) => r.avg_batch,
       className: 'text-right tabular-nums',
-      cell: (r) => (r.schedule === 'batch' ? dash(r.avg_batch !== null, `${r.avg_batch?.toFixed(1)} / ${r.limit}`) : <span className="text-muted-foreground">{t.inference.concurrencyLimit(r.limit)}</span>),
+      cell: (r) => dash(r.batch_size > 1 && r.avg_batch !== null, `${r.avg_batch?.toFixed(1)} / ${r.batch_size}`),
     },
     { key: 'tp', header: t.inference.metrics.throughput, sortValue: (r) => r.throughput, className: 'text-right tabular-nums', cell: (r) => dash(has(r), fmtRate(r.throughput, t)) },
     { key: 'p50', header: 'P50', mobile: 'hidden', sortValue: (r) => r.p50, className: 'text-right tabular-nums', cell: (r) => dash(has(r), fmtLatency(r.p50)) },

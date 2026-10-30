@@ -23,7 +23,7 @@ inference:
   grpc_addr: "localhost:50051"
 
 worker:
-  concurrency: 8      # Tasks in flight; keep >= inference vlm concurrency/batch size so batches fill up
+  concurrency: 8      # Tasks in flight; keep >= the inference VLM's batch size x concurrency so batches fill up
   poll_interval: 5s   # Fallback wake-up for due retries and expired leases
 
 # Similarities compare embeddings of spellings under prompt.tag; retune them after changing that prompt, prompt.language or the embedding model.

@@ -7,11 +7,12 @@ import asyncio
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager
 from .manager import ModelManager
-from .models.base import BaseModel
-from .config import ModelType, ModelConfig
+from .models.base import BaseModel, Busy
+from .config import ModelType
 from .pb import inference_pb2, inference_pb2_grpc
 from .utils import load_image_from_bytes, draw_stitch
-from .schedulers import Scheduler, BatchScheduler, SimpleScheduler, ResourceManager
+from .scheduler import Scheduler
+from .resource import ResourceManager
 from .metrics import Monitor
 from .gpus import open_gpus
 
@@ -19,11 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
-    def __init__(self, model_manager: ModelManager, config: ModelConfig):
+    def __init__(self, model_manager: ModelManager):
         self.model_manager = model_manager
-        self.config = config
         self.schedulers: dict[ModelType, Scheduler] = {}
-        self.resources: dict[str, ResourceManager] = {}  # Each GPU, each model on the CPU, and the API
+        self.resources: dict[str, ResourceManager] = {}  # Each GPU, and each model on the CPU or an API
         self.callers: defaultdict[ModelType, Counter[str]] = defaultdict(Counter)  # In flight to each model
 
         if any(m.cpu for _, m in self.model_manager):
@@ -34,16 +34,7 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         for model_type, model in self.model_manager:
             resource = self._resource(model_type, model)
             for task_type, (prepare, func) in model.inference_methods.items():
-                if model.gpu:
-                    self.schedulers[task_type] = BatchScheduler(
-                        resource_manager=resource,
-                        prepare_func=prepare,
-                        process_func=func,
-                        batch_size=model.gpu.batch_size,
-                        max_latency=model.gpu.max_latency,
-                    )
-                else:
-                    self.schedulers[task_type] = SimpleScheduler(resource_manager=resource, process_func=func, prepare_func=prepare)
+                self.schedulers[task_type] = Scheduler(resource, func, prepare, model.batch_size, model.batch_latency)
 
         self.monitor = Monitor(
             self.schedulers,
@@ -52,10 +43,10 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
         )
 
     def _resource(self, model_type: ModelType, model: BaseModel) -> ResourceManager:
-        name = 'api' if model.remote else model_type.value if model.cpu else str(model.device)
+        name = str(model.device) if model.gpu else model_type.value
         if name not in self.resources:
             if model.remote:
-                self.resources[name] = ResourceManager(concurrency=self.config.vlm.openai.concurrency)
+                self.resources[name] = ResourceManager(concurrency=model.concurrency)
             elif model.cpu:
                 on_cpu = sum(1 for _, m in self.model_manager if m.cpu)
                 self.resources[name] = ResourceManager(concurrency=model.cpu.threads or max(1, psutil.cpu_count() // on_cpu))
@@ -90,13 +81,12 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
 
     @asynccontextmanager
     async def _admit(self, context: grpc.aio.ServicerContext, *kinds: ModelType):
-        # Two rounds (a batch, or as many as run at once) keep a model busy
+        # Two rounds keep a model busy: one running, one waiting
         caller = context.peer()
         if context.time_remaining() is not None:
             for kind in kinds:
                 scheduler, callers = self.schedulers[kind], self.callers[kind]
-                m = scheduler.metrics
-                if scheduler.queued() + m.running >= 2 * m.limit and callers[caller] * len(callers) >= callers.total():
+                if scheduler.queued() + scheduler.metrics.running >= 2 * scheduler.capacity and callers[caller] * len(callers) >= callers.total():
                     scheduler.metrics.window.refused += 1
                     await context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Busy: enough is queued")
         for kind in kinds:
@@ -167,7 +157,10 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
             submits = [self.schedulers[ModelType.CLIP_IMAGE].submit(frames[len(frames) // 2], priority=priority, context=context)]
             if request.caption_prompt:
                 submits.append(self.schedulers[ModelType.VLM].submit((draw_stitch(frames), request.caption_prompt), priority=priority, context=context))
-            clip_embedding, *caption = await asyncio.gather(*submits)
+            try:
+                clip_embedding, *caption = await asyncio.gather(*submits)
+            except Busy as e:
+                await context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, str(e))
 
         return inference_pb2.AnalyzeImageResponse(
             caption=caption[0] if caption else '',

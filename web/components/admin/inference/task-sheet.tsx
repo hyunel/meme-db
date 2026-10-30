@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { EmptyState } from '@/components/states'
 import { ChartCard, SYNC_ID, TimeTooltip, timeAxis } from './charts'
-import { fmtClockSec, fmtLatency, fmtRate, kindLabel, type InferenceSnapshot } from '@/lib/inference'
+import { fmtClockSec, fmtLatency, fmtRate, kindLabel, scheduleLabel, type InferenceSnapshot } from '@/lib/inference'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/lib/i18n/client'
 
@@ -61,7 +61,7 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
       <SheetHeader className="gap-1 border-b p-4 pt-[calc(1rem+env(safe-area-inset-top))] pr-12">
         <SheetTitle>{kindLabel(kind, t)}</SheetTitle>
         <SheetDescription>
-          {t.inference.schedules[stats.schedule]} · {stats.schedule === 'batch' ? s.batchLimit(stats.limit) : t.inference.concurrencyLimit(stats.limit)} · {s.requests(stats.requests)}
+          {scheduleLabel(stats, t)} · {s.requests(stats.requests)}
         </SheetDescription>
       </SheetHeader>
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
@@ -114,7 +114,7 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
               </ChartContainer>
             </ChartCard>
 
-            <div className={cn('grid gap-4', stats.schedule === 'batch' && 'sm:grid-cols-2')}>
+            <div className={cn('grid gap-4', stats.batch_size > 1 && 'sm:grid-cols-2')}>
               <ChartCard title={s.queueRefusals} description={s.queueRefusalsHint}>
                 <ChartContainer config={queueConfig} className={chartCls}>
                   <ComposedChart data={series} syncId={SYNC_ID} syncMethod="value" margin={{ left: 0, right: 0, top: 4 }}>
@@ -131,7 +131,7 @@ function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
                 </ChartContainer>
               </ChartCard>
 
-              {stats.schedule === 'batch' && (
+              {stats.batch_size > 1 && (
                 <ChartCard title={s.batchDist} description={s.batchDistHint}>
                   <ChartContainer config={batchConfig} className={chartCls}>
                     <BarChart data={stats.batch_dist} margin={{ left: 0, right: 8, top: 4 }}>

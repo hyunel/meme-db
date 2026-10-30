@@ -33,7 +33,7 @@ async def serve() -> None:
         sys.exit(1)
 
     server = grpc.aio.server()
-    service = InferenceService(model_manager, config)
+    service = InferenceService(model_manager)
     inference_pb2_grpc.add_InferenceServiceServicer_to_server(
         service, server
     )
