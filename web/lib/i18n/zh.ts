@@ -249,11 +249,6 @@ export const zh = {
     deviceName: (name: string) => `（${name}）`,
     models: '已加载模型',
     modelMetrics: {
-      title: '模型指标',
-      updated: (at: string) => `采集于 ${at}`,
-      stale: '数据已过期',
-      noData: '尚无采集数据',
-      collectionFailed: '指标采集失败，已有数据为上次成功采集的结果。',
       resetsAt: '重置时间',
       labels: {
         quota_remaining: '剩余额度',

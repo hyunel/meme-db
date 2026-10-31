@@ -20,17 +20,17 @@ import { useLocale, useMessages } from '@/lib/i18n/client'
 
 const chartCls = 'aspect-auto h-44 w-full sm:h-52'
 
-export function TaskSheet({ data, kind, now, onClose }: { data?: InferenceSnapshot; kind: string | null; now: number; onClose: () => void }) {
+export function TaskSheet({ data, kind, onClose }: { data?: InferenceSnapshot; kind: string | null; onClose: () => void }) {
   return (
     <Sheet open={Boolean(kind)} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="gap-0 p-0 data-[side=right]:h-dvh data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
-        {kind && data?.tasks.some((task) => task.kind === kind) && <Body data={data} kind={kind} now={now} />}
+        {kind && data?.tasks.some((task) => task.kind === kind) && <Body data={data} kind={kind} />}
       </SheetContent>
     </Sheet>
   )
 }
 
-function Body({ data, kind, now }: { data: InferenceSnapshot; kind: string; now: number }) {
+function Body({ data, kind }: { data: InferenceSnapshot; kind: string }) {
   const [split, setSplit] = useState(false)
   const stats = data.tasks.find((task) => task.kind === kind)!
   const series = data.task_series[kind]
@@ -166,7 +166,7 @@ function Body({ data, kind, now }: { data: InferenceSnapshot; kind: string; now:
           </>
         )}
 
-        <ModelMetrics model={data.models.find((model) => model.tasks?.includes(kind))} now={now} />
+        <ModelMetrics model={data.models.find((model) => model.tasks?.includes(kind))} />
 
         <section aria-labelledby="recent-errors" className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
@@ -199,46 +199,34 @@ function Body({ data, kind, now }: { data: InferenceSnapshot; kind: string; now:
   )
 }
 
-function ModelMetrics({ model, now }: { model?: InferenceModel; now: number }) {
+function ModelMetrics({ model }: { model?: InferenceModel }) {
   const t = useMessages()
   const s = t.inference.modelMetrics
   const metrics = model?.metrics
   if (!model || !metrics) return null
-  const stale = metrics.expires_at === null || metrics.expires_at <= now
   const groups = new Map<string, ModelMetric[]>()
-  for (const item of metrics.items) {
+  for (const item of metrics) {
     const key = item.group ?? ''
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(item)
   }
   return (
-    <ChartCard
-      title={s.title}
-      description={metrics.updated_at !== null ? s.updated(formatDateTime(metrics.updated_at)) : s.noData}
-      actions={stale && metrics.updated_at !== null && <span className="text-xs text-warning-strong">{s.stale}</span>}
-    >
-      {metrics.error && (
-        <p role="status" className="break-words rounded-md bg-warning/10 p-2.5 text-xs text-warning-strong">
-          {s.collectionFailed} <span className="font-mono">{metrics.error}</span>
-        </p>
-      )}
-      <div className={cn('grid gap-2', groups.size > 1 && 'sm:grid-cols-2', stale && 'opacity-60')}>
-        {[...groups].map(([group, items]) => (
-          <div key={group} className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/30 p-2.5">
-            {group && <h4 className="break-words text-xs font-medium text-muted-foreground">{group}</h4>}
-            <div className="flex flex-col gap-2">
-              {items.map((metric) => {
-                const level = stale || metrics.error ? 'ok' : metric.level ?? 'ok'
-                const label = (s.labels as Record<string, string>)[metric.label_key] ?? metric.label_key
-                return metric.type === 'quota'
-                  ? <QuotaMetric key={metric.id} metric={metric} label={label} level={level} />
-                  : <StatMetric key={metric.id} metric={metric} label={label} level={level} />
-              })}
-            </div>
+    <div className={cn('grid gap-2', groups.size > 1 && 'sm:grid-cols-2')}>
+      {[...groups].map(([group, items]) => (
+        <div key={group} className="flex min-w-0 flex-col gap-2 rounded-lg border bg-muted/30 p-2.5">
+          {group && <h4 className="break-words text-xs font-medium text-muted-foreground">{group}</h4>}
+          <div className="flex flex-col gap-2">
+            {items.map((metric) => {
+              const level = metric.level ?? 'ok'
+              const label = (s.labels as Record<string, string>)[metric.label_key] ?? metric.label_key
+              return metric.type === 'quota'
+                ? <QuotaMetric key={metric.id} metric={metric} label={label} level={level} />
+                : <StatMetric key={metric.id} metric={metric} label={label} level={level} />
+            })}
           </div>
-        ))}
-      </div>
-    </ChartCard>
+        </div>
+      ))}
+    </div>
   )
 }
 

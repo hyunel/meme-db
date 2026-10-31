@@ -15,6 +15,8 @@ from .base import VLMModel
 
 logger = logging.getLogger(__name__)
 
+QUOTA_REFRESH_SECONDS = 60
+
 # The agent captioning by a prompt: it can only view files, and captions a run's images in one reply
 AGENT_SPEC = """\
 ---
@@ -60,6 +62,8 @@ class AgyVLM(VLMModel):
         self.workspace = tempfile.TemporaryDirectory(prefix='memedb-agy-')  # Outside any folder whose AGENTS.md agy would load
         self.paused_until = 0.0  # While a quota the model draws on is spent
         self.quota_task: asyncio.Task[list[QuotaGroup]] | None = None
+        self.quota_queried_at = 0.0
+        self.quota: list[QuotaGroup] | None = None
 
     async def generate_caption(self, items: List[tuple[Image.Image, str]]) -> List[str | Exception]:
         results: List[str | None] = [None] * len(items)
@@ -134,10 +138,13 @@ class AgyVLM(VLMModel):
             return captions, None
         return captions, result.get('error') or next(reversed(notes), f"agy exited with {proc.returncode}")
 
-    async def metrics(self) -> list[ModelMetric]:
-        groups = await self._usage()
+    def metrics(self) -> list[ModelMetric] | None:
+        if time.time() - self.quota_queried_at >= QUOTA_REFRESH_SECONDS:
+            self._query_quota()
+        if self.quota is None:
+            return None
         items: list[ModelMetric] = []
-        for group in groups:
+        for group in self.quota:
             for bucket in group.buckets:
                 name = f'{group.name} · {bucket.window or bucket.name or bucket.id}'
                 key = f'{group.name}/{bucket.id}'
@@ -148,13 +155,21 @@ class AgyVLM(VLMModel):
                     level='danger' if bucket.remaining_fraction < 0.01 else 'ok'))
         return items
 
-    async def _usage(self) -> list[QuotaGroup]:
+    def _query_quota(self) -> asyncio.Task[list[QuotaGroup]]:
         task = self.quota_task
         if task is None or task.done():
             task = self.quota_task = asyncio.create_task(self._query_usage())
-            # Retrieve failures even when all callers have stopped waiting.
-            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        return await asyncio.shield(task)
+            self.quota_queried_at = time.time()
+            task.add_done_callback(self._keep_quota)
+        return task
+
+    def _keep_quota(self, task: asyncio.Task[list[QuotaGroup]]) -> None:
+        if not task.cancelled():
+            error = task.exception()
+            if error:
+                logger.warning("Failed to read agy's quota: %r", error)
+            else:
+                self.quota = task.result()
 
     async def _query_usage(self) -> list[QuotaGroup]:
         proc = await asyncio.create_subprocess_exec(self.command, '-p=/usage', '--output-format', 'json', cwd=self.workspace.name,
@@ -171,9 +186,8 @@ class AgyVLM(VLMModel):
 
     async def _out_of_quota(self) -> bool:
         try:
-            groups = await self._usage()
-        except Exception as error:
-            logger.warning("Failed to read agy's quota: %r", error)
+            groups = await asyncio.shield(self._query_quota())
+        except Exception:
             return False
         family = self.model_name.split('-')[0]
         buckets = next((g.buckets for g in groups if family in g.name.lower().split()), [])

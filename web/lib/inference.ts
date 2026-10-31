@@ -91,12 +91,7 @@ export interface InferenceModel {
   device: string
   dims: number | null
   tasks?: string[]
-  metrics?: {
-    updated_at: number | null
-    expires_at: number | null
-    error: string | null
-    items: ModelMetric[]
-  } | null
+  metrics?: ModelMetric[] | null
 }
 
 export interface InferenceSnapshot {

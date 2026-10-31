@@ -61,7 +61,7 @@ class OpenAIVLM(VLMModel):
 
         return captions
 
-    async def metrics(self) -> list[ModelMetric]:
+    def metrics(self) -> list[ModelMetric]:
         return [
             NumberMetric(id='input_tokens_total', label_key='input_tokens_total', type='number', value=self.input_tokens, unit='tokens'),
             NumberMetric(id='output_tokens_total', label_key='output_tokens_total', type='number', value=self.output_tokens, unit='tokens'),

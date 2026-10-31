@@ -250,11 +250,6 @@ export const en: Messages = {
     deviceName: (name) => ` (${name})`,
     models: 'Loaded models',
     modelMetrics: {
-      title: 'Model metrics',
-      updated: (at) => `Collected at ${at}`,
-      stale: 'Data is stale',
-      noData: 'No readings yet',
-      collectionFailed: 'Metric collection failed. Any readings shown are from the last successful collection.',
       resetsAt: 'Resets at',
       labels: {
         quota_remaining: 'Quota remaining',

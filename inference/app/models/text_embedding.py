@@ -30,7 +30,7 @@ class TextEmbeddingModel(BaseModel):
         self.token_counts = (count + len(items), tokens + int(mask.sum().item()), slots + mask.numel())
         return inputs
 
-    async def metrics(self) -> list[ModelMetric]:
+    def metrics(self) -> list[ModelMetric]:
         count, tokens, slots = self.token_counts
         return [
             NumberMetric(id='avg_input_tokens', label_key='avg_input_tokens', type='number', value=tokens / count if count else None, unit='tokens'),

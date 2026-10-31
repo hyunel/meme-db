@@ -81,7 +81,7 @@ export function InferenceView() {
         <TaskTable data={data} onOpen={(k) => setParams({ task: k })} />
       </div>
 
-      <TaskSheet data={data} kind={kind} now={now} onClose={() => setParams({ task: null })} />
+      <TaskSheet data={data} kind={kind} onClose={() => setParams({ task: null })} />
     </>
   )
 }

@@ -76,7 +76,7 @@ class BaseModel(ABC):
     def _load_model(self) -> None:
         pass
 
-    async def metrics(self) -> list[ModelMetric] | None:
+    def metrics(self) -> list[ModelMetric] | None:
         return None
 
     @property
