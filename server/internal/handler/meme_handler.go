@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/inference"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
@@ -106,7 +107,8 @@ func readSearchImage(fileHeader *multipart.FileHeader) (*inference.ImageInput, e
 
 type ListMemesRequest struct {
 	Tag    string `query:"tag" validate:"max=100"`
-	Cursor string `query:"cursor" validate:"max=64"`
+	Period string `query:"period" validate:"omitempty,oneof=day week month"`
+	Cursor string `query:"cursor" validate:"omitempty,uuid"`
 	Limit  int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
@@ -116,7 +118,7 @@ func (h *MemeHandler) List(c echo.Context) error {
 		return err
 	}
 
-	feed, err := h.memeService.Popular(c.Request().Context(), rbac.GetIdentity(c), req.Tag, req.Cursor, limitOr(req.Limit, 40))
+	feed, err := h.memeService.Popular(c.Request().Context(), rbac.GetIdentity(c), req.Tag, model.Period(req.Period).OrWeek(), req.Cursor, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}
@@ -237,7 +239,8 @@ func (h *MemeHandler) RemoveTag(c echo.Context) error {
 }
 
 type HotTagsRequest struct {
-	Limit int `query:"limit" validate:"omitempty,min=1,max=50"`
+	Period string `query:"period" validate:"omitempty,oneof=day week month"`
+	Limit  int    `query:"limit" validate:"omitempty,min=1,max=50"`
 }
 
 func (h *MemeHandler) HotTags(c echo.Context) error {
@@ -246,7 +249,7 @@ func (h *MemeHandler) HotTags(c echo.Context) error {
 		return err
 	}
 
-	tags, err := h.tagService.Hot(c.Request().Context(), limitOr(req.Limit, 10))
+	tags, err := h.tagService.Hot(c.Request().Context(), model.Period(req.Period).OrWeek(), limitOr(req.Limit, 10))
 	if err != nil {
 		return err
 	}

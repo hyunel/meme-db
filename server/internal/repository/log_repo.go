@@ -37,9 +37,8 @@ func (r *LogRepository) Insert(ctx context.Context, entries []*model.LogEntry) e
 	return err
 }
 
-func (r *LogRepository) DeleteBefore(ctx context.Context, t time.Time) (int64, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM ops.logs WHERE time < $1`, t)
-	return tag.RowsAffected(), err
+func (r *LogRepository) DropChunksBefore(ctx context.Context, t time.Time) (int, error) {
+	return count(ctx, r.db, `SELECT count(*) FROM drop_chunks('ops.logs', older_than => $1::timestamptz)`, t)
 }
 
 type LogFilter struct {

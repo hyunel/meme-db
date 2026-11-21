@@ -15,9 +15,9 @@ type TagRepository struct {
 	db db.DBTX
 }
 
-// vlmUses holds for a tag t the VLM has given a meme.
-const vlmUses = `EXISTS (
-	SELECT 1 FROM library.labels l JOIN library.asset_tags at ON at.label_id = l.id WHERE l.tag_id = t.id AND at.user_id IS NULL)`
+// sourceUses holds for a tag t a source has given a meme.
+const sourceUses = `EXISTS (
+	SELECT 1 FROM library.labels l JOIN library.asset_tags at ON at.label_id = l.id WHERE l.tag_id = t.id AND at.source IS NOT NULL)`
 
 type TagMatch struct {
 	LabelID  string `db:"label_id"` // Of this very spelling; empty for a new one
@@ -55,9 +55,9 @@ func (r *TagRepository) Unembedded(ctx context.Context, assetID string) ([]strin
 	query := `
 		SELECT DISTINCT t.name FROM library.asset_tags at
 		JOIN library.labels l ON l.id = at.label_id JOIN library.tags t ON t.id = l.tag_id
-		WHERE at.asset_id = $1::uuid AND at.user_id IS NULL AND t.embedding IS NULL
+		WHERE at.asset_id = $1::uuid AND at.source = $2 AND t.embedding IS NULL
 	`
-	return collectScalars[string](r.db.Query(ctx, query, assetID))
+	return collectScalars[string](r.db.Query(ctx, query, assetID, model.SourceVLM))
 }
 
 // SetEmbeddings gives the tags of names the vectors.
@@ -91,15 +91,31 @@ func (r *TagRepository) SetLabel(ctx context.Context, name, tagID string) (strin
 	return id, err
 }
 
-func (r *TagRepository) SetSystemLabels(ctx context.Context, assetID string, labelIDs []string) error {
-	if _, err := r.db.Exec(ctx, `DELETE FROM library.asset_tags WHERE asset_id = $1::uuid AND user_id IS NULL`, assetID); err != nil {
-		return err
+// SetSourceLabels replaces the source's tags of each meme still stored with the labels given it. The links it keeps are
+// left as they are, so the delete and the insert never meet.
+func (r *TagRepository) SetSourceLabels(ctx context.Context, source string, labels map[string][]string) error {
+	ids := make([]string, 0, len(labels))
+	var assets, links []string
+	for id, ls := range labels {
+		ids = append(ids, id)
+		for _, l := range ls {
+			assets, links = append(assets, id), append(links, l)
+		}
 	}
 	query := `
-		INSERT INTO library.asset_tags (asset_id, label_id) SELECT $1::uuid, unnest($2::uuid[])
+		WITH memes AS (
+			SELECT id FROM core.assets WHERE id = ANY($2::uuid[])
+		), given AS (
+			SELECT g.asset_id, g.label_id FROM unnest($3::uuid[], $4::uuid[]) AS g(asset_id, label_id) JOIN memes m ON m.id = g.asset_id
+		), removed AS (
+			DELETE FROM library.asset_tags at USING memes m
+			WHERE at.source = $1 AND at.asset_id = m.id
+				AND NOT EXISTS (SELECT 1 FROM given g WHERE g.asset_id = at.asset_id AND g.label_id = at.label_id)
+		)
+		INSERT INTO library.asset_tags (asset_id, label_id, source) SELECT asset_id, label_id, $1 FROM given
 		ON CONFLICT DO NOTHING
 	`
-	_, err := r.db.Exec(ctx, query, assetID, labelIDs)
+	_, err := r.db.Exec(ctx, query, source, ids, assets, links)
 	return err
 }
 
@@ -125,13 +141,15 @@ func (r *TagRepository) RemoveUserTag(ctx context.Context, assetID, tagID, userI
 	return err
 }
 
-// Hot lists the tags on the most public memes, as last counted.
-func (r *TagRepository) Hot(ctx context.Context, minUsage, limit int) ([]string, error) {
-	query := `
+func (r *TagRepository) Hot(ctx context.Context, minUsage int, period model.Period, limit int) ([]string, error) {
+	if period.Window() == 0 {
+		return nil, fmt.Errorf("unknown popularity period %q", period)
+	}
+	query := fmt.Sprintf(`
 		SELECT t.name FROM library.tag_usage u JOIN library.tags t ON t.id = u.tag_id
 		WHERE NOT t.hidden AND u.public_usage >= $1
-		ORDER BY u.public_usage DESC, t.name LIMIT $2
-	`
+		ORDER BY u.%s DESC, u.public_usage DESC, t.name LIMIT $2
+	`, string(period))
 	return collectScalars[string](r.db.Query(ctx, query, minUsage, limit))
 }
 
@@ -142,7 +160,7 @@ func (r *TagRepository) RefreshUsage(ctx context.Context) error {
 
 func (r *TagRepository) List(ctx context.Context, query, sort string, page Page, commonShare float64) ([]*model.TagUsage, int, error) {
 	var w filter
-	w.where(vlmUses)
+	w.where(sourceUses)
 	if query != "" {
 		w.where("EXISTS (SELECT 1 FROM library.labels l WHERE l.tag_id = t.id AND l.name ILIKE " + w.arg("%"+query+"%") + ")")
 	}
@@ -172,7 +190,7 @@ func (r *TagRepository) usages(ctx context.Context, w filter, order string, comm
 			SELECT t.id, t.name, t.hidden, t.created_at,
 				ARRAY(SELECT l.name FROM library.labels l WHERE l.tag_id = t.id AND l.name <> t.name ORDER BY l.name) AS aliases,
 				(SELECT count(DISTINCT at.asset_id) FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
-				 WHERE l.tag_id = t.id AND at.user_id IS NULL) AS usage
+				 WHERE l.tag_id = t.id AND at.source IS NOT NULL) AS usage
 			FROM library.tags t %s
 		) u ORDER BY %s
 	`, w.arg(commonShare), w.clause(), order)
@@ -269,11 +287,11 @@ func (r *TagRepository) Merge(ctx context.Context, sourceIDs []string, targetID 
 	return err
 }
 
-// Delete takes the tags off the VLM's memes; users keep theirs.
+// Delete takes the tags off the memes sources gave them; users keep theirs.
 func (r *TagRepository) Delete(ctx context.Context, ids []string) error {
 	query := `
 		DELETE FROM library.asset_tags at USING library.labels l
-		WHERE l.id = at.label_id AND l.tag_id = ANY($1::uuid[]) AND at.user_id IS NULL
+		WHERE l.id = at.label_id AND l.tag_id = ANY($1::uuid[]) AND at.source IS NOT NULL
 	`
 	if _, err := r.db.Exec(ctx, query, ids); err != nil {
 		return err

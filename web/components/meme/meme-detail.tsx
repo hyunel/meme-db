@@ -17,6 +17,7 @@ import { ShareButton } from './share-dialog'
 import { ProcessBadge } from '@/components/status-badges'
 import { useFeed } from '@/hooks/use-feed'
 import { api } from '@/lib/api'
+import { reportEvent } from '@/lib/events'
 import { isProcessing, kindOf, memeTitle } from '@/lib/media'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { useSession } from '@/lib/session'
@@ -129,12 +130,11 @@ export function MemeDetail({ meme: initial, entry, share }: { meme: Meme; entry?
   const mine = Boolean(entry && entry.owner.id === user?.id)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
-  // Counts one view per page load for the link's stats; refetches of the meme must not.
-  const viewed = useRef(false)
+  const viewed = useRef<string | null>(null)
   useEffect(() => {
-    if (!share || viewed.current) return
-    viewed.current = true
-    api(`/memes/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
+    if (viewed.current === id) return
+    viewed.current = id
+    reportEvent({ kind: 'view', meme_id: id, share })
   }, [id, share])
   const [tagPending, setTagPending] = useState(false)
   const t = useMessages()

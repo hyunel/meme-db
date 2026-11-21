@@ -27,6 +27,8 @@ type Repos struct {
 	Log       *LogRepository
 	Embedding *EmbeddingRepository
 	Backup    *BackupRepository
+	Source    *SourceRepository
+	Event     *EventRepository
 }
 
 func NewRepos(db db.DBTX) *Repos {
@@ -45,6 +47,8 @@ func NewRepos(db db.DBTX) *Repos {
 		Log:       &LogRepository{db: db},
 		Embedding: &EmbeddingRepository{db: db},
 		Backup:    &BackupRepository{db: db},
+		Source:    &SourceRepository{db: db},
+		Event:     &EventRepository{db: db},
 	}
 }
 

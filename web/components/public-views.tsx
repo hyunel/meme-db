@@ -17,13 +17,24 @@ import { FolderPickerDialog } from '@/components/library/folder-picker-dialog'
 import { useRequireLogin } from '@/components/app-providers'
 import { EmptyState } from '@/components/states'
 import { useFeed } from '@/hooks/use-feed'
+import { useEnumParam } from '@/hooks/use-enum-param'
 import { api, refresh } from '@/lib/api'
+import { reportEvent } from '@/lib/events'
 import { qs } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import type { Entry, Feed, Folder, FolderPage, Meme, Profile } from '@/lib/types'
-import { TabSwitch, useTabParam } from '@/components/tab-switch'
+import { TabSwitch } from '@/components/tab-switch'
 import { useMessages } from '@/lib/i18n/client'
+
+const periods = ['day', 'week', 'month'] as const
+const kinds = ['memes', 'folders'] as const
+type Period = (typeof periods)[number]
+
+function PeriodSwitch({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
+  const t = useMessages()
+  return <TabSwitch label={t.browse.period} value={value} onChange={onChange} tabs={periods.map((p) => [p, t.browse.periods[p]] as const)} />
+}
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.ReactNode; title: string; description?: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -39,8 +50,9 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow?: React.R
 }
 
 export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }) {
-  const memes = useFeed(['tag', tag], (cursor) => api<Feed<Meme>>(`/memes${qs({ tag, cursor })}`))
-  const { data: hot = initialHot } = useSWR<string[]>('/tags/hot?limit=12', { fallbackData: initialHot })
+  const [period, setPeriod] = useEnumParam('period', periods, 'week')
+  const memes = useFeed(['tag', tag, period], (cursor) => api<Feed<Meme>>(`/memes${qs({ tag, period, cursor })}`))
+  const { data: hot = [] } = useSWR<string[]>(`/tags/hot${qs({ limit: 12, period })}`, { fallbackData: period === 'week' ? initialHot : undefined })
   const others = hot.filter((name) => name !== tag)
   const t = useMessages()
   return (
@@ -48,6 +60,7 @@ export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }
       <PageHeader
         eyebrow={<span className="inline-flex items-center gap-1"><Hash className="size-3.5" aria-hidden />{t.meme.tags}</span>}
         title={`#${tag}`}
+        action={<PeriodSwitch value={period} onChange={setPeriod} />}
       />
       {others.length > 0 && (
         <nav aria-label={t.browse.otherTags} className="scroll-row -mx-4 px-4 sm:-mx-1 sm:px-1">
@@ -73,24 +86,26 @@ export function TagView({ tag, hot: initialHot }: { tag: string; hot: string[] }
 }
 
 export function DiscoverView() {
-  const [tab, setTab] = useTabParam(['memes', 'folders'] as const)
-  const memes = useFeed(['popular'], (cursor) => api<Feed<Meme>>(`/memes${qs({ cursor })}`))
-  const folders = useFeed(['public-folders'], (cursor) => api<Feed<Folder>>(`/folders${qs({ cursor })}`))
+  const [tab, setTab] = useEnumParam('tab', kinds, 'memes')
+  const [period, setPeriod] = useEnumParam('period', periods, 'week')
+  const memes = useFeed(tab === 'memes' ? ['popular', period] : null, (cursor) => api<Feed<Meme>>(`/memes${qs({ period, cursor })}`))
+  const folders = useFeed(tab === 'folders' ? ['public-folders', period] : null, (cursor) => api<Feed<Folder>>(`/folders${qs({ period, cursor })}`))
   const t = useMessages()
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title={t.titles.discover} description={t.browse.discoverDescription} />
-      <TabSwitch label={t.browse.kind} value={tab} onChange={setTab} tabs={[['memes', t.browse.popular], ['folders', t.browse.publicFolders]] as const} />
-      {/* Both tabs stay mounted, so switching shows the cards built before rather than building them again */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TabSwitch label={t.browse.kind} value={tab} onChange={setTab} tabs={[['memes', t.browse.popular], ['folders', t.browse.publicFolders]] as const} />
+        <PeriodSwitch value={period} onChange={setPeriod} />
+      </div>
       <div role="tabpanel">
-        <Activity mode={tab === 'memes' ? 'visible' : 'hidden'}>
+        {tab === 'memes' ? (
           <MemeFeed memes={memes.items} feed={memes} allowAdd empty={<EmptyState icon={ImageOff} title={t.browse.noMemes} />} />
-        </Activity>
-        <Activity mode={tab === 'folders' ? 'visible' : 'hidden'}>
+        ) : (
           <FeedList items={folders.items} feed={folders} skeleton={<FolderGridSkeleton />} empty={<EmptyState icon={FolderOpen} title={t.browse.noFolders} />}>
             {(list) => <FolderGrid folders={list} />}
           </FeedList>
-        </Activity>
+        )}
       </div>
     </div>
   )
@@ -103,7 +118,7 @@ export function UserProfileView({ profile: initial }: { profile: Profile }) {
   const { data: { user, folder_count, meme_count } = initial } = useSWR<Profile>(path, { fallbackData: initial })
   // Opens on the collections, or on the memes of a profile with only those
   const memesFirst = Boolean(!folder_count && meme_count)
-  const [tab, setTab] = useTabParam(memesFirst ? (['memes', 'folders'] as const) : (['folders', 'memes'] as const))
+  const [tab, setTab] = useEnumParam('tab', kinds, memesFirst ? 'memes' : 'folders')
   const folders = useFeed(['profile-folders', username], (cursor) => api<Feed<Folder>>(`${path}/folders${qs({ cursor })}`), { live: true })
   const memes = useFeed(['profile-memes', username], (cursor) => api<Feed<Meme>>(`${path}/memes${qs({ cursor })}`), { live: true })
   const t = useMessages()
@@ -183,12 +198,11 @@ export function PublicFolderView({ page: initial, share }: { page: FolderPage; s
   const id = initial.folder.id
   const { data: { folder, ancestors, folders } = initial } = useSWR<FolderPage>(`/folders/${id}${qs({ share })}`, { fallbackData: initial })
   const entries = useFeed(['folder-entries', id, share], (cursor) => api<Feed<Entry>>(`/folders/${id}/entries${qs({ share, cursor })}`), { live: true })
-  // Counts one view per page load for the link's stats, as a meme's page does.
-  const viewed = useRef(false)
+  const viewed = useRef<string | null>(null)
   useEffect(() => {
-    if (!share || viewed.current) return
-    viewed.current = true
-    api(`/folders/${id}/share/views`, { method: 'POST', json: { share } }).catch(() => {})
+    if (viewed.current === id) return
+    viewed.current = id
+    reportEvent({ kind: 'view', folder_id: id, share })
   }, [id, share])
 
   const own = folder.owner.id === user?.id

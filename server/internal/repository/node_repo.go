@@ -187,6 +187,7 @@ type folderRow struct {
 	ItemCount     int               `db:"item_count"`
 	Previews      []model.MemeThumb `db:"previews"`
 	FavoriteCount int               `db:"favorite_count"`
+	Stats         map[string]int64  `db:"stats"`
 	IsFavorite    bool              `db:"is_favorite"`
 	CreatedAt     time.Time         `db:"created_at"`
 }
@@ -211,9 +212,12 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 				) p
 			), '[]') AS previews,
 			(SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) AS favorite_count,
+			jsonb_build_object('use', COALESCE(s.uses, 0), 'view', COALESCE(s.views, 0),
+				'save', COALESCE(s.saves, 0)) AS stats,
 			EXISTS (SELECT 1 FROM library.favorites fv WHERE fv.node_id = f.id AND fv.user_id = $2::uuid) AS is_favorite
 		FROM library.nodes f
 		JOIN iam.users u ON u.id = f.owner_id
+		LEFT JOIN library.folder_stats s ON s.node_id = f.id
 		WHERE f.id = ANY($1::uuid[]) AND f.type = 'FOLDER'
 	`, visibilityOf("f"), assetURL)
 
@@ -232,6 +236,7 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 			ItemCount:     row.ItemCount,
 			Previews:      row.Previews,
 			FavoriteCount: row.FavoriteCount,
+			Stats:         row.Stats,
 			IsFavorite:    row.IsFavorite,
 			CreatedAt:     row.CreatedAt,
 		}
@@ -240,25 +245,19 @@ func (r *NodeRepository) Folders(ctx context.Context, viewerID string, ids []str
 }
 
 // MemeFolders lists the folders directly holding the asset that the viewer may open:
-// their own, then public ones of active users by favorites.
+// their own, then public ones of active users, most popular first.
 func (r *NodeRepository) MemeFolders(ctx context.Context, viewerID, assetID string, limit int) ([]string, error) {
 	query := `
 		SELECT f.id::text FROM library.nodes f
 		JOIN iam.users u ON u.id = f.owner_id
+		JOIN library.folder_stats s ON s.node_id = f.id
 		WHERE f.id IN (SELECT parent_id FROM library.nodes WHERE asset_id = $1::uuid AND type = 'FILE')
 		  AND (f.owner_id = $2::uuid OR (u.status = 'active'
 		    AND EXISTS (SELECT 1 FROM library.nodes p WHERE p.is_public AND p.path @> f.path)))
-		ORDER BY (f.owner_id = $2::uuid) IS TRUE DESC,
-			(SELECT count(*) FROM library.favorites fv WHERE fv.node_id = f.id) DESC, f.created_at DESC
+		ORDER BY (f.owner_id = $2::uuid) IS TRUE DESC, s.week DESC, f.created_at DESC
 		LIMIT $3
 	`
 	return collectScalars[string](r.db.Query(ctx, query, assetID, nullable(viewerID), limit))
-}
-
-// FolderRank places a folder in the list of public ones.
-type FolderRank struct {
-	Favorites int    `db:"favorites"`
-	ID        string `db:"id"`
 }
 
 // publicRootFolders filters f, a folder of u, to those of active users public at their topmost, of one owner if given.
@@ -272,18 +271,9 @@ func publicRootFolders(ownerID string) filter {
 	return w
 }
 
-// PublicRootFolders lists the public folders most favorited first, then newest, from the one after the given one if any.
-func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, after *FolderRank, limit int) ([]*FolderRank, error) {
+func (r *NodeRepository) PublicRootFolders(ctx context.Context, ownerID string, period model.Period, cursor string, limit int) ([]string, bool, error) {
 	w := publicRootFolders(ownerID)
-	if after != nil {
-		w.where(fmt.Sprintf("(fv.n, f.id) < (%s, %s::uuid)", w.arg(after.Favorites), w.arg(after.ID)))
-	}
-	query := fmt.Sprintf(`
-		SELECT f.id::text AS id, fv.n AS favorites FROM library.nodes f JOIN iam.users u ON u.id = f.owner_id
-		CROSS JOIN LATERAL (SELECT count(*)::int AS n FROM library.favorites WHERE node_id = f.id) fv
-		%s ORDER BY fv.n DESC, f.id DESC LIMIT %d
-	`, w.clause(), limit)
-	return collectAll[FolderRank](r.db.Query(ctx, query, w.args...))
+	return rankedIDs(ctx, r.db, "library.nodes f JOIN iam.users u ON u.id = f.owner_id JOIN library.folder_stats s ON s.node_id = f.id", "s.node_id", period, cursor, w, limit)
 }
 
 func (r *NodeRepository) CountPublicRootFolders(ctx context.Context, ownerID string) (int, error) {

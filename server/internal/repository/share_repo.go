@@ -76,15 +76,3 @@ func (r *ShareRepository) Folder(ctx context.Context, token, path string) (strin
 	err := r.db.QueryRow(ctx, query, token, path).Scan(&id)
 	return id, err
 }
-
-// Record counts a view, or a save when saved is set, of what a live link opens by someone other than its creator.
-func (r *ShareRepository) Record(ctx context.Context, token, targetID, viewerID string, saved bool) error {
-	set := `view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP`
-	if saved {
-		set = `save_count = save_count + 1`
-	}
-	query := `UPDATE library.share_links s SET ` + set + `
-		WHERE s.token = $1::uuid AND $2::uuid IN (s.asset_id, s.folder_id) AND s.owner_id IS DISTINCT FROM $3::uuid AND ` + live
-	_, err := r.db.Exec(ctx, query, token, targetID, nullable(viewerID))
-	return err
-}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hyunel/MemeDB/internal/db"
+	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -38,7 +39,13 @@ func (r *BackupRepository) Tables(ctx context.Context, schemas, skipped []string
 
 func (r *BackupRepository) HasRows(ctx context.Context, t *Table) (bool, error) {
 	var has bool
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s)`, t.ident())).Scan(&has)
+	query := "SELECT 1 FROM " + t.ident()
+	var args []any
+	if t.Name == "core.sources" {
+		query += " WHERE name <> $1"
+		args = append(args, model.SourceVLM)
+	}
+	err := r.db.QueryRow(ctx, "SELECT EXISTS ("+query+")", args...).Scan(&has)
 	return has, err
 }
 

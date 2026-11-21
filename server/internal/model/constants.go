@@ -15,6 +15,15 @@ const (
 	ProcessingStatusFailed     = "failed"
 )
 
+// SourceVLM is the source of the VLM's tags, the site's own.
+const SourceVLM = "vlm"
+
+const (
+	EventUse  = "use"
+	EventView = "view"
+	EventSave = "save"
+)
+
 const (
 	UserStatusActive   = "active"
 	UserStatusDisabled = "disabled"
@@ -41,13 +50,14 @@ const (
 )
 
 const (
-	JobAnalyzeMeme = "analyze_meme"
-	JobEmbedClip   = "embed_clip"   // Rebuilds a meme's CLIP embedding
-	JobEmbedText   = "embed_text"   // Rebuilds a meme's text embeddings from its VLM output
-	JobEmbedMeme   = "embed_meme"   // Gives a meme the embeddings it lacks, and its tags from the VLM theirs
-	JobRefreshTags = "refresh_tags" // Recounts the tags' usage and finds those suggested as duplicates
-	JobPurgeLogs   = "purge_logs"   // Deletes the stored logs older than its retention
-	JobPurgeTasks  = "purge_tasks"  // Deletes the finished tasks older than its retention
+	JobAnalyzeMeme  = "analyze_meme"
+	JobEmbedClip    = "embed_clip"    // Rebuilds a meme's CLIP embedding
+	JobEmbedText    = "embed_text"    // Rebuilds a meme's text embeddings from its VLM output
+	JobEmbedMeme    = "embed_meme"    // Gives a meme the embeddings it lacks, and its tags from the VLM theirs
+	JobRefreshTags  = "refresh_tags"  // Recounts the tags' usage and finds those suggested as duplicates
+	JobRefreshStats = "refresh_stats" // Refreshes event counts and popularity
+	JobPurgeLogs    = "purge_logs"    // Drops log chunks wholly older than its retention
+	JobPurgeTasks   = "purge_tasks"   // Deletes the finished tasks older than its retention
 )
 
 type JobPolicy struct {
@@ -57,11 +67,12 @@ type JobPolicy struct {
 
 // JobPolicies are stored on each task as it is enqueued.
 var JobPolicies = map[string]JobPolicy{
-	JobAnalyzeMeme: {Timeout: 5 * time.Minute, MaxAttempts: 3}, // The VLM may be a slow, flaky remote API
-	JobEmbedClip:   {Timeout: time.Minute, MaxAttempts: 3},
-	JobEmbedText:   {Timeout: time.Minute, MaxAttempts: 3},
-	JobEmbedMeme:   {Timeout: time.Minute, MaxAttempts: 3},
-	JobRefreshTags: {Timeout: 5 * time.Minute, MaxAttempts: 3},
-	JobPurgeLogs:   {Timeout: 5 * time.Minute, MaxAttempts: 3},
-	JobPurgeTasks:  {Timeout: 5 * time.Minute, MaxAttempts: 3},
+	JobAnalyzeMeme:  {Timeout: 5 * time.Minute, MaxAttempts: 3}, // The VLM may be a slow, flaky remote API
+	JobEmbedClip:    {Timeout: time.Minute, MaxAttempts: 3},
+	JobEmbedText:    {Timeout: time.Minute, MaxAttempts: 3},
+	JobEmbedMeme:    {Timeout: time.Minute, MaxAttempts: 3},
+	JobRefreshTags:  {Timeout: 5 * time.Minute, MaxAttempts: 3},
+	JobRefreshStats: {Timeout: 5 * time.Minute, MaxAttempts: 3},
+	JobPurgeLogs:    {Timeout: 5 * time.Minute, MaxAttempts: 3},
+	JobPurgeTasks:   {Timeout: 5 * time.Minute, MaxAttempts: 3},
 }

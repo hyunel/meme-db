@@ -49,11 +49,6 @@ func (s *ShareService) Delete(ctx context.Context, viewer *rbac.Identity, target
 	return s.repo.Share.Delete(ctx, viewer.UserID, targetID)
 }
 
-// View counts a page load of the meme or folder a private link opens; pages within a shared folder count for nothing.
-func (s *ShareService) View(ctx context.Context, viewer *rbac.Identity, targetID, share string) error {
-	return s.repo.Share.Record(ctx, share, targetID, viewer.UserID, false)
-}
-
 // List lists the viewer's private links, newest first.
 func (s *ShareService) List(ctx context.Context, viewer *rbac.Identity) ([]*model.SharedItem, error) {
 	links, err := s.repo.Share.List(ctx, viewer.UserID)

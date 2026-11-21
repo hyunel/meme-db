@@ -10,6 +10,7 @@ import (
 
 var (
 	usernameRegex = regexp.MustCompile(`^[a-z0-9_]+$`)
+	slugRegex     = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 )
 
 type CustomValidator struct {
@@ -29,6 +30,9 @@ func New() *CustomValidator {
 	})
 	_ = v.RegisterValidation("username", func(fl validator.FieldLevel) bool {
 		return usernameRegex.MatchString(fl.Field().String())
+	})
+	_ = v.RegisterValidation("slug", func(fl validator.FieldLevel) bool {
+		return slugRegex.MatchString(fl.Field().String())
 	})
 	return &CustomValidator{validator: v}
 }

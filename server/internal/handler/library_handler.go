@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hyunel/MemeDB/internal/model"
 	"github.com/hyunel/MemeDB/internal/pkg/apperror"
 	"github.com/hyunel/MemeDB/internal/pkg/rbac"
 	"github.com/hyunel/MemeDB/internal/service"
@@ -242,7 +243,8 @@ func (h *LibraryHandler) Copy(c echo.Context) error {
 
 type PublicFoldersRequest struct {
 	Username string `param:"username" validate:"max=50"` // Set on a profile's route
-	Cursor   string `query:"cursor" validate:"max=64"`
+	Period   string `query:"period" validate:"omitempty,oneof=day week month"`
+	Cursor   string `query:"cursor" validate:"omitempty,uuid"`
 	Limit    int    `query:"limit" validate:"omitempty,min=1,max=100"`
 }
 
@@ -252,7 +254,7 @@ func (h *LibraryHandler) PublicFolders(c echo.Context) error {
 		return err
 	}
 
-	feed, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), req.Username, req.Cursor, limitOr(req.Limit, 40))
+	feed, err := h.libraryService.PublicFolders(c.Request().Context(), rbac.GetIdentity(c), req.Username, model.Period(req.Period).OrWeek(), req.Cursor, limitOr(req.Limit, 40))
 	if err != nil {
 		return err
 	}

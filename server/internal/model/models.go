@@ -139,25 +139,44 @@ type TaskTypeCounts struct {
 }
 
 type Meme struct {
-	ID            string     `json:"id"`
-	URL           string     `json:"url"`
-	MimeType      string     `json:"mime_type"`
-	FileSize      int64      `json:"file_size"`
-	Width         int        `json:"width"`
-	Height        int        `json:"height"`
-	Status        string     `json:"status"`
-	FailReason    *string    `json:"fail_reason"`
-	OCRText       string     `json:"ocr_text"`
-	Title         string     `json:"title"`
-	Summary       string     `json:"summary"`
-	Tags          []MemeTag  `json:"tags"` // System tags and the viewer's own tags
-	IsPublic      bool       `json:"is_public"`
-	FavoriteCount int        `json:"favorite_count"`
-	LibraryCount  int        `json:"library_count"`
-	IsFavorite    bool       `json:"is_favorite"`
-	Entries       []EntryRef `json:"entries"` // The viewer's library entries of this meme, oldest first
-	CreatedAt     time.Time  `json:"created_at"`
-	AnalyzedAt    *time.Time `json:"analyzed_at"`
+	ID            string           `json:"id"`
+	URL           string           `json:"url"`
+	MimeType      string           `json:"mime_type"`
+	FileSize      int64            `json:"file_size"`
+	Width         int              `json:"width"`
+	Height        int              `json:"height"`
+	Status        string           `json:"status"`
+	FailReason    *string          `json:"fail_reason"`
+	OCRText       string           `json:"ocr_text"`
+	Title         string           `json:"title"`
+	Summary       string           `json:"summary"`
+	Tags          []MemeTag        `json:"tags"` // Its sources' tags and the viewer's own
+	IsPublic      bool             `json:"is_public"`
+	FavoriteCount int              `json:"favorite_count"`
+	LibraryCount  int              `json:"library_count"`
+	Stats         map[string]int64 `json:"stats"`
+	IsFavorite    bool             `json:"is_favorite"`
+	Entries       []EntryRef       `json:"entries"` // The viewer's library entries of this meme, oldest first
+	CreatedAt     time.Time        `json:"created_at"`
+	AnalyzedAt    *time.Time       `json:"analyzed_at"`
+}
+
+// Source supplies public tags and external uses; vlm is the site's own.
+type Source struct {
+	Name      string    `json:"name" db:"name"`
+	Tagged    int       `json:"tagged" db:"tagged"` // Memes it tags
+	Used      int       `json:"used" db:"used"`     // Memes and folders it reports uses of
+	Uses      int64     `json:"uses" db:"uses"`     // The uses it reports
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+type Event struct {
+	Kind     string
+	At       time.Time
+	Source   string
+	MemeID   string
+	FolderID string
+	Share    string
 }
 
 type ShareLink struct {
@@ -213,16 +232,17 @@ type PublicUser struct {
 }
 
 type Folder struct {
-	ID            string      `json:"id"`
-	ParentID      *string     `json:"parent_id"`
-	Name          string      `json:"name"`
-	Visibility    string      `json:"visibility"`
-	Owner         UserRef     `json:"owner"`
-	ItemCount     int         `json:"item_count"` // Files in the whole subtree
-	Previews      []MemeThumb `json:"previews"`   // First analyzed files in the subtree
-	FavoriteCount int         `json:"favorite_count"`
-	IsFavorite    bool        `json:"is_favorite"`
-	CreatedAt     time.Time   `json:"created_at"`
+	ID            string           `json:"id"`
+	ParentID      *string          `json:"parent_id"`
+	Name          string           `json:"name"`
+	Visibility    string           `json:"visibility"`
+	Owner         UserRef          `json:"owner"`
+	ItemCount     int              `json:"item_count"` // Files in the whole subtree
+	Previews      []MemeThumb      `json:"previews"`   // First analyzed files in the subtree
+	FavoriteCount int              `json:"favorite_count"`
+	Stats         map[string]int64 `json:"stats"`
+	IsFavorite    bool             `json:"is_favorite"`
+	CreatedAt     time.Time        `json:"created_at"`
 }
 
 type Entry struct {

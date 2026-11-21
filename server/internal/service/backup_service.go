@@ -240,11 +240,17 @@ func copyIn(ctx context.Context, r *repository.Repos, t *repository.Table, f *zi
 		return 0, invalidBackup()
 	}
 	defer rc.Close()
+	if t.Name == "core.sources" {
+		// Replace the migration's built-in source with its backed-up row.
+		if _, err := r.Source.Delete(ctx, model.SourceVLM); err != nil {
+			return 0, err
+		}
+	}
 	return r.Backup.CopyIn(ctx, t, rc)
 }
 
 // resume queues again the analyses under way when the backup was made, as the task queue isn't carried, and the
-// embeddings it leaves out; it counts the tags' usage.
+// embeddings it leaves out; it counts popularity and the tags' usage.
 func (s *BackupService) resume(ctx context.Context) error {
 	unfinished := []string{model.ProcessingStatusPending, model.ProcessingStatusProcessing}
 	var ids []string
@@ -256,6 +262,9 @@ func (s *BackupService) resume(ctx context.Context) error {
 		ids = append(ids, found...)
 	}
 	err := s.repo.Tx(ctx, func(r *repository.Repos) error {
+		if err := r.Stats.InitStats(ctx); err != nil {
+			return err
+		}
 		queued, err := r.Meme.ResetForAnalysis(ctx, ids, unfinished)
 		if err != nil {
 			return err
@@ -277,7 +286,7 @@ func (s *BackupService) resume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.repo.Tag.RefreshUsage(ctx)
+	return refreshStats(ctx, s.repo)
 }
 
 func readJSON(f *zip.File, v any) error {

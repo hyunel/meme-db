@@ -73,24 +73,6 @@ func (h *ShareHandler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-type ViewShareLinkRequest struct {
-	ID    string `param:"id" validate:"required,uuid"`
-	Share string `json:"share" validate:"required,uuid"`
-}
-
-// View counts a page load of what a private link opens; the page reports it once, unlike its refetches.
-func (h *ShareHandler) View(c echo.Context) error {
-	var req ViewShareLinkRequest
-	if err := BindAndValidate(c, &req); err != nil {
-		return err
-	}
-
-	if err := h.shareService.View(c.Request().Context(), rbac.GetIdentity(c), req.ID, req.Share); err != nil {
-		return err
-	}
-	return c.NoContent(http.StatusNoContent)
-}
-
 func (h *ShareHandler) List(c echo.Context) error {
 	links, err := h.shareService.List(c.Request().Context(), rbac.GetIdentity(c))
 	if err != nil {

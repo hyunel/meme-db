@@ -96,25 +96,15 @@ func (s *MemeService) Get(ctx context.Context, viewer *rbac.Identity, id, share 
 	return memes[0], nil
 }
 
-// Popular lists memes by popularity; the cursor is the popularity and id of the last meme before.
-func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag, cursor string, limit int) (*model.Feed[*model.Meme], error) {
-	var after *repository.Popularity
-	if cursor != "" {
-		n, id, err := rankCursor(cursor)
-		if err != nil {
-			return nil, err
-		}
-		after = &repository.Popularity{Score: n, AssetID: id}
-	}
-	rows, err := s.repo.Meme.Popular(ctx, viewer.UserID, viewer.IsAdmin(), tag, after, limit+1)
+func (s *MemeService) Popular(ctx context.Context, viewer *rbac.Identity, tag string, period model.Period, cursor string, limit int) (*model.Feed[*model.Meme], error) {
+	ids, valid, err := s.repo.Meme.Popular(ctx, viewer.UserID, viewer.IsAdmin(), tag, period, cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	rows, next := nextPage(rows, limit, func(p *repository.Popularity) string { return fmt.Sprintf("%d_%s", p.Score, p.AssetID) })
-	ids := make([]string, len(rows))
-	for i, p := range rows {
-		ids[i] = p.AssetID
+	if !valid {
+		return nil, apperror.BadRequest("invalid_cursor", "invalid cursor")
 	}
+	ids, next := nextPage(ids, limit, func(id string) string { return id })
 	memes, err := s.Memes(ctx, viewer, ids)
 	if err != nil {
 		return nil, err

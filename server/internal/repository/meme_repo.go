@@ -102,9 +102,9 @@ func (r *MemeRepository) Unembedded(ctx context.Context, assetIDs []string) ([]s
 		WHERE asset_id = ANY($1::uuid[]) AND processing_status = 'success' AND (
 			clip_vector IS NULL OR metaphor_vector IS NULL OR semantic_vector IS NULL OR EXISTS (
 				SELECT 1 FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id JOIN library.tags t ON t.id = l.tag_id
-				WHERE at.asset_id = m.asset_id AND at.user_id IS NULL AND t.embedding IS NULL))
+				WHERE at.asset_id = m.asset_id AND at.source = $2 AND t.embedding IS NULL))
 	`
-	return collectScalars[string](r.db.Query(ctx, query, assetIDs))
+	return collectScalars[string](r.db.Query(ctx, query, assetIDs, model.SourceVLM))
 }
 
 // Analyzed keeps the memes whose analysis succeeded.
@@ -123,25 +123,26 @@ func (r *MemeRepository) ResetForAnalysis(ctx context.Context, assetIDs []string
 }
 
 type memeRow struct {
-	ID            string          `db:"id"`
-	URL           string          `db:"url"`
-	MimeType      string          `db:"mime_type"`
-	FileSize      int64           `db:"file_size"`
-	CreatedAt     time.Time       `db:"created_at"`
-	Width         int             `db:"width"`
-	Height        int             `db:"height"`
-	Status        string          `db:"status"`
-	FailReason    *string         `db:"fail_reason"`
-	OCRText       string          `db:"ocr_text"`
-	Title         string          `db:"title"`
-	Summary       string          `db:"summary"`
-	AnalyzedAt    *time.Time      `db:"analyzed_at"`
-	IsPublic      bool            `db:"is_public"`
-	FavoriteCount int             `db:"favorite_count"`
-	LibraryCount  int             `db:"library_count"`
-	IsFavorite    bool            `db:"is_favorite"`
+	ID            string           `db:"id"`
+	URL           string           `db:"url"`
+	MimeType      string           `db:"mime_type"`
+	FileSize      int64            `db:"file_size"`
+	CreatedAt     time.Time        `db:"created_at"`
+	Width         int              `db:"width"`
+	Height        int              `db:"height"`
+	Status        string           `db:"status"`
+	FailReason    *string          `db:"fail_reason"`
+	OCRText       string           `db:"ocr_text"`
+	Title         string           `db:"title"`
+	Summary       string           `db:"summary"`
+	AnalyzedAt    *time.Time       `db:"analyzed_at"`
+	IsPublic      bool             `db:"is_public"`
+	FavoriteCount int              `db:"favorite_count"`
+	LibraryCount  int              `db:"library_count"`
+	Stats         map[string]int64 `db:"stats"`
+	IsFavorite    bool             `db:"is_favorite"`
 	Entries       []model.EntryRef `db:"entries"`
-	Tags          []model.MemeTag `db:"tags"`
+	Tags          []model.MemeTag  `db:"tags"`
 }
 
 func (row *memeRow) toModel() *model.Meme {
@@ -161,6 +162,7 @@ func (row *memeRow) toModel() *model.Meme {
 		IsPublic:      row.IsPublic,
 		FavoriteCount: row.FavoriteCount,
 		LibraryCount:  row.LibraryCount,
+		Stats:         row.Stats,
 		IsFavorite:    row.IsFavorite,
 		Entries:       row.Entries,
 		CreatedAt:     row.CreatedAt,
@@ -181,6 +183,8 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			%[1]s AS is_public,
 			(SELECT count(*) FROM library.favorites f WHERE f.asset_id = a.id) AS favorite_count,
 			(SELECT count(*) FROM library.nodes n WHERE n.asset_id = a.id) AS library_count,
+			jsonb_build_object('use', COALESCE(s.uses, 0), 'view', COALESCE(s.views, 0),
+				'save', COALESCE(s.saves, 0)) AS stats,
 			EXISTS (SELECT 1 FROM library.favorites f WHERE f.asset_id = a.id AND f.user_id = $2::uuid) AS is_favorite,
 			COALESCE((SELECT jsonb_agg(jsonb_build_object('id', n.id, 'folder_id', n.parent_id) ORDER BY n.created_at)
 			 FROM library.nodes n WHERE n.asset_id = a.id AND n.owner_id = $2::uuid), '[]') AS entries,
@@ -188,9 +192,9 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 				SELECT jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'mine', x.mine, 'rare', COALESCE(u.usage, 0) < $4)
 					ORDER BY x.mine, u.usage DESC NULLS LAST, t.name)
 				FROM (
-					SELECT l.tag_id, bool_or(at.user_id IS NOT NULL) AS mine
+					SELECT l.tag_id, COALESCE(bool_or(at.user_id = $2::uuid), false) AS mine
 					FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
-					WHERE at.asset_id = a.id AND (at.user_id IS NULL OR at.user_id = $2::uuid)
+					WHERE at.asset_id = a.id AND (at.source IS NOT NULL OR at.user_id = $2::uuid)
 					GROUP BY l.tag_id
 				) x JOIN library.tags t ON t.id = x.tag_id
 				LEFT JOIN library.tag_usage u ON u.tag_id = x.tag_id -- None for a tag new since the last count
@@ -198,6 +202,7 @@ func (r *MemeRepository) Memes(ctx context.Context, viewerID string, admin bool,
 			), '[]') AS tags
 		FROM core.assets a
 		JOIN core.meme_info m ON m.asset_id = a.id
+		LEFT JOIN core.meme_stats s ON s.asset_id = a.id
 		WHERE a.id = ANY($1::uuid[]) AND %[2]s
 	`, memeInPublic, memeVisible("$2", "$3"), assetURL)
 
@@ -216,32 +221,18 @@ func (r *MemeRepository) CountAnalyzed(ctx context.Context) (int, error) {
 	return count(ctx, r.db, "SELECT count(*) FROM core.meme_info m WHERE "+memeAnalyzed)
 }
 
-// Popularity places a meme in the popular list.
-type Popularity struct {
-	Score   int    `db:"popularity"`
-	AssetID string `db:"asset_id"`
-}
-
-// Popular lists memes by popularity, from the one after the given one if any.
-func (r *MemeRepository) Popular(ctx context.Context, viewerID string, admin bool, tag string, after *Popularity, limit int) ([]*Popularity, error) {
+func (r *MemeRepository) Popular(ctx context.Context, viewerID string, admin bool, tag string, period model.Period, cursor string, limit int) ([]string, bool, error) {
 	var w filter
 	w.where(memeListed(&w, viewerID, admin))
 	if tag != "" {
 		// Any spelling of the tag finds it, so links with an old or alternate spelling keep working.
 		w.where(fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM library.asset_tags at JOIN library.labels l ON l.id = at.label_id
-			WHERE at.asset_id = m.asset_id AND (at.user_id IS NULL OR at.user_id = %s::uuid)
+			WHERE at.asset_id = m.asset_id AND (at.source IS NOT NULL OR at.user_id = %s::uuid)
 				AND l.tag_id IN (SELECT tag_id FROM library.labels WHERE library.label_key(name) = library.label_key(%s)))`,
 			w.arg(nullable(viewerID)), w.arg(tag)))
 	}
-	if after != nil {
-		w.where(fmt.Sprintf("(s.popularity, s.asset_id) < (%s, %s::uuid)", w.arg(after.Score), w.arg(after.AssetID)))
-	}
-	query := fmt.Sprintf(`
-		SELECT s.popularity, s.asset_id::text AS asset_id FROM core.meme_stats s JOIN core.meme_info m ON m.asset_id = s.asset_id
-		%s ORDER BY s.popularity DESC, s.asset_id DESC LIMIT %d
-	`, w.clause(), limit)
-	return collectAll[Popularity](r.db.Query(ctx, query, w.args...))
+	return rankedIDs(ctx, r.db, "core.meme_stats s JOIN core.meme_info m ON m.asset_id = s.asset_id", "s.asset_id", period, cursor, w, limit)
 }
 
 type MemeFilter struct {

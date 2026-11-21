@@ -119,6 +119,7 @@ export interface Meme extends MemeThumb {
   is_public: boolean
   favorite_count: number
   library_count: number
+  stats: Record<string, number>
   is_favorite: boolean
   /** The viewer's library entries of this meme, oldest first */
   entries: EntryRef[]
@@ -135,6 +136,7 @@ export interface Folder {
   item_count: number
   previews: MemeThumb[]
   favorite_count: number
+  stats: Record<string, number>
   is_favorite: boolean
   created_at: string
 }

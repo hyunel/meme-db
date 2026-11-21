@@ -243,7 +243,7 @@ func (s *IngestService) analyze(ctx context.Context, asset *model.Asset, data []
 		if err != nil {
 			return err
 		}
-		return r.Tag.SetSystemLabels(ctx, asset.ID, labels)
+		return r.Tag.SetSourceLabels(ctx, model.SourceVLM, map[string][]string{asset.ID: labels})
 	})
 }
 

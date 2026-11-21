@@ -8,13 +8,15 @@ import { ScopeBadge, scopeTones } from '@/components/api-tokens'
 import { useOrigin } from '@/hooks/use-origin'
 import type { Messages } from '@/lib/i18n'
 import { useMessages } from '@/lib/i18n/client'
+import { useSession } from '@/lib/session'
 import type { TokenScope } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type Access = 'public' | Exclude<TokenScope, 'admin'>
+type Access = 'public' | TokenScope
 
 // The dictionary sums up each endpoint by its method and path.
 const reference: { group: keyof Messages['apiDocs']['groups']; endpoints: [method: string, path: string, access: Access][] }[] = [
+  { group: 'events', endpoints: [['POST', '/events', 'public']] },
   {
     group: 'memes',
     endpoints: [
@@ -24,12 +26,10 @@ const reference: { group: keyof Messages['apiDocs']['groups']; endpoints: [metho
       ['GET', '/memes/{id}', 'public'],
       ['GET', '/memes/{id}/similar', 'public'],
       ['GET', '/memes/{id}/folders', 'public'],
-      ['POST', '/memes/{id}/share/views', 'public'],
       ['GET', '/tags/hot', 'public'],
       ['GET', '/folders', 'public'],
       ['GET', '/folders/{id}', 'public'],
       ['GET', '/folders/{id}/entries', 'public'],
-      ['POST', '/folders/{id}/share/views', 'public'],
       ['GET', '/entries/{id}', 'public'],
       ['GET', '/users/{username}', 'public'],
       ['GET', '/users/{username}/folders', 'public'],
@@ -81,6 +81,64 @@ const reference: { group: keyof Messages['apiDocs']['groups']; endpoints: [metho
       ['GET', '/auth/me/stats', 'read'],
     ],
   },
+  {
+    group: 'adminUsers',
+    endpoints: [
+      ['GET', '/admin/users', 'admin'],
+      ['POST', '/admin/users', 'admin'],
+      ['GET', '/admin/users/{id}', 'admin'],
+      ['PATCH', '/admin/users/{id}', 'admin'],
+      ['PUT', '/admin/users/{id}/password', 'admin'],
+      ['DELETE', '/admin/users/{id}/sessions', 'admin'],
+      ['DELETE', '/admin/users/{id}/sessions/{sid}', 'admin'],
+      ['DELETE', '/admin/users/{id}', 'admin'],
+    ],
+  },
+  {
+    group: 'adminContent',
+    endpoints: [
+      ['GET', '/admin/memes', 'admin'],
+      ['POST', '/admin/memes/reprocess', 'admin'],
+      ['DELETE', '/admin/memes', 'admin'],
+      ['POST', '/admin/search/debug', 'admin'],
+      ['GET', '/admin/tags', 'admin'],
+      ['GET', '/admin/tags/duplicates', 'admin'],
+      ['POST', '/admin/tags/merge', 'admin'],
+      ['PATCH', '/admin/tags/{id}', 'admin'],
+      ['DELETE', '/admin/tags', 'admin'],
+    ],
+  },
+  {
+    group: 'adminSources',
+    endpoints: [
+      ['GET', '/admin/sources', 'admin'],
+      ['PATCH', '/admin/sources/{source}/memes', 'admin'],
+      ['DELETE', '/admin/sources/{source}', 'admin'],
+    ],
+  },
+  {
+    group: 'adminTasks',
+    endpoints: [
+      ['GET', '/admin/tasks', 'admin'],
+      ['GET', '/admin/tasks/summary', 'admin'],
+      ['GET', '/admin/tasks/{id}', 'admin'],
+      ['POST', '/admin/tasks/retry', 'admin'],
+      ['POST', '/admin/tasks/{id}/run', 'admin'],
+      ['POST', '/admin/tasks/{id}/cancel', 'admin'],
+      ['GET', '/admin/tasks/batches/{id}', 'admin'],
+      ['POST', '/admin/tasks/batches/{id}/cancel', 'admin'],
+      ['GET', '/admin/tasks/schedules', 'admin'],
+      ['POST', '/admin/tasks/schedules/{name}/run', 'admin'],
+    ],
+  },
+  {
+    group: 'adminSystem',
+    endpoints: [
+      ['GET', '/admin/stats', 'admin'],
+      ['GET', '/admin/logs', 'admin'],
+      ['GET', '/admin/inference', 'admin'],
+    ],
+  },
 ]
 
 const methodTone: Record<string, string> = {
@@ -125,6 +183,11 @@ export function ApiDocs() {
   const t = useMessages()
   const d = t.apiDocs
   const { sample } = d
+  const isAdmin = useSession().user?.role === 'admin'
+  // Endpoints the viewer's account could never call stay out of sight
+  const groups = reference
+    .map((g) => ({ ...g, endpoints: g.endpoints.filter(([, , access]) => access !== 'admin' || isAdmin) }))
+    .filter((g) => g.endpoints.length > 0)
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-12 px-4 py-8 sm:px-6 sm:py-12">
@@ -196,7 +259,7 @@ export function ApiDocs() {
 
       <Section id="ingest" title={d.ingest}>
         <p className="text-sm leading-relaxed text-muted-foreground">{prose(d.ingestIntro)}</p>
-        <Notes items={d.ingestNotes} />
+        <Notes items={isAdmin ? [...d.ingestNotes, d.sourceNote] : d.ingestNotes} />
         <CodeBlock
           title="Shell"
           code={`export MEMEDB_TOKEN=mdb_…   # ${sample.tokenComment}
@@ -244,7 +307,7 @@ for path in sorted(p for p in root.rglob("*") if p.is_file()):
       </Section>
 
       <Section id="reference" title={d.reference}>
-        {reference.map(({ group, endpoints }) => (
+        {groups.map(({ group, endpoints }) => (
           <div key={group} className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">{d.groups[group]}</h3>
             <ul className="flex flex-col divide-y rounded-xl border bg-card">
@@ -265,7 +328,6 @@ for path in sorted(p for p in root.rglob("*") if p.is_file()):
             </ul>
           </div>
         ))}
-        <p className="text-sm text-muted-foreground">{prose(d.adminApi)}</p>
       </Section>
 
       <Section id="conventions" title={d.conventions}>

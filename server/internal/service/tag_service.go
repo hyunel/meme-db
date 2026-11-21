@@ -35,26 +35,27 @@ func NewTagService(cfg TagServiceConfig, repo *repository.Provider, memes *MemeS
 	return &TagService{cfg: cfg, repo: repo, memes: memes, inferClient: inferClient}
 }
 
-// Resolve maps spellings to their labels, creating the missing ones under the tags they mean; user is whether they are a user's own tags.
-func (s *TagService) Resolve(ctx context.Context, names []string, user bool) ([]string, error) {
+// Resolve maps spellings to their labels, creating the missing ones under the tags they mean; given is whether they are
+// names given as they are, by a user or a source other than the VLM.
+func (s *TagService) Resolve(ctx context.Context, names []string, given bool) ([]string, error) {
 	ids := make([]string, len(names))
 	for i, name := range names {
 		var err error
-		if ids[i], err = s.resolve(ctx, name, user); err != nil {
+		if ids[i], err = s.resolve(ctx, name, given); err != nil {
 			return nil, err
 		}
 	}
 	return ids, nil
 }
 
-// A new spelling joins the tag of one with the same key. Otherwise a system one joins the most similar tag if close enough,
-// else starts a tag; a user's starts a tag without an embedding, which no similarity reaches until the VLM uses it.
-func (s *TagService) resolve(ctx context.Context, name string, user bool) (string, error) {
+// A new spelling joins the tag of one with the same key. Otherwise the VLM's joins the most similar tag if close enough,
+// else starts a tag; a given one starts a tag without an embedding, which no similarity reaches until the VLM uses it.
+func (s *TagService) resolve(ctx context.Context, name string, given bool) (string, error) {
 	match, err := s.repo.Tag.TagOf(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	if match != nil && !user && !match.Embedded {
+	if match != nil && !given && !match.Embedded {
 		vec, err := s.embed(ctx, match.TagName)
 		if err != nil {
 			return "", err
@@ -71,7 +72,7 @@ func (s *TagService) resolve(ctx context.Context, name string, user bool) (strin
 	switch {
 	case match != nil:
 		tagID = match.TagID
-	case user:
+	case given:
 		if tagID, err = s.repo.Tag.Create(ctx, name, nil); err != nil {
 			return "", err
 		}
@@ -136,8 +137,8 @@ func (s *TagService) RemoveFromMeme(ctx context.Context, viewer *rbac.Identity, 
 	return s.repo.Tag.RemoveUserTag(ctx, memeID, tagID, viewer.UserID)
 }
 
-func (s *TagService) Hot(ctx context.Context, limit int) ([]string, error) {
-	tags, err := s.repo.Tag.Hot(ctx, s.cfg.MinUsage, limit)
+func (s *TagService) Hot(ctx context.Context, period model.Period, limit int) ([]string, error) {
+	tags, err := s.repo.Tag.Hot(ctx, s.cfg.MinUsage, period, limit)
 	if tags == nil {
 		tags = []string{}
 	}
@@ -152,11 +153,8 @@ func (s *TagService) List(ctx context.Context, query, sort string, page reposito
 	return &model.Page[*model.TagUsage]{Items: tags, Total: total}, nil
 }
 
-// Refresh recounts the tags' usage and clusters the similar tags that Duplicates lists.
+// Refresh clusters the similar tags that Duplicates lists; refresh_stats recounts their usage.
 func (s *TagService) Refresh(ctx context.Context, _ *model.Task) error {
-	if err := s.repo.Tag.RefreshUsage(ctx); err != nil {
-		return fmt.Errorf("failed to count tag usage: %w", err)
-	}
 	clusters, err := s.clusterSimilar(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to cluster similar tags: %w", err)

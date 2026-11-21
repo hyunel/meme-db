@@ -82,3 +82,16 @@ func (s *StatsService) Inference(ctx context.Context, rng string) (json.RawMessa
 	}
 	return data, nil
 }
+
+func (s *StatsService) Refresh(ctx context.Context, _ *model.Task) error {
+	return refreshStats(ctx, s.repo)
+}
+
+// refreshStats recounts popularity over the windows, then the tag usage that sums it.
+func refreshStats(ctx context.Context, repo *repository.Provider) error {
+	now := time.Now().UTC()
+	if err := repo.Tx(ctx, func(r *repository.Repos) error { return r.Stats.RefreshWindows(ctx, now) }); err != nil {
+		return err
+	}
+	return repo.Tag.RefreshUsage(ctx)
+}

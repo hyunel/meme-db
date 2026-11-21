@@ -36,13 +36,16 @@ tags:
 # Each makes a task of its type on its cron, but not while its last is unfinished; without a cron, only when run from
 # the admin console. A list in config.yaml replaces this one.
 tasks:
+  - name: refresh_stats
+    type: refresh_stats  # Recounts popularity over the windows, and the tag usage that sums it
+    cron: "*/15 * * * *"
   - name: refresh_tags
-    type: refresh_tags    # Recounts tag usage for hot lists and meme cards, and finds duplicates
-    cron: "0 * * * *"
+    type: refresh_tags   # Finds the similar tags the admins are suggested to merge
+    cron: "0 4 * * *"
   - name: purge_logs
     type: purge_logs
     params:
-      retention: 720h     # Stored logs older than this are deleted
+      retention: 720h     # Whole log chunks older than this are dropped
   - name: purge_tasks
     type: purge_tasks
     params:

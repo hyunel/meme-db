@@ -26,9 +26,10 @@ interface Options {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   json?: unknown
   form?: FormData
+  keepalive?: boolean
 }
 
-export async function api<T = void>(path: string, { method = 'GET', json, form }: Options = {}): Promise<T> {
+export async function api<T = void>(path: string, { method = 'GET', json, form, keepalive }: Options = {}): Promise<T> {
   const headers: Record<string, string> = {}
   let body: BodyInit | undefined = form
   if (json !== undefined) {
@@ -39,7 +40,7 @@ export async function api<T = void>(path: string, { method = 'GET', json, form }
   const t = messages[documentLocale()]
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { method, headers, body })
+    res = await fetch(`/api${path}`, { method, headers, body, keepalive })
   } catch {
     throw new ApiError(0, t.network.offline)
   }

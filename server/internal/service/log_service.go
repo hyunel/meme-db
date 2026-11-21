@@ -73,9 +73,9 @@ func (s *LogService) Purge(ctx context.Context, task *model.Task) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.repo.Log.DeleteBefore(ctx, before)
+	n, err := s.repo.Log.DropChunksBefore(ctx, before)
 	if err == nil {
-		slog.Info("Purged logs", "count", n, "before", before)
+		slog.Info("Purged log chunks", "chunks", n, "before", before)
 	}
 	return err
 }

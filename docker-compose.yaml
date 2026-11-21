@@ -24,10 +24,13 @@ services:
         condition: service_healthy
 
   db:
-    image: pgvector/pgvector:pg18-trixie
+    image: timescale/timescaledb-ha:pg18.6-ts2.30.2
+    user: "0:0"
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb", "-c", "timescaledb.telemetry_level=off"]
     environment:
       POSTGRES_DB: memedb
       POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/18/docker
     volumes:
       - db:/var/lib/postgresql
     healthcheck:

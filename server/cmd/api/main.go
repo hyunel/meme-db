@@ -160,19 +160,22 @@ func serve(ctx context.Context, a *app, _ []string) error {
 		RetrievalPrompt: cfg.Prompt.Retrieval,
 	}, repo, a.files, a.infer.WithPriority(inference.PriorityBackground), tagService)
 
-	libraryService := service.NewLibraryService(repo, a.memes, a.assets, tagService)
+	eventService := service.NewEventService(repo)
+	libraryService := service.NewLibraryService(repo, a.memes, a.assets, tagService, eventService)
 	favService := service.NewFavoriteService(repo, a.memes, libraryService)
 	shareService := service.NewShareService(repo, a.memes, libraryService)
 	taskService := service.NewTaskService(repo, taskWorker)
 	statsService := service.NewStatsService(repo, a.infer, a.files)
 	logService := service.NewLogService(repo)
 	embeddingService := service.NewEmbeddingService(repo, a.infer.WithPriority(inference.PriorityBackground))
+	sourceService := service.NewSourceService(repo, tagService)
 
 	taskWorker.RegisterHandler(model.JobAnalyzeMeme, ingestService)
 	taskWorker.RegisterHandler(model.JobEmbedClip, worker.HandlerFunc(ingestService.EmbedClip))
 	taskWorker.RegisterHandler(model.JobEmbedText, worker.HandlerFunc(ingestService.EmbedText))
 	taskWorker.RegisterHandler(model.JobEmbedMeme, worker.HandlerFunc(ingestService.EmbedMeme))
 	taskWorker.RegisterHandler(model.JobRefreshTags, worker.HandlerFunc(tagService.Refresh))
+	taskWorker.RegisterHandler(model.JobRefreshStats, worker.HandlerFunc(statsService.Refresh))
 	taskWorker.RegisterHandler(model.JobPurgeLogs, worker.HandlerFunc(logService.Purge))
 	taskWorker.RegisterHandler(model.JobPurgeTasks, worker.HandlerFunc(taskService.Purge))
 	if err := taskWorker.Schedule(cfg.Tasks); err != nil {
@@ -203,6 +206,8 @@ func serve(ctx context.Context, a *app, _ []string) error {
 		favorite: handler.NewFavoriteHandler(favService),
 		admin:    handler.NewAdminHandler(a.users, a.memes, tagService, statsService, logService),
 		task:     handler.NewTaskHandler(taskService),
+		source:   handler.NewSourceHandler(sourceService),
+		events:   handler.NewEventHandler(eventService),
 	}
 
 	e := echo.New()
@@ -272,6 +277,8 @@ type handlers struct {
 	favorite *handler.FavoriteHandler
 	admin    *handler.AdminHandler
 	task     *handler.TaskHandler
+	source   *handler.SourceHandler
+	events   *handler.EventHandler
 }
 
 func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
@@ -280,6 +287,7 @@ func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
 	e.HEAD("/api/assets/:hash", h.asset.GetAssetContent) // Tells clients whether a file, by its SHA-256, is already stored
 
 	api := e.Group("/api", identity)
+	api.POST("/events", h.events.Record)
 
 	// Guest-readable
 	api.GET("/health", func(c echo.Context) error {
@@ -298,12 +306,10 @@ func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
 	api.GET("/memes/:id", h.meme.Get)
 	api.GET("/memes/:id/similar", h.meme.Similar)
 	api.GET("/memes/:id/folders", h.library.MemeFolders)
-	api.POST("/memes/:id/share/views", h.share.View)
 	api.GET("/tags/hot", h.meme.HotTags)
 	api.GET("/folders", h.library.PublicFolders)
 	api.GET("/folders/:id", h.library.PublicFolder)
 	api.GET("/folders/:id/entries", h.library.FolderEntries)
-	api.POST("/folders/:id/share/views", h.share.View)
 	api.GET("/entries/:id", h.library.Entry)
 	api.GET("/users/:username", h.library.Profile)
 	api.GET("/users/:username/folders", h.library.PublicFolders)
@@ -380,6 +386,10 @@ func setupRoutes(e *echo.Echo, h handlers, identity echo.MiddlewareFunc) {
 	admin.POST("/tags/merge", h.admin.MergeTags)
 	admin.PATCH("/tags/:id", h.admin.UpdateTag)
 	admin.DELETE("/tags", h.admin.DeleteTags)
+
+	admin.GET("/sources", h.source.List)
+	admin.PATCH("/sources/:source/memes", h.source.UpdateMemes)
+	admin.DELETE("/sources/:source", h.source.Delete)
 
 	admin.GET("/tasks", h.task.List)
 	admin.GET("/tasks/summary", h.task.Summary)

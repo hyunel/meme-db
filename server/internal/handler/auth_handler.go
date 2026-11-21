@@ -68,6 +68,12 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// MeResponse is the signed-in user, with the scope of the API token in use; a web sign-in has none.
+type MeResponse struct {
+	*model.User
+	Scope string `json:"scope,omitempty"`
+}
+
 func (h *AuthHandler) GetMe(c echo.Context) error {
 	user, expires, err := h.authService.Me(c.Request().Context(), rbac.GetIdentity(c))
 	if err != nil {
@@ -77,7 +83,7 @@ func (h *AuthHandler) GetMe(c echo.Context) error {
 	if cookie, err := c.Cookie(rbac.SessionCookie); err == nil && !expires.IsZero() {
 		rbac.SetSessionCookie(c, cookie.Value, expires)
 	}
-	return c.JSON(http.StatusOK, user)
+	return c.JSON(http.StatusOK, MeResponse{User: user, Scope: rbac.GetIdentity(c).Scope})
 }
 
 func (h *AuthHandler) GetMyStats(c echo.Context) error {

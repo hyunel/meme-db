@@ -4,10 +4,10 @@ The Go API behind MemeDB: accounts and sign-ins, libraries and sharing, file sto
 
 ## Run
 
-You need Go 1.24+, PostgreSQL with pgvector, and a running inference service. A database:
+You need Go 1.24+, PostgreSQL with pgvector and TimescaleDB, and a running inference service. A database:
 
 ```sh
-docker run -d --name memedb-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg18-trixie
+docker run -d --name memedb-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres timescale/timescaledb-ha:pg18.6-ts2.30.2
 ```
 
 Then:

@@ -20,10 +20,11 @@ type LibraryService struct {
 	memes  *MemeService
 	assets *AssetService
 	tags   *TagService
+	events *EventService
 }
 
-func NewLibraryService(repo *repository.Provider, memes *MemeService, assets *AssetService, tags *TagService) *LibraryService {
-	return &LibraryService{repo: repo, memes: memes, assets: assets, tags: tags}
+func NewLibraryService(repo *repository.Provider, memes *MemeService, assets *AssetService, tags *TagService, events *EventService) *LibraryService {
+	return &LibraryService{repo: repo, memes: memes, assets: assets, tags: tags, events: events}
 }
 
 func (s *LibraryService) Folders(ctx context.Context, viewer *rbac.Identity, ids []string) ([]*model.Folder, error) {
@@ -304,7 +305,7 @@ func (s *LibraryService) Upload(ctx context.Context, viewer *rbac.Identity, pare
 			return nil, false, err
 		}
 	}
-	return s.addFile(ctx, viewer, parentID, asset.ID, filepath.Base(file.Filename))
+	return s.addFile(ctx, viewer, parentID, asset.ID, filepath.Base(file.Filename), nil)
 }
 
 // AddMeme puts a meme the viewer may see, or one a private link (share) opens, into their library.
@@ -321,15 +322,14 @@ func (s *LibraryService) AddMeme(ctx context.Context, viewer *rbac.Identity, mem
 	if meme.Title != "" {
 		name = meme.Title
 	}
-	entry, created, err := s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension)
-	if err == nil && created && share != "" && len(meme.Entries) == 0 {
-		err = s.repo.Share.Record(ctx, share, memeID, viewer.UserID, true) // The link brought the meme into a new library
+	if len(meme.Entries) != 0 {
+		share = ""
 	}
-	return entry, created, err
+	return s.addFile(ctx, viewer, parentID, memeID, name+asset.Extension, &model.Event{MemeID: memeID, Share: share})
 }
 
 // addFile reports whether it created the entry; a file already in the folder is returned instead, so adding can be retried.
-func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, parentID *string, assetID, name string) (*EntryDetail, bool, error) {
+func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, parentID *string, assetID, name string, save *model.Event) (*EntryDetail, bool, error) {
 	var id string
 	var created bool
 	err := s.inFolder(ctx, viewer.UserID, parentID, func(r *repository.Repos) error {
@@ -350,6 +350,9 @@ func (s *LibraryService) addFile(ctx context.Context, viewer *rbac.Identity, par
 			return err
 		}
 		id, created = node.ID, true
+		if save != nil {
+			return s.events.RecordSave(ctx, r, viewer.UserID, *save)
+		}
 		return nil
 	})
 	if err != nil {
@@ -439,15 +442,13 @@ func (s *LibraryService) SaveFolder(ctx context.Context, viewer *rbac.Identity, 
 			return err
 		}
 		copyID, err = copyTree(ctx, r, viewer.UserID, folder.Node, parentID, uniqueName(taken, folder.Name))
-		return err
+		if err != nil {
+			return err
+		}
+		return s.events.RecordSave(ctx, r, viewer.UserID, model.Event{FolderID: id, Share: share})
 	})
 	if err != nil {
 		return nil, err
-	}
-	if share != "" {
-		if err := s.repo.Share.Record(ctx, share, id, viewer.UserID, true); err != nil {
-			return nil, err
-		}
 	}
 	folders, err := s.Folders(ctx, viewer, []string{copyID})
 	if err != nil {
@@ -598,9 +599,7 @@ func visibility(isPublic, parentPublic bool) string {
 	}
 }
 
-// PublicFolders pages through the topmost public folders, of one user if given, most favorited first; the cursor is the
-// favorite count and id of the last folder before.
-func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, username, cursor string, limit int) (*model.Feed[*model.Folder], error) {
+func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identity, username string, period model.Period, cursor string, limit int) (*model.Feed[*model.Folder], error) {
 	var ownerID string
 	if username != "" {
 		user, err := s.activeUser(ctx, username)
@@ -609,23 +608,14 @@ func (s *LibraryService) PublicFolders(ctx context.Context, viewer *rbac.Identit
 		}
 		ownerID = user.ID
 	}
-	var after *repository.FolderRank
-	if cursor != "" {
-		n, id, err := rankCursor(cursor)
-		if err != nil {
-			return nil, err
-		}
-		after = &repository.FolderRank{Favorites: n, ID: id}
-	}
-	rows, err := s.repo.Node.PublicRootFolders(ctx, ownerID, after, limit+1)
+	ids, valid, err := s.repo.Node.PublicRootFolders(ctx, ownerID, period, cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	rows, next := nextPage(rows, limit, func(r *repository.FolderRank) string { return fmt.Sprintf("%d_%s", r.Favorites, r.ID) })
-	ids := make([]string, len(rows))
-	for i, r := range rows {
-		ids[i] = r.ID
+	if !valid {
+		return nil, apperror.BadRequest("invalid_cursor", "invalid cursor")
 	}
+	ids, next := nextPage(ids, limit, func(id string) string { return id })
 	folders, err := s.Folders(ctx, viewer, ids)
 	if err != nil {
 		return nil, err
